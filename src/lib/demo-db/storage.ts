@@ -77,14 +77,20 @@ class DemoStorageEngine {
     if (this.isBrowser()) {
       return window.localStorage.getItem(STORAGE_KEYS.DB_VERSION);
     }
-    return this.memoryStore.get(STORAGE_KEYS.DB_VERSION) || null;
+    const val = this.memoryStore.get(STORAGE_KEYS.DB_VERSION);
+    if (!val) return null;
+    try {
+      return JSON.parse(val);
+    } catch {
+      return val;
+    }
   }
 
   public setVersion(version: string = DEMO_DB_VERSION): void {
     if (this.isBrowser()) {
       window.localStorage.setItem(STORAGE_KEYS.DB_VERSION, version);
     } else {
-      this.memoryStore.set(STORAGE_KEYS.DB_VERSION, version);
+      this.memoryStore.set(STORAGE_KEYS.DB_VERSION, JSON.stringify(version));
     }
   }
 }

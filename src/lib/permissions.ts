@@ -21,7 +21,48 @@ export function hasPermission(user: User | null | undefined, permissionKey: stri
   // Check role-based permissions
   const role = rolesRepository.getByCode(user.role);
   if (role && Array.isArray(role.permissions)) {
-    return role.permissions.includes(permissionKey);
+    if (role.permissions.includes(permissionKey)) return true;
+  }
+
+  // Built-in role fallbacks for Flow 07 permissions
+  const roleCode = user.role.toUpperCase();
+  if (roleCode === 'BRANCH_MANAGER') {
+    const bmAllowed = [
+      'sales.credit.create',
+      'sales.credit.approve',
+      'customers.credit.manage',
+      'payments.collect',
+      'ledger.view',
+      'pricing.override',
+      'pos:create',
+      'pos:view',
+    ];
+    if (bmAllowed.includes(permissionKey)) return true;
+  } else if (roleCode === 'CASHIER') {
+    const cashierAllowed = [
+      'sales.credit.create',
+      'payments.collect',
+      'pos:create',
+      'pos:view',
+    ];
+    if (cashierAllowed.includes(permissionKey)) return true;
+  } else if (roleCode === 'ACCOUNTANT') {
+    const accAllowed = [
+      'payments.collect',
+      'ledger.view',
+      'customers.credit.manage',
+      'sales.credit.approve',
+    ];
+    if (accAllowed.includes(permissionKey)) return true;
+  } else if (roleCode === 'WHOLESALE_STAFF') {
+    const wsAllowed = [
+      'sales.credit.create',
+      'payments.collect',
+      'ledger.view',
+      'wholesale:create',
+      'wholesale:view',
+    ];
+    if (wsAllowed.includes(permissionKey)) return true;
   }
 
   return false;

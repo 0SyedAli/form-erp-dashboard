@@ -20,7 +20,8 @@ export function filterInvoices(
     dateRange?: DateRangePreset;
     startDate?: string;
     endDate?: string;
-    customerType?: 'ALL' | 'RETAIL' | 'WHOLESALE';
+    customerType?: 'ALL' | 'RETAIL' | 'WHOLESALE' | 'DISTRIBUTOR' | 'WALK_IN';
+    saleType?: 'ALL' | 'WALK_IN' | 'WHOLESALE' | 'DISTRIBUTOR';
     searchQuery?: string;
     referenceDate?: Date; // Reference date for current time (defaults to 2026-10-28 or now)
   }
@@ -31,6 +32,7 @@ export function filterInvoices(
     startDate,
     endDate,
     customerType = 'ALL',
+    saleType,
     searchQuery = '',
     referenceDate = new Date('2024-10-31T12:00:00+05:00'),
   } = options;
@@ -60,8 +62,21 @@ export function filterInvoices(
     }
 
     // 2. Customer Type filter
-    if (customerType !== 'ALL' && invoice.customerType !== customerType) {
-      return false;
+    if (customerType !== 'ALL') {
+      const matchRetail = (customerType === 'RETAIL' || customerType === 'WALK_IN') && (invoice.customerType === 'RETAIL' || invoice.saleType === 'WALK_IN');
+      const matchWholesale = customerType === 'WHOLESALE' && (invoice.customerType === 'WHOLESALE' || invoice.saleType === 'WHOLESALE');
+      const matchDistributor = customerType === 'DISTRIBUTOR' && (invoice.customerType === 'DISTRIBUTOR' || invoice.saleType === 'DISTRIBUTOR');
+      if (!matchRetail && !matchWholesale && !matchDistributor) {
+        return false;
+      }
+    }
+
+    // 2b. Sale Type filter
+    if (saleType && saleType !== 'ALL') {
+      const sType = invoice.saleType || (invoice.customerType === 'WHOLESALE' ? 'WHOLESALE' : 'WALK_IN');
+      if (sType !== saleType) {
+        return false;
+      }
     }
 
     // 3. Search query filter
@@ -117,6 +132,8 @@ export function calculateDashboardKPIs(
   let totalReturns = 0;
   let retailRevenue = 0;
   let wholesaleRevenue = 0;
+  let walkInRevenue = 0;
+  let distributorRevenue = 0;
   let retailInvoicesCount = 0;
   let wholesaleInvoicesCount = 0;
 
@@ -130,16 +147,25 @@ export function calculateDashboardKPIs(
 
   let totalCollections = 0;
   let pendingReceivables = 0;
+  let overdueAmount = 0;
+
+  const nowMs = referenceDate.getTime();
 
   for (const inv of filteredInvoices) {
     totalGrossSales += inv.grossAmount;
     totalDiscounts += inv.discountAmount;
     totalReturns += inv.returnAmount;
 
-    // In Molty Foam ERP, net sales for an invoice is netAmount
-    if (inv.customerType === 'RETAIL') {
+    // Flow 07 Sale type revenue tracking
+    const saleType = inv.saleType || (inv.customerType === 'WHOLESALE' ? 'WHOLESALE' : 'WALK_IN');
+    if (saleType === 'WALK_IN') {
+      walkInRevenue += inv.netAmount;
       retailRevenue += inv.netAmount;
       retailInvoicesCount += 1;
+    } else if (saleType === 'DISTRIBUTOR') {
+      distributorRevenue += inv.netAmount;
+      wholesaleRevenue += inv.netAmount;
+      wholesaleInvoicesCount += 1;
     } else {
       wholesaleRevenue += inv.netAmount;
       wholesaleInvoicesCount += 1;
@@ -148,6 +174,12 @@ export function calculateDashboardKPIs(
     // Collections tracking (Actual payments collected)
     totalCollections += inv.amountPaid;
     pendingReceivables += inv.amountDue;
+
+    // Check overdue
+    const isOverdue = inv.isOverdue || (inv.amountDue > 0 && inv.dueDate && new Date(inv.dueDate).getTime() < nowMs);
+    if (isOverdue) {
+      overdueAmount += inv.amountDue;
+    }
 
     if (inv.paymentMethod in collectionsByMethod) {
       collectionsByMethod[inv.paymentMethod] += inv.amountPaid;
@@ -201,6 +233,10 @@ export function calculateDashboardKPIs(
     todaySales,
     todayInvoices,
     salesGrowthPercentage,
+    walkInRevenue,
+    distributorRevenue,
+    totalOutstandingReceivables: pendingReceivables,
+    overdueAmount,
   };
 }
 

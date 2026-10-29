@@ -16,9 +16,13 @@ import {
   Briefcase,
   Package,
   ChevronDown,
+  Truck,
+  CreditCard,
+  AlertTriangle,
+  CheckCircle,
 } from 'lucide-react';
 
-import { useGetBranchesQuery } from '@/store/services/apiSlice';
+import { useGetBranchesQuery, useGetDashboardKPIsQuery } from '@/store/services/apiSlice';
 
 function BranchDashboardContent() {
   const searchParams = useSearchParams();
@@ -31,6 +35,8 @@ function BranchDashboardContent() {
   const effectiveBranchId = isSuperAdmin
     ? queryBranchId || 'BR-MAIN-01'
     : currentUser?.assignedBranchId || 'BR-MAIN-01';
+
+  const { data: kpis } = useGetDashboardKPIsQuery({ branchId: effectiveBranchId });
 
   const activeBranch =
     branches.find((b) => b.id === effectiveBranchId) ||
@@ -61,24 +67,24 @@ function BranchDashboardContent() {
       </div>
 
       {/* 4 Top KPI Cards matching screenshot Screen 2 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <KpiCard
           title="Today's Sales"
-          value="Rs. 145,000"
+          value={kpis ? `Rs. ${kpis.todaySales.toLocaleString()}` : 'Rs. 145,000'}
           icon={Banknote}
           colorScheme="red"
           badge={{ text: '+12%' }}
         />
         <KpiCard
           title="Monthly Revenue"
-          value="Rs. 2,450,000"
+          value={kpis ? `Rs. ${kpis.totalNetSales.toLocaleString()}` : 'Rs. 2,450,000'}
           icon={Calendar}
           colorScheme="blue"
           badge={{ text: '+8%' }}
         />
         <KpiCard
           title="Total Orders"
-          value="38"
+          value={kpis ? `${kpis.totalInvoices}` : '38'}
           icon={Briefcase}
           colorScheme="purple"
           badge={{ text: '+15%' }}
@@ -89,6 +95,57 @@ function BranchDashboardContent() {
           icon={Package}
           colorScheme="orange"
         />
+      </div>
+
+      {/* Flow 07 Multi-Tier Sales & Credit Overview */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-4 rounded-xl border border-gray-200 shadow-2xs mb-6 text-xs">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+            <span className="text-[10px] font-bold">W</span>
+          </div>
+          <div>
+            <span className="text-gray-500 font-medium block">Walk-in</span>
+            <span className="text-xs font-bold text-gray-900 font-sans">
+              Rs. {(kpis?.walkInRevenue ?? kpis?.retailRevenue ?? 0).toLocaleString()}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+            <span className="text-[10px] font-bold">WS</span>
+          </div>
+          <div>
+            <span className="text-gray-500 font-medium block">Wholesale</span>
+            <span className="text-xs font-bold text-amber-800 font-sans">
+              Rs. {(kpis?.wholesaleRevenue || 0).toLocaleString()}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
+            <Truck className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <span className="text-gray-500 font-medium block">Distributor</span>
+            <span className="text-xs font-bold text-purple-800 font-sans">
+              Rs. {(kpis?.distributorRevenue || 0).toLocaleString()}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+            <CreditCard className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <span className="text-gray-500 font-medium block">Outstanding Credit</span>
+            <span className="text-xs font-bold text-emerald-800 font-sans">
+              Rs. {(kpis?.totalOutstandingReceivables || 0).toLocaleString()}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Middle Row: Daily Sales Trend & Sales Breakdown */}

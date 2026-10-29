@@ -47,12 +47,14 @@ export default function Sidebar({
   // Navigation matching the exact screenshot
   const adminNavItems: NavItem[] = [
     { title: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
+    { title: 'Unified POS', href: '/pos', icon: ShoppingBag, requiredPermission: 'pos:view' },
+    { title: 'Sales History', href: '/pos/history', icon: Receipt, requiredPermission: 'pos:view' },
+    { title: 'Customers', href: '/customers', icon: Users2 },
+    { title: 'Collections', href: '/payments/collections', icon: Receipt },
     { title: 'Branches', href: '/admin/branches', icon: Building2, requiredPermission: 'branches:view' },
     { title: 'Products', href: '/products', icon: Package, requiredPermission: 'inventory:view' },
-    { title: 'Inventory', href: '/products?tab=inventory', icon: Layers, requiredPermission: 'inventory:view' },
-    { title: 'Sales (Retail)', href: '/admin/dashboard#invoices', icon: ShoppingBag, requiredPermission: 'pos:view' },
+    { title: 'Inventory', href: '/inventory', icon: Layers, requiredPermission: 'inventory:view' },
     { title: 'Wholesale', href: '/admin/dashboard#invoices', icon: Building, requiredPermission: 'wholesale:view' },
-    { title: 'Customers & Dealers', href: '/admin/users?tab=customers', icon: Users2 },
     { title: 'Purchases', href: '#', icon: ShoppingCart },
     { title: 'Accounts', href: '#', icon: Receipt, requiredPermission: 'reports:financial' },
     { title: 'Reports', href: '#', icon: FileSpreadsheet, requiredPermission: 'reports:view' },
@@ -62,10 +64,12 @@ export default function Sidebar({
 
   const branchNavItems: NavItem[] = [
     { title: 'Dashboard', href: '/branch/dashboard', icon: LayoutDashboard },
-    { title: 'POS (Billing)', href: '/branch/dashboard#invoices', icon: CreditCard, requiredPermission: 'pos:create' },
+    { title: 'Unified POS', href: '/pos', icon: CreditCard, requiredPermission: 'pos:create' },
+    { title: 'Sales History', href: '/pos/history', icon: Receipt, requiredPermission: 'pos:view' },
+    { title: 'Customers', href: '/customers', icon: Users2 },
+    { title: 'Collections', href: '/payments/collections', icon: Receipt },
     { title: 'Products & Inventory', href: '/products', icon: Package, requiredPermission: 'inventory:view' },
-    { title: 'Sales & Invoices', href: '/branch/dashboard#invoices', icon: Receipt, requiredPermission: 'pos:view' },
-    { title: 'Customers', href: '#', icon: Users2 },
+    { title: 'Inventory', href: '/inventory', icon: Layers, requiredPermission: 'inventory:view' },
     { title: 'Purchases', href: '#', icon: ShoppingCart },
     { title: 'Staff (Branch)', href: '/admin/users', icon: UserCheck, requiredPermission: 'users:view' },
     { title: 'Settings', href: '#', icon: Settings },
@@ -122,7 +126,9 @@ export default function Sidebar({
               item.href !== '#' &&
               (pathname === item.href ||
                 (item.href === '/admin/dashboard' && pathname.startsWith('/admin/dashboard')) ||
-                (item.href === '/branch/dashboard' && pathname.startsWith('/branch/dashboard')));
+                (item.href === '/branch/dashboard' && pathname.startsWith('/branch/dashboard')) ||
+                (item.href === '/inventory' && pathname.startsWith('/inventory')) ||
+                (item.href === '/products' && pathname.startsWith('/products')));
             const Icon = item.icon;
 
             return (

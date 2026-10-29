@@ -4,7 +4,7 @@ export const muiTheme = createTheme({
   typography: {
     fontFamily: [
       'var(--font-plus-jakarta-sans)',
-      'Plus Jakarta Sans',
+      '"Plus Jakarta Sans"',
       'system-ui',
       '-apple-system',
       'BlinkMacSystemFont',
