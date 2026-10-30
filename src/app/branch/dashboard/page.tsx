@@ -18,8 +18,6 @@ import {
   ChevronDown,
   Truck,
   CreditCard,
-  AlertTriangle,
-  CheckCircle,
 } from 'lucide-react';
 
 import { useGetBranchesQuery, useGetDashboardKPIsQuery } from '@/store/services/apiSlice';

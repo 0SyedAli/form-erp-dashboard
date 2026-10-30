@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { MattressSize } from '@/types';
@@ -41,7 +41,7 @@ export default function SizeModal({
     register,
     handleSubmit,
     setValue,
-    watch,
+    control,
     reset,
     formState: { errors },
   } = useForm<SizeFormData>({
@@ -55,8 +55,8 @@ export default function SizeModal({
     },
   });
 
-  const lengthVal = watch('length');
-  const widthVal = watch('width');
+  const lengthVal = useWatch({ control, name: 'length' });
+  const widthVal = useWatch({ control, name: 'width' });
 
   // Suggest display label if user changes length or width
   const handleAutoLabel = () => {
@@ -83,8 +83,12 @@ export default function SizeModal({
         status: 'active',
       });
     }
-    setApiError(null);
   }, [size, reset, isOpen]);
+
+  const handleClose = () => {
+    setApiError(null);
+    onClose();
+  };
 
   if (!isOpen) return null;
 
@@ -142,7 +146,7 @@ export default function SizeModal({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
             aria-label="Close modal"
           >
@@ -250,7 +254,7 @@ export default function SizeModal({
           <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium transition-colors cursor-pointer"
             >
               Cancel

@@ -1,5 +1,28 @@
-import { User, Branch } from '@/types';
-import { rolesRepository } from '@/lib/demo-db';
+import { User, Branch, BranchAccessPermissions } from '@/types';
+import { rolesRepository, branchesRepository } from '@/lib/demo-db';
+
+/**
+ * Determine whether a user's branch has access to a specific module permission.
+ * Super Admin implicitly has all permissions.
+ */
+export function hasBranchPermission(
+  user: User | null | undefined,
+  permission: keyof BranchAccessPermissions
+): boolean {
+  if (!user || user.isActive === false) return false;
+  if (user.role.toUpperCase() === 'SUPER_ADMIN') return true;
+
+  if (user.assignedBranchId) {
+    const branch = branchesRepository.getById(user.assignedBranchId);
+    if (branch && branch.permissions) {
+      return !!branch.permissions[permission];
+    }
+  }
+
+  // POS is enabled by default for any branch
+  if (permission === 'pos') return true;
+  return false;
+}
 
 /**
  * Determine whether a user possesses a specific permission.
@@ -13,6 +36,37 @@ export function hasPermission(user: User | null | undefined, permissionKey: stri
     return true;
   }
 
+  // Branch permission checks for assigned branch (if branch disables module, user cannot access)
+  if (user.assignedBranchId) {
+    const branch = branchesRepository.getById(user.assignedBranchId);
+    if (branch && branch.permissions) {
+      const perms = branch.permissions;
+      if ((permissionKey === 'pos:view' || permissionKey === 'pos:create') && perms.pos === false) return false;
+      if (permissionKey === 'sales:view' && perms.viewOwnSales === false) return false;
+      if (permissionKey === 'revenue:view' && perms.viewOwnRevenue === false) return false;
+      if ((permissionKey === 'catalogue:view' || permissionKey === 'products:view') && perms.viewProducts === false) return false;
+      if ((permissionKey === 'catalogue:manage' || permissionKey === 'pricing:manage') && perms.addEditProducts === false) return false;
+      if (permissionKey === 'inventory:view' && perms.viewStock === false && perms.manageStock === false) return false;
+      if (permissionKey === 'inventory:manage' && perms.manageStock === false) return false;
+      if (permissionKey === 'inventory:transfer' && perms.stockTransfers === false) return false;
+      if ((permissionKey === 'customers:view' || permissionKey === 'customers:manage') && perms.customers === false) return false;
+      if (
+        (permissionKey.startsWith('sales.credit') ||
+          permissionKey.startsWith('customers.credit') ||
+          permissionKey === 'payments.collect' ||
+          permissionKey === 'ledger.view') &&
+        perms.customerCredit === false
+      ) {
+        return false;
+      }
+      if ((permissionKey.startsWith('purchases.') || permissionKey.startsWith('bills.')) && perms.purchases === false) return false;
+      if ((permissionKey.startsWith('suppliers.') || permissionKey.startsWith('payments.suppliers')) && perms.suppliers === false) return false;
+      if (permissionKey.startsWith('reports') && perms.reports === false) return false;
+      if (permissionKey.includes('return') && perms.returns === false) return false;
+      if (permissionKey.includes('override') && perms.discountsOverrides === false) return false;
+    }
+  }
+
   // Check custom permission overrides first
   if (Array.isArray(user.customPermissions) && user.customPermissions.includes(permissionKey)) {
     return true;
@@ -24,7 +78,7 @@ export function hasPermission(user: User | null | undefined, permissionKey: stri
     if (role.permissions.includes(permissionKey)) return true;
   }
 
-  // Built-in role fallbacks for Flow 07 permissions
+  // Built-in role fallbacks for Flow 07 & Flow 08 permissions
   const roleCode = user.role.toUpperCase();
   if (roleCode === 'BRANCH_MANAGER') {
     const bmAllowed = [
@@ -36,6 +90,19 @@ export function hasPermission(user: User | null | undefined, permissionKey: stri
       'pricing.override',
       'pos:create',
       'pos:view',
+      'suppliers.view',
+      'suppliers.create',
+      'suppliers.edit',
+      'purchases.view',
+      'purchases.create',
+      'purchases.edit',
+      'purchases.approve',
+      'purchases.receive',
+      'purchases.cancel',
+      'bills.view',
+      'bills.post',
+      'purchases.returns.manage',
+      'ledger.suppliers.view',
     ];
     if (bmAllowed.includes(permissionKey)) return true;
   } else if (roleCode === 'CASHIER') {
@@ -52,8 +119,30 @@ export function hasPermission(user: User | null | undefined, permissionKey: stri
       'ledger.view',
       'customers.credit.manage',
       'sales.credit.approve',
+      'suppliers.view',
+      'suppliers.create',
+      'suppliers.edit',
+      'purchases.view',
+      'purchases.approve',
+      'bills.view',
+      'bills.post',
+      'payments.suppliers.create',
+      'payments.suppliers.approve',
+      'ledger.suppliers.view',
+      'purchases.returns.manage',
     ];
     if (accAllowed.includes(permissionKey)) return true;
+  } else if (roleCode === 'INVENTORY_OFFICER') {
+    const invAllowed = [
+      'inventory:view',
+      'inventory:manage',
+      'inventory:transfer',
+      'purchases.view',
+      'purchases.receive',
+      'purchases.returns.manage',
+      'suppliers.view',
+    ];
+    if (invAllowed.includes(permissionKey)) return true;
   } else if (roleCode === 'WHOLESALE_STAFF') {
     const wsAllowed = [
       'sales.credit.create',

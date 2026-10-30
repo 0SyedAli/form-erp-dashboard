@@ -279,6 +279,7 @@ export default function VariantsTab({
                 <th className="py-3.5 px-4">Thickness</th>
                 <th className="py-3.5 px-4 text-right">Retail Price</th>
                 <th className="py-3.5 px-4 text-right">Wholesale Price</th>
+                <th className="py-3.5 px-4 text-right text-purple-900">Distributor Price</th>
                 <th className="py-3.5 px-4 text-center">Status</th>
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
@@ -286,13 +287,13 @@ export default function VariantsTab({
             <tbody className="divide-y divide-gray-100 text-gray-700 text-sm font-normal">
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="py-8 text-center text-gray-400">
+                  <td colSpan={11} className="py-8 text-center text-gray-400">
                     Loading variants catalogue...
                   </td>
                 </tr>
               ) : filteredVariants.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-10 text-center">
+                  <td colSpan={11} className="py-10 text-center">
                     <Tag className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                     <p className="text-gray-500 font-medium">No variants found</p>
                     <p className="text-xs text-gray-400 mt-0.5">
@@ -338,6 +339,9 @@ export default function VariantsTab({
                       </td>
                       <td className="py-4 px-4 text-right font-semibold text-gray-600 text-sm">
                         Rs. {v.wholesalePrice.toLocaleString()}
+                      </td>
+                      <td className="py-4 px-4 text-right font-semibold text-purple-700 text-sm">
+                        Rs. {(v.distributorPrice ?? Math.round(v.wholesalePrice * 0.88)).toLocaleString()}
                       </td>
                       <td className="py-4 px-4 text-center">
                         <span

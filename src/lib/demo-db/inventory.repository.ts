@@ -427,12 +427,28 @@ class InventoryRepository {
       throw new Error('Adjustment quantity difference cannot be zero.');
     }
 
-    const balances = this.getBalancesInternal();
-    const idx = balances.findIndex(
+    let balances = this.getBalancesInternal();
+    let idx = balances.findIndex(
       (b) =>
         b.stockLocationId === input.stockLocationId &&
         b.sku.toUpperCase() === input.sku.trim().toUpperCase()
     );
+
+    if (idx === -1) {
+      // Auto-initialize balance record if it doesn't exist yet
+      try {
+        this.updateBalanceInternal(input.stockLocationId, input.sku, () => {});
+        balances = this.getBalancesInternal();
+        idx = balances.findIndex(
+          (b) =>
+            b.stockLocationId === input.stockLocationId &&
+            b.sku.toUpperCase() === input.sku.trim().toUpperCase()
+        );
+      } catch {
+        // Fall back to error if SKU or location invalid
+        throw new Error(`No stock balance record exists for SKU "${input.sku}" at location "${input.stockLocationId}".`);
+      }
+    }
 
     if (idx === -1) {
       throw new Error(`No stock balance record exists for SKU "${input.sku}" at location "${input.stockLocationId}".`);
@@ -792,6 +808,75 @@ class InventoryRepository {
         createdBy: cashierName,
         timestamp: now,
         notes: `Retail POS counter sale #${invoiceNumber}`,
+      });
+
+      movements.push(movement);
+    }
+
+    this.saveBalancesInternal(balances);
+    return movements;
+  }
+
+  public deductStockForPurchaseReturn(
+    branchId: string,
+    stockLocationId: string,
+    items: Array<{ sku: string; quantity: number; unitCost?: number }>,
+    debitNoteNumber: string,
+    userName: string
+  ): StockMovement[] {
+    const balances = this.getBalancesInternal();
+    const movements: StockMovement[] = [];
+    const now = new Date().toISOString();
+
+    for (const item of items) {
+      if (item.quantity <= 0) {
+        throw new Error(`Invalid return quantity ${item.quantity} for SKU "${item.sku}". Must be positive.`);
+      }
+
+      const balance = balances.find(
+        (b) =>
+          b.stockLocationId === stockLocationId &&
+          b.sku.toUpperCase() === item.sku.trim().toUpperCase()
+      );
+
+      if (!balance) {
+        throw new Error(
+          `No inventory record found for SKU "${item.sku}" at stock location "${stockLocationId}".`
+        );
+      }
+
+      if (balance.available < item.quantity) {
+        throw new Error(
+          `Insufficient stock to return for "${item.sku}". Requested return: ${item.quantity}, Available on-hand: ${balance.available}.`
+        );
+      }
+    }
+
+    for (const item of items) {
+      const balance = balances.find(
+        (b) =>
+          b.stockLocationId === stockLocationId &&
+          b.sku.toUpperCase() === item.sku.trim().toUpperCase()
+      )!;
+
+      balance.onHand -= item.quantity;
+      balance.available = balance.onHand - balance.reserved;
+      balance.stockStatus = this.calculateStockStatus(balance.onHand, balance.reorderLevel);
+      balance.updatedAt = now;
+
+      const movement = stockMovementsRepository.logMovement({
+        documentReference: debitNoteNumber,
+        sku: balance.sku,
+        productId: balance.productId,
+        variantId: balance.variantId,
+        sourceLocationId: stockLocationId,
+        sourceBranchId: branchId,
+        movementType: 'PURCHASE_RETURN',
+        quantity: item.quantity,
+        unitCost: item.unitCost !== undefined ? item.unitCost : balance.unitCost,
+        createdBy: userName,
+        timestamp: now,
+        notes: `Purchase Return & Debit Note #${debitNoteNumber}`,
       });
 
       movements.push(movement);

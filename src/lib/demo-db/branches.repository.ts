@@ -1,4 +1,4 @@
-import { Branch, BranchSettings } from '@/types';
+import { Branch, BranchSettings, BranchAccessPermissions } from '@/types';
 import { DEMO_USERS } from '@/data/mockData';
 import {
   CreateBranchDTO,
@@ -7,6 +7,7 @@ import {
   STORAGE_KEYS,
   DEMO_DB_VERSION,
   DEFAULT_BRANCH_SETTINGS,
+  DEFAULT_BRANCH_PERMISSIONS,
   BranchValidationError,
   ValidationErrorDetail,
 } from './schema';
@@ -172,6 +173,21 @@ export class BranchesRepository {
   }
 
   /**
+   * Get branch by unique Login ID (case-insensitive).
+   */
+  public getByLoginId(loginId: string): Branch | null {
+    const list = this.getBranchesInternal();
+    const normalized = loginId.toLowerCase().trim();
+    return (
+      list.find(
+        (b) =>
+          (b.loginId && b.loginId.toLowerCase().trim() === normalized) ||
+          b.code.toLowerCase().trim() === normalized
+      ) || null
+    );
+  }
+
+  /**
    * Validate branch inputs before create or update.
    */
   public validate(
@@ -282,6 +298,12 @@ export class BranchesRepository {
       isActive: true,
       targetMonthlySales: input.targetMonthlySales || 2000000,
       imageUrl: input.imageUrl || 'https://images.unsplash.com/photo-1555529771-7888783a18d3?auto=format&fit=crop&w=600&q=80',
+      loginId: input.loginId?.trim().toLowerCase() || cleanCode.toLowerCase().replace(/[^a-z0-9]/g, ''),
+      password: input.password || 'password123',
+      permissions: {
+        ...DEFAULT_BRANCH_PERMISSIONS,
+        ...(input.permissions || {}),
+      },
       settings: {
         allowRetailSales: input.settings?.allowRetailSales ?? DEFAULT_BRANCH_SETTINGS.allowRetailSales,
         allowWholesaleSales: input.settings?.allowWholesaleSales ?? DEFAULT_BRANCH_SETTINGS.allowWholesaleSales,
@@ -357,6 +379,14 @@ export class BranchesRepository {
       managerEmail,
       targetMonthlySales: input.targetMonthlySales ?? current.targetMonthlySales,
       imageUrl: input.imageUrl ?? current.imageUrl,
+      loginId: input.loginId !== undefined ? input.loginId.trim().toLowerCase() : current.loginId,
+      password: input.password !== undefined ? input.password : current.password,
+      permissions: input.permissions
+        ? {
+            ...(current.permissions || DEFAULT_BRANCH_PERMISSIONS),
+            ...input.permissions,
+          }
+        : current.permissions,
       isActive: input.isActive !== undefined ? input.isActive : current.isActive,
       settings: {
         ...current.settings,
@@ -418,6 +448,54 @@ export class BranchesRepository {
     list[index] = {
       ...current,
       settings: updatedSettings,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.saveBranchesInternal(list);
+    return list[index];
+  }
+
+  /**
+   * Update branch module access permissions.
+   */
+  public updatePermissions(id: string, permissions: Partial<BranchAccessPermissions>): Branch {
+    const list = this.getBranchesInternal();
+    const index = list.findIndex((b) => b.id === id);
+
+    if (index === -1) {
+      throw new Error(`Branch with ID "${id}" not found.`);
+    }
+
+    const current = list[index];
+    const updatedPermissions: BranchAccessPermissions = {
+      ...(current.permissions || DEFAULT_BRANCH_PERMISSIONS),
+      ...permissions,
+    };
+
+    list[index] = {
+      ...current,
+      permissions: updatedPermissions,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.saveBranchesInternal(list);
+    return list[index];
+  }
+
+  /**
+   * Reset or change a branch login password.
+   */
+  public resetBranchPassword(id: string, newPassword: string): Branch {
+    const list = this.getBranchesInternal();
+    const index = list.findIndex((b) => b.id === id);
+
+    if (index === -1) {
+      throw new Error(`Branch with ID "${id}" not found.`);
+    }
+
+    list[index] = {
+      ...list[index],
+      password: newPassword,
       updatedAt: new Date().toISOString(),
     };
 

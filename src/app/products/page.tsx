@@ -1,41 +1,23 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
+import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAppSelector, RootState } from '@/store';
 import { hasPermission } from '@/lib/permissions';
 import {
   useGetProductsQuery,
   useGetVariantsQuery,
-  useGetBrandsQuery,
-  useGetCategoriesQuery,
 } from '@/store/services/apiSlice';
 import Toast, { ToastMessage } from '@/components/common/Toast';
 import ProductsTab from '@/components/products/ProductsTab';
-import VariantsTab from '@/components/products/VariantsTab';
-import BrandsTab from '@/components/products/BrandsTab';
-import CategoriesTab from '@/components/products/CategoriesTab';
-import SizesTab from '@/components/products/SizesTab';
-import ThicknessTab from '@/components/products/ThicknessTab';
 import {
-  Package,
-  Layers,
-  Award,
-  Maximize2,
-  Sliders,
-  Boxes,
+  Plus,
+  Settings,
   ShieldAlert,
 } from 'lucide-react';
 
-type ProductCatalogueTab =
-  | 'products'
-  | 'variants'
-  | 'brands'
-  | 'categories'
-  | 'sizes'
-  | 'thickness';
-
-export default function ProductsPage() {
+function ProductsPageContent() {
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
 
   // Access control
@@ -43,16 +25,13 @@ export default function ProductsPage() {
   const canManagePricing = hasPermission(currentUser, 'pricing:manage');
   const canViewCatalogue = hasPermission(currentUser, 'catalogue:view') || canManageCatalogue;
 
-  const [activeTab, setActiveTab] = useState<ProductCatalogueTab>('products');
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   // Query high-level counts
   const { data: products = [] } = useGetProductsQuery();
   const { data: variants = [] } = useGetVariantsQuery();
-  const { data: brands = [] } = useGetBrandsQuery();
-  const { data: categories = [] } = useGetCategoriesQuery();
 
-  const activeVariantsCount = variants.filter((v) => v.status === 'active').length;
+  const activeVariantsCount = variants.filter((v) => v.status === 'active' || v.status === 'ACTIVE').length;
 
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({
@@ -62,20 +41,6 @@ export default function ProductsPage() {
       message,
     });
   };
-
-  const tabs: Array<{
-    id: ProductCatalogueTab;
-    label: string;
-    icon: React.ComponentType<{ className?: string }>;
-    count?: number;
-  }> = [
-    { id: 'products', label: 'Products', icon: Package, count: products.length },
-    { id: 'variants', label: 'Variants & SKUs', icon: Boxes, count: variants.length },
-    { id: 'brands', label: 'Brands', icon: Award, count: brands.length },
-    { id: 'categories', label: 'Categories', icon: Layers, count: categories.length },
-    { id: 'sizes', label: 'Sizes', icon: Maximize2 },
-    { id: 'thickness', label: 'Thickness', icon: Sliders },
-  ];
 
   if (currentUser && !canViewCatalogue) {
     return (
@@ -93,30 +58,49 @@ export default function ProductsPage() {
 
   return (
     <AppLayout>
-      {/* Header with Stats */}
+      {/* Header with Stats & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans">
             Product Catalogue & Pricing
           </h1>
-          <p className="text-[13px] sm:text-sm text-gray-500 mt-0.5 font-normal">
-            Manage brands, brand-specific categories, dimensions, SKUs and dual retail/wholesale prices
+          <p className="text-xs sm:text-sm text-gray-500 mt-0.5 font-normal">
+            Browse mattress products, specifications, retail/wholesale rates and stock levels
           </p>
         </div>
 
-        {/* Live Counters */}
+        {/* Live Counters and Navigation */}
         <div className="flex items-center gap-3">
           <div className="bg-white px-3.5 py-2 rounded-xl border border-gray-200/80 shadow-2xs">
-            <span className="text-xs text-gray-400 block font-normal">Active SKUs</span>
-            <span className="text-lg font-bold text-gray-900 font-mono">
+            <span className="text-[11px] text-gray-400 block font-normal">Active SKUs</span>
+            <span className="text-base font-bold text-gray-900 font-mono">
               {activeVariantsCount} <span className="text-xs font-normal text-gray-400">/ {variants.length}</span>
             </span>
           </div>
 
           <div className="bg-white px-3.5 py-2 rounded-xl border border-gray-200/80 shadow-2xs">
-            <span className="text-xs text-gray-400 block font-normal">Total Products</span>
-            <span className="text-lg font-bold text-brand-blue font-mono">{products.length}</span>
+            <span className="text-[11px] text-gray-400 block font-normal">Total Products</span>
+            <span className="text-base font-bold text-brand-blue font-mono">{products.length}</span>
           </div>
+
+          <Link
+            href="/settings/products"
+            className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+            title="Configure Brands, Categories, Sizes and Thicknesses"
+          >
+            <Settings className="w-4 h-4 text-gray-600" />
+            <span className="hidden md:inline">Master Data</span>
+          </Link>
+
+          {canManageCatalogue && (
+            <Link
+              href="/products/new"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-blue hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Product</span>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -133,77 +117,24 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Tab Navigation Strip */}
-      <div className="flex items-center gap-1.5 mb-6 text-sm font-medium bg-white p-1.5 rounded-xl border border-gray-200/80 w-full sm:w-fit overflow-x-auto shadow-2xs">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-colors cursor-pointer whitespace-nowrap text-xs sm:text-sm font-medium ${
-                isActive
-                  ? 'bg-brand-blue text-white shadow-xs'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-              {typeof tab.count === 'number' && (
-                <span
-                  className={`text-[11px] px-1.5 py-0.2 rounded-full font-semibold ${
-                    isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Tab Content */}
-      <div className="transition-all">
-        {activeTab === 'products' && (
-          <ProductsTab
-            canManage={canManageCatalogue}
-            canManagePricing={canManagePricing}
-            onToast={showToast}
-            currentUserEmail={currentUser?.email}
-          />
-        )}
-
-        {activeTab === 'variants' && (
-          <VariantsTab
-            canManage={canManageCatalogue}
-            canManagePricing={canManagePricing}
-            onToast={showToast}
-            currentUserEmail={currentUser?.email}
-          />
-        )}
-
-        {activeTab === 'brands' && (
-          <BrandsTab canManage={canManageCatalogue} onToast={showToast} />
-        )}
-
-        {activeTab === 'categories' && (
-          <CategoriesTab canManage={canManageCatalogue} onToast={showToast} />
-        )}
-
-        {activeTab === 'sizes' && (
-          <SizesTab canManage={canManageCatalogue} onToast={showToast} />
-        )}
-
-        {activeTab === 'thickness' && (
-          <ThicknessTab canManage={canManageCatalogue} onToast={showToast} />
-        )}
-      </div>
+      {/* Main Products List Table */}
+      <ProductsTab
+        canManage={canManageCatalogue}
+        canManagePricing={canManagePricing}
+        onToast={showToast}
+        currentUserEmail={currentUser?.email}
+      />
 
       {/* Toast Notification Container */}
       <Toast toast={toast} onClose={() => setToast(null)} />
     </AppLayout>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-500 font-sans">Loading Products...</div>}>
+      <ProductsPageContent />
+    </Suspense>
   );
 }

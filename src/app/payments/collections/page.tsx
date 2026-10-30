@@ -8,24 +8,18 @@ import {
   useGetInvoicesQuery,
   useGetPaymentCollectionsQuery,
   useCreatePaymentCollectionMutation,
-  useGetBranchesQuery,
 } from '@/store/services/apiSlice';
 import { useAppSelector } from '@/store';
-import { Customer, Invoice, PaymentCollection, PaymentMethod } from '@/types';
+import { PaymentCollection, PaymentMethod } from '@/types';
 import {
   Receipt,
-  Search,
   CheckCircle2,
   DollarSign,
   AlertCircle,
   Clock,
   Printer,
   Calendar,
-  Building2,
-  Truck,
-  User,
   ArrowRight,
-  ShieldCheck,
   CreditCard,
   Banknote,
   Building,
@@ -39,10 +33,9 @@ function CollectionsContent() {
   const currentUser = useAppSelector((state) => state.auth.currentUser);
 
   // Queries
-  const { data: customers = [], isLoading: isCustLoading } = useGetCustomersQuery();
-  const { data: invoices = [], isLoading: isInvLoading } = useGetInvoicesQuery({});
+  const { data: customers = [] } = useGetCustomersQuery();
+  const { data: invoices = [] } = useGetInvoicesQuery({});
   const { data: collections = [], isLoading: isColLoading } = useGetPaymentCollectionsQuery();
-  const { data: branches = [] } = useGetBranchesQuery();
 
   const [createCollectionMutation, { isLoading: isPosting }] =
     useCreatePaymentCollectionMutation();
@@ -140,7 +133,7 @@ function CollectionsContent() {
     }
 
     const allocList = Object.entries(allocations)
-      .filter(([_, amt]) => amt > 0)
+      .filter(([, amt]) => amt > 0)
       .map(([invoiceId, allocatedAmount]) => {
         const inv = openInvoices.find((i) => i.id === invoiceId);
         return {

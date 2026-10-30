@@ -34,8 +34,6 @@ export default function POSHeader({
   onNewSaleClick,
   onHoldSaleClick,
   onOpenSettings,
-  onBranchChange,
-  branches = [],
   isSuperAdmin = false,
 }: POSHeaderProps) {
   const isRetailAllowed = activeBranch?.settings?.allowRetailSales ?? true;
@@ -101,33 +99,22 @@ export default function POSHeader({
 
       {/* Right: Actions & Indicators */}
       <div className="flex items-center gap-2 shrink-0">
-        {/* Branch Selector for Super Admin or Badge for Cashier */}
-        {isSuperAdmin && branches.length > 0 ? (
-          <div className="relative hidden md:flex items-center">
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-medium">
-              <Store className="w-3.5 h-3.5 text-blue-600" />
-              <select
-                value={activeBranch?.id || ''}
-                onChange={(e) => onBranchChange?.(e.target.value)}
-                className="bg-transparent border-none text-xs font-semibold text-slate-800 focus:outline-hidden cursor-pointer"
-                aria-label="Select active POS branch"
-              >
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} {!b.settings?.allowRetailSales ? '(Retail Off)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        ) : (
-          <div className="hidden md:flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-medium">
-            <Store className="w-3.5 h-3.5 text-blue-600" />
-            <span className="font-semibold text-slate-800 truncate max-w-[140px]">
-              {activeBranch?.name || 'Main Branch'}
-            </span>
-          </div>
-        )}
+        {/* Branch Identity Badge (Fixed to authenticated account context - no dropdown switching) */}
+        <div className="hidden md:flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-medium">
+          <Store className="w-3.5 h-3.5 text-blue-600" />
+          <span className="font-semibold text-slate-800 truncate max-w-[170px]">
+            {activeBranch?.name || 'Main Branch'}
+          </span>
+        </div>
+
+        {/* Back to Management Link for authorized accounts */}
+        <Link
+          href={isSuperAdmin ? '/admin/dashboard' : '/manage-stock'}
+          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-brand-burgundy hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+          title="Return to ERP Management Portal"
+        >
+          <span>Management</span>
+        </Link>
 
         {/* F2: New Sale */}
         <button

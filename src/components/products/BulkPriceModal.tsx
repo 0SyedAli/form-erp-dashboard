@@ -32,6 +32,7 @@ export default function BulkPriceModal({
   const [selectedProductId, setSelectedProductId] = useState<string>('all');
   const [retailPercent, setRetailPercent] = useState<string>('5');
   const [wholesalePercent, setWholesalePercent] = useState<string>('5');
+  const [distributorPercent, setDistributorPercent] = useState<string>('5');
   const [reason, setReason] = useState<string>('Annual catalogue tariff revision');
   const [apiError, setApiError] = useState<string | null>(null);
 
@@ -54,6 +55,7 @@ export default function BulkPriceModal({
     setApiError(null);
     const rPct = parseFloat(retailPercent) || 0;
     const wPct = parseFloat(wholesalePercent) || 0;
+    const dPct = parseFloat(distributorPercent) || 0;
 
     if (targetVariants.length === 0) {
       setApiError('No variants match the selected brand/product filter.');
@@ -64,11 +66,14 @@ export default function BulkPriceModal({
       const updates = targetVariants.map((v) => {
         const newRetail = Math.max(0, Math.round(v.retailPrice * (1 + rPct / 100)));
         const newWholesale = Math.max(0, Math.round(v.wholesalePrice * (1 + wPct / 100)));
+        const currentDist = v.distributorPrice ?? Math.round(v.wholesalePrice * 0.88);
+        const newDistributor = Math.max(0, Math.round(currentDist * (1 + dPct / 100)));
 
         return {
           variantId: v.id,
           retailPrice: newRetail,
           wholesalePrice: newWholesale,
+          distributorPrice: newDistributor,
         };
       });
 
@@ -170,11 +175,11 @@ export default function BulkPriceModal({
             </div>
           </div>
 
-          {/* Adjustment Inputs */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Adjustment Inputs - 3 Tiers */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-                Retail Adjustment (%)
+                Retail Adj. (%)
               </label>
               <div className="relative">
                 <input
@@ -189,12 +194,12 @@ export default function BulkPriceModal({
                   %
                 </span>
               </div>
-              <p className="text-[11px] text-gray-400 mt-1">Use negative for markdown (e.g. -5)</p>
+              <p className="text-[11px] text-gray-400 mt-1">Walk-in counter rate</p>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-                Wholesale Adjustment (%)
+                Wholesale Adj. (%)
               </label>
               <div className="relative">
                 <input
@@ -209,7 +214,27 @@ export default function BulkPriceModal({
                   %
                 </span>
               </div>
-              <p className="text-[11px] text-gray-400 mt-1">Use negative for markdown</p>
+              <p className="text-[11px] text-gray-400 mt-1">Dealer wholesale rate</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-purple-800 uppercase tracking-wider mb-1">
+                Distributor Adj. (%)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.5"
+                  value={distributorPercent}
+                  onChange={(e) => setDistributorPercent(e.target.value)}
+                  placeholder="+5"
+                  className="w-full pl-3 pr-8 py-2 bg-purple-50/50 border border-purple-200 rounded-lg text-sm font-semibold text-purple-950 focus:outline-hidden focus:border-purple-600 focus:bg-white"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400 font-bold text-xs">
+                  %
+                </span>
+              </div>
+              <p className="text-[11px] text-purple-600 mt-1">Authorized distributors</p>
             </div>
           </div>
 

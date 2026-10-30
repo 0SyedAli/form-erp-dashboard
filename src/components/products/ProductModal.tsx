@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { CatalogueProduct } from '@/types';
@@ -62,7 +62,7 @@ export default function ProductModal({
     register,
     handleSubmit,
     setValue,
-    watch,
+    control,
     reset,
     formState: { errors },
   } = useForm<ProductFormData>({
@@ -78,8 +78,8 @@ export default function ProductModal({
     },
   });
 
-  const selectedBrandId = watch('brandId');
-  const imageUrlValue = watch('imageUrl');
+  const selectedBrandId = useWatch({ control, name: 'brandId' });
+  const imageUrlValue = useWatch({ control, name: 'imageUrl' });
 
   // Filter categories to only those belonging to the selected brand
   const brandCategories = useMemo(() => {
@@ -112,8 +112,12 @@ export default function ProductModal({
         status: 'active',
       });
     }
-    setApiError(null);
   }, [product, brands, reset, isOpen]);
+
+  const handleClose = () => {
+    setApiError(null);
+    onClose();
+  };
 
   // When brand changes, if current category does not belong to new brand, reset it
   const handleBrandChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -184,7 +188,7 @@ export default function ProductModal({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
             aria-label="Close modal"
           >
@@ -327,7 +331,7 @@ export default function ProductModal({
           <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium transition-colors cursor-pointer"
             >
               Cancel

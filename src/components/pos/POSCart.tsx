@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import {
   POSCartItem,
   PaymentMethod,
@@ -25,7 +26,6 @@ import {
   Truck,
   Calendar,
   ShieldAlert,
-  ShieldCheck,
   ChevronRight,
 } from 'lucide-react';
 
@@ -278,10 +278,13 @@ export default function POSCart({
                 <div className="flex items-start gap-2.5">
                   <div className="w-11 h-11 bg-slate-100 rounded-lg overflow-hidden shrink-0 border border-slate-200">
                     {item.imageUrl ? (
-                      <img
+                      <Image
                         src={item.imageUrl}
                         alt={item.productName}
+                        width={44}
+                        height={44}
                         className="w-full h-full object-cover"
+                        unoptimized
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-slate-300">

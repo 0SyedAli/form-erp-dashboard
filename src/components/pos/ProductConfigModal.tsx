@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import Image from 'next/image';
 import {
   CatalogueProduct,
   ProductVariant,
@@ -122,19 +123,22 @@ export default function ProductConfigModal({
   }, [selectedVariant, inventoryBalances, existingCartQuantity]);
 
   // Multi-tier price resolution based on active saleType
-  const getVariantPrice = (v?: ProductVariant | null) => {
-    if (!v) return 0;
-    if (saleType === 'WHOLESALE') return v.wholesalePrice || 0;
-    if (saleType === 'DISTRIBUTOR') return v.distributorPrice || v.wholesalePrice || 0;
-    return v.walkInPrice || v.retailPrice || 0;
-  };
+  const getVariantPrice = useCallback(
+    (v?: ProductVariant | null) => {
+      if (!v) return 0;
+      if (saleType === 'WHOLESALE') return v.wholesalePrice || 0;
+      if (saleType === 'DISTRIBUTOR') return v.distributorPrice || v.wholesalePrice || 0;
+      return v.walkInPrice || v.retailPrice || 0;
+    },
+    [saleType]
+  );
 
   // Format base starting price
   const basePrice = useMemo(() => {
     if (productVariants.length === 0) return 0;
     const prices = productVariants.map(getVariantPrice).filter((p) => p > 0);
     return prices.length > 0 ? Math.min(...prices) : 0;
-  }, [productVariants, saleType]);
+  }, [productVariants, getVariantPrice]);
 
   // Dynamic unit price
   const unitPrice = getVariantPrice(selectedVariant) || basePrice;
@@ -197,10 +201,13 @@ export default function ProductConfigModal({
           <div className="flex items-center gap-4 bg-slate-50/80 p-3 rounded-xl border border-slate-100">
             <div className="w-16 h-16 bg-white rounded-lg border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
               {product.imageUrl ? (
-                <img
+                <Image
                   src={product.imageUrl}
                   alt={product.name}
+                  width={64}
+                  height={64}
                   className="w-full h-full object-cover"
+                  unoptimized
                 />
               ) : (
                 <Package className="w-8 h-8 text-slate-300" />

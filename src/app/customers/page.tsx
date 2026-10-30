@@ -8,7 +8,7 @@ import {
   useUpdateCustomerMutation,
   useToggleCustomerStatusMutation,
 } from '@/store/services/apiSlice';
-import { Customer, CustomerType, CustomerStatus } from '@/types';
+import { Customer, CustomerStatus } from '@/types';
 import {
   Users,
   Search,
@@ -20,18 +20,12 @@ import {
   Edit2,
   Power,
   FileSpreadsheet,
-  ArrowRight,
   Receipt,
   AlertCircle,
   X,
-  Phone,
-  Mail,
-  MapPin,
   CheckCircle2,
-  DollarSign,
-  Calendar,
 } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 
@@ -74,8 +68,7 @@ export default function CustomersPage() {
     register,
     handleSubmit,
     reset,
-    setValue,
-    watch,
+    control,
     formState: { errors },
   } = useForm<CustomerFormData>({
     resolver: zodResolver(customerSchema),
@@ -96,7 +89,7 @@ export default function CustomersPage() {
     },
   });
 
-  const creditEnabled = watch('creditEnabled');
+  const creditEnabled = useWatch({ control, name: 'creditEnabled' });
 
   // Open Create Drawer
   const handleOpenCreate = () => {

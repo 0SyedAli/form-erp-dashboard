@@ -10,15 +10,10 @@ import {
   ArrowLeft,
   FileSpreadsheet,
   Printer,
-  CreditCard,
   Building2,
   Truck,
   User,
-  CheckCircle2,
   Receipt,
-  Download,
-  AlertCircle,
-  Calendar,
 } from 'lucide-react';
 
 interface LedgerPageProps {

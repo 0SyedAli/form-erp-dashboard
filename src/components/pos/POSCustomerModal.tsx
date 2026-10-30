@@ -5,9 +5,7 @@ import { Customer, CustomerType } from '@/types';
 import {
   Search,
   UserPlus,
-  Check,
   X,
-  CreditCard,
   Building2,
   User,
   Truck,

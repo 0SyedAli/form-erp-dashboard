@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ProductVariant } from '@/types';
@@ -16,6 +16,7 @@ import { X, DollarSign, AlertTriangle, ArrowRight } from 'lucide-react';
 const pricingSchema = z.object({
   retailPrice: z.number().min(0, 'Retail price cannot be negative'),
   wholesalePrice: z.number().min(0, 'Wholesale price cannot be negative'),
+  distributorPrice: z.number().min(0, 'Distributor price cannot be negative'),
   reason: z.string().optional(),
 });
 
@@ -50,7 +51,7 @@ export default function EditPriceModal({
   const {
     register,
     handleSubmit,
-    watch,
+    control,
     reset,
     formState: { errors },
   } = useForm<PricingFormData>({
@@ -58,23 +59,30 @@ export default function EditPriceModal({
     defaultValues: {
       retailPrice: 0,
       wholesalePrice: 0,
+      distributorPrice: 0,
       reason: 'Standard seasonal catalogue price revision',
     },
   });
 
-  const currentRetail = watch('retailPrice');
-  const currentWholesale = watch('wholesalePrice');
+  const currentRetail = useWatch({ control, name: 'retailPrice' });
+  const currentWholesale = useWatch({ control, name: 'wholesalePrice' });
+  const currentDistributor = useWatch({ control, name: 'distributorPrice' });
 
   useEffect(() => {
     if (variant) {
       reset({
         retailPrice: variant.retailPrice,
         wholesalePrice: variant.wholesalePrice,
+        distributorPrice: variant.distributorPrice ?? Math.round(variant.wholesalePrice * 0.88),
         reason: '',
       });
-      setApiError(null);
     }
   }, [variant, reset, isOpen]);
+
+  const handleClose = () => {
+    setApiError(null);
+    onClose();
+  };
 
   if (!isOpen || !variant) return null;
 
@@ -84,6 +92,10 @@ export default function EditPriceModal({
 
   const wholesaleExceedsRetail =
     Number(currentWholesale) > Number(currentRetail) && Number(currentRetail) > 0;
+  const distributorExceedsWholesale =
+    Number(currentDistributor) > Number(currentWholesale) && Number(currentWholesale) > 0;
+
+  const prevDistributor = variant.distributorPrice ?? Math.round(variant.wholesalePrice * 0.88);
 
   const onSubmit = async (data: PricingFormData) => {
     setApiError(null);
@@ -92,6 +104,7 @@ export default function EditPriceModal({
         variantId: variant.id,
         retailPrice: Number(data.retailPrice),
         wholesalePrice: Number(data.wholesalePrice),
+        distributorPrice: Number(data.distributorPrice),
         reason: data.reason?.trim() || 'Manual price adjustment',
         changedBy: currentUserEmail,
       }).unwrap();
@@ -122,12 +135,12 @@ export default function EditPriceModal({
                 Update Variant Pricing
               </h2>
               <p className="text-xs text-gray-500">
-                Set individual retail & wholesale rates for SKU
+                Set individual Walk-in, Wholesale &amp; Distributor tariffs for SKU
               </p>
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
             aria-label="Close modal"
           >
@@ -156,11 +169,11 @@ export default function EditPriceModal({
             </div>
           )}
 
-          {/* Pricing Grid */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Pricing Grid - 3 Tiers */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-                Retail Price (PKR) *
+                Walk-in / Retail *
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-400">
@@ -170,7 +183,7 @@ export default function EditPriceModal({
                   type="number"
                   step="1"
                   {...register('retailPrice', { valueAsNumber: true })}
-                  className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 placeholder-gray-400 focus:outline-hidden focus:border-brand-blue focus:bg-white"
+                  className="w-full pl-9 pr-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 placeholder-gray-400 focus:outline-hidden focus:border-brand-blue focus:bg-white"
                 />
               </div>
               {errors.retailPrice && (
@@ -180,7 +193,7 @@ export default function EditPriceModal({
 
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-                Wholesale Price (PKR) *
+                Wholesale *
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-400">
@@ -190,11 +203,31 @@ export default function EditPriceModal({
                   type="number"
                   step="1"
                   {...register('wholesalePrice', { valueAsNumber: true })}
-                  className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 placeholder-gray-400 focus:outline-hidden focus:border-brand-blue focus:bg-white"
+                  className="w-full pl-9 pr-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 placeholder-gray-400 focus:outline-hidden focus:border-brand-blue focus:bg-white"
                 />
               </div>
               {errors.wholesalePrice && (
                 <p className="text-xs text-red-600 mt-1">{errors.wholesalePrice.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-purple-800 uppercase tracking-wider mb-1">
+                Distributor *
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-purple-400">
+                  Rs.
+                </span>
+                <input
+                  type="number"
+                  step="1"
+                  {...register('distributorPrice', { valueAsNumber: true })}
+                  className="w-full pl-9 pr-2 py-2 bg-purple-50/50 border border-purple-200 rounded-lg text-sm font-semibold text-purple-950 placeholder-purple-400 focus:outline-hidden focus:border-purple-600 focus:bg-white"
+                />
+              </div>
+              {errors.distributorPrice && (
+                <p className="text-xs text-red-600 mt-1">{errors.distributorPrice.message}</p>
               )}
             </div>
           </div>
@@ -206,27 +239,45 @@ export default function EditPriceModal({
               <div>
                 <span className="font-semibold block">Pricing Rule Advisory:</span>
                 Wholesale price (Rs. {Number(currentWholesale).toLocaleString()}) is higher than retail
-                price (Rs. {Number(currentRetail).toLocaleString()}). This is permitted for special
-                contract rates, but please verify before saving.
+                price (Rs. {Number(currentRetail).toLocaleString()}).
+              </div>
+            </div>
+          )}
+
+          {/* Warning banner if distributor exceeds wholesale */}
+          {distributorExceedsWholesale && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-xs text-amber-800">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold block">Pricing Rule Advisory:</span>
+                Distributor price (Rs. {Number(currentDistributor).toLocaleString()}) is higher than wholesale
+                price (Rs. {Number(currentWholesale).toLocaleString()}). Primary distributor rates are typically lower than dealer wholesale rates.
               </div>
             </div>
           )}
 
           {/* Price Change Preview */}
-          <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs space-y-1">
-            <span className="font-semibold text-gray-700 block">Price Comparison Preview</span>
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs space-y-1.5">
+            <span className="font-semibold text-gray-700 block">3-Tier Tariff Comparison</span>
             <div className="flex items-center justify-between text-gray-600">
-              <span>Previous Retail: Rs. {variant.retailPrice.toLocaleString()}</span>
+              <span>Retail: Rs. {variant.retailPrice.toLocaleString()}</span>
               <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
               <span className="font-semibold text-gray-900">
-                New Retail: Rs. {Number(currentRetail || 0).toLocaleString()}
+                Rs. {Number(currentRetail || 0).toLocaleString()}
               </span>
             </div>
             <div className="flex items-center justify-between text-gray-600">
-              <span>Previous Wholesale: Rs. {variant.wholesalePrice.toLocaleString()}</span>
+              <span>Wholesale: Rs. {variant.wholesalePrice.toLocaleString()}</span>
               <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
               <span className="font-semibold text-gray-900">
-                New Wholesale: Rs. {Number(currentWholesale || 0).toLocaleString()}
+                Rs. {Number(currentWholesale || 0).toLocaleString()}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-purple-700">
+              <span>Distributor: Rs. {prevDistributor.toLocaleString()}</span>
+              <ArrowRight className="w-3.5 h-3.5 text-purple-400" />
+              <span className="font-semibold text-purple-900">
+                Rs. {Number(currentDistributor || 0).toLocaleString()}
               </span>
             </div>
           </div>
@@ -247,7 +298,7 @@ export default function EditPriceModal({
           <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium transition-colors cursor-pointer"
             >
               Cancel

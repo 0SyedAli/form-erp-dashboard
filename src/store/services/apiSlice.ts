@@ -7,6 +7,7 @@ import {
   TopProductMetric,
   Branch,
   BranchSettings,
+  BranchAccessPermissions,
   Product,
   FilterState,
   User,
@@ -38,6 +39,14 @@ import {
   CustomerAdvance,
   PriceListItem,
   PriceListType,
+  Supplier,
+  PurchaseOrder,
+  GoodsReceiptNote,
+  SupplierBill,
+  SupplierPayment,
+  SupplierLedgerEntry,
+  PurchaseReturn,
+  PurchasingDashboardKPIs,
 } from '@/types';
 import { SHARED_PRODUCT_CATALOGUE } from '@/data/mockData';
 import { 
@@ -108,6 +117,27 @@ import {
   CreatePaymentCollectionDTO,
   CollectionFilterOptions,
   priceListsRepository,
+  suppliersRepository,
+  CreateSupplierDTO,
+  UpdateSupplierDTO,
+  SupplierFilterOptions,
+  purchaseOrdersRepository,
+  CreatePurchaseOrderDTO,
+  UpdatePurchaseOrderDTO,
+  PurchaseOrderFilterOptions,
+  goodsReceiptsRepository,
+  ReceiveGoodsDTO,
+  GoodsReceiptFilterOptions,
+  supplierLedgerRepository,
+  purchaseBillsRepository,
+  CreateSupplierBillDTO,
+  SupplierBillFilterOptions,
+  supplierPaymentsRepository,
+  CreateSupplierPaymentDTO,
+  SupplierPaymentFilterOptions,
+  purchaseReturnsRepository,
+  CreatePurchaseReturnDTO,
+  PurchaseReturnFilterOptions,
 } from '@/lib/demo-db';
 
 // Simulated latency helper for realistic demo feedback
@@ -142,6 +172,13 @@ export const erpApi = createApi({
     'PaymentCollections',
     'PriceLists',
     'CustomerAdvances',
+    'Suppliers',
+    'PurchaseOrders',
+    'GoodsReceipts',
+    'SupplierBills',
+    'SupplierPayments',
+    'SupplierLedger',
+    'PurchaseReturns',
   ],
   endpoints: (builder) => ({
     getBranches: builder.query<Branch[], BranchFilterOptions | void>({
@@ -252,6 +289,44 @@ export const erpApi = createApi({
         await delay(80);
         try {
           const updated = branchesRepository.updateSettings(id, settings);
+          return { data: updated };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: 'Branches', id },
+        { type: 'Branches', id: 'LIST' },
+      ],
+    }),
+
+    updateBranchPermissions: builder.mutation<
+      Branch,
+      { id: string; permissions: Partial<BranchAccessPermissions> }
+    >({
+      async queryFn({ id, permissions }) {
+        await delay(80);
+        try {
+          const updated = branchesRepository.updatePermissions(id, permissions);
+          return { data: updated };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: 'Branches', id },
+        { type: 'Branches', id: 'LIST' },
+      ],
+    }),
+
+    resetBranchPassword: builder.mutation<
+      Branch,
+      { id: string; password: string }
+    >({
+      async queryFn({ id, password }) {
+        await delay(80);
+        try {
+          const updated = branchesRepository.resetBranchPassword(id, password);
           return { data: updated };
         } catch (error) {
           return { error: { status: 400, data: (error as Error).message } };
@@ -1873,6 +1948,461 @@ export const erpApi = createApi({
       },
       invalidatesTags: ['PriceLists', 'Variants', 'PricingHistory'],
     }),
+
+    // Flow 08 Suppliers Endpoints
+    getSuppliers: builder.query<Supplier[], SupplierFilterOptions | void>({
+      async queryFn(filter) {
+        await delay(80);
+        try {
+          const data = suppliersRepository.getAll(filter || undefined);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.map(({ id }) => ({ type: 'Suppliers' as const, id })),
+              { type: 'Suppliers', id: 'LIST' },
+            ]
+          : [{ type: 'Suppliers', id: 'LIST' }],
+    }),
+
+    getSupplierById: builder.query<Supplier | null, string>({
+      async queryFn(id) {
+        await delay(60);
+        try {
+          const data = suppliersRepository.getById(id);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (_res, _err, id) => [{ type: 'Suppliers', id }],
+    }),
+
+    createSupplier: builder.mutation<Supplier, CreateSupplierDTO>({
+      async queryFn(dto) {
+        await delay(120);
+        try {
+          const data = suppliersRepository.create(dto);
+          return { data };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: [{ type: 'Suppliers', id: 'LIST' }, 'KPIs'],
+    }),
+
+    updateSupplier: builder.mutation<Supplier, { id: string; data: UpdateSupplierDTO }>({
+      async queryFn({ id, data }) {
+        await delay(100);
+        try {
+          const res = suppliersRepository.update(id, data);
+          return { data: res };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: (_res, _err, { id }) => [
+        { type: 'Suppliers', id },
+        { type: 'Suppliers', id: 'LIST' },
+      ],
+    }),
+
+    toggleSupplierStatus: builder.mutation<Supplier, string>({
+      async queryFn(id) {
+        await delay(80);
+        try {
+          const data = suppliersRepository.toggleStatus(id);
+          return { data };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: (_res, _err, id) => [
+        { type: 'Suppliers', id },
+        { type: 'Suppliers', id: 'LIST' },
+      ],
+    }),
+
+    // Flow 08 Purchase Orders Endpoints
+    getPurchaseOrders: builder.query<PurchaseOrder[], PurchaseOrderFilterOptions | void>({
+      async queryFn(filter) {
+        await delay(80);
+        try {
+          const data = purchaseOrdersRepository.getAll(filter || undefined);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.map(({ id }) => ({ type: 'PurchaseOrders' as const, id })),
+              { type: 'PurchaseOrders', id: 'LIST' },
+            ]
+          : [{ type: 'PurchaseOrders', id: 'LIST' }],
+    }),
+
+    getPurchaseOrderById: builder.query<PurchaseOrder | null, string>({
+      async queryFn(id) {
+        await delay(60);
+        try {
+          const data = purchaseOrdersRepository.getById(id);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (_res, _err, id) => [{ type: 'PurchaseOrders', id }],
+    }),
+
+    createPurchaseOrder: builder.mutation<PurchaseOrder, CreatePurchaseOrderDTO>({
+      async queryFn(dto) {
+        await delay(120);
+        try {
+          const data = purchaseOrdersRepository.create(dto);
+          return { data };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: [{ type: 'PurchaseOrders', id: 'LIST' }, 'KPIs'],
+    }),
+
+    updatePurchaseOrder: builder.mutation<PurchaseOrder, { id: string; data: UpdatePurchaseOrderDTO }>({
+      async queryFn({ id, data }) {
+        await delay(100);
+        try {
+          const res = purchaseOrdersRepository.update(id, data);
+          return { data: res };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: (_res, _err, { id }) => [
+        { type: 'PurchaseOrders', id },
+        { type: 'PurchaseOrders', id: 'LIST' },
+      ],
+    }),
+
+    approvePurchaseOrder: builder.mutation<PurchaseOrder, { id: string; approvedBy: string }>({
+      async queryFn({ id, approvedBy }) {
+        await delay(100);
+        try {
+          const data = purchaseOrdersRepository.approve(id, approvedBy);
+          return { data };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: (_res, _err, { id }) => [
+        { type: 'PurchaseOrders', id },
+        { type: 'PurchaseOrders', id: 'LIST' },
+        'KPIs',
+      ],
+    }),
+
+    cancelPurchaseOrder: builder.mutation<PurchaseOrder, { id: string; reason?: string }>({
+      async queryFn({ id, reason }) {
+        await delay(100);
+        try {
+          const data = purchaseOrdersRepository.cancel(id, reason);
+          return { data };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: (_res, _err, { id }) => [
+        { type: 'PurchaseOrders', id },
+        { type: 'PurchaseOrders', id: 'LIST' },
+        'KPIs',
+      ],
+    }),
+
+    // Flow 08 Goods Receipts Endpoints
+    getGoodsReceipts: builder.query<GoodsReceiptNote[], GoodsReceiptFilterOptions | void>({
+      async queryFn(filter) {
+        await delay(80);
+        try {
+          const data = goodsReceiptsRepository.getAll(filter || undefined);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.map(({ id }) => ({ type: 'GoodsReceipts' as const, id })),
+              { type: 'GoodsReceipts', id: 'LIST' },
+            ]
+          : [{ type: 'GoodsReceipts', id: 'LIST' }],
+    }),
+
+    getGoodsReceiptById: builder.query<GoodsReceiptNote | null, string>({
+      async queryFn(id) {
+        await delay(60);
+        try {
+          const data = goodsReceiptsRepository.getById(id);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (_res, _err, id) => [{ type: 'GoodsReceipts', id }],
+    }),
+
+    receiveGoods: builder.mutation<{ grn: GoodsReceiptNote }, ReceiveGoodsDTO>({
+      async queryFn(dto) {
+        await delay(150);
+        try {
+          const res = goodsReceiptsRepository.receiveGoods(dto);
+          return { data: { grn: res.grn } };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: [
+        'GoodsReceipts',
+        'PurchaseOrders',
+        'InventoryBalances',
+        'StockMovements',
+        'KPIs',
+      ],
+    }),
+
+    // Flow 08 Supplier Bills Endpoints
+    getSupplierBills: builder.query<SupplierBill[], SupplierBillFilterOptions | void>({
+      async queryFn(filter) {
+        await delay(80);
+        try {
+          const data = purchaseBillsRepository.getAll(filter || undefined);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.map(({ id }) => ({ type: 'SupplierBills' as const, id })),
+              { type: 'SupplierBills', id: 'LIST' },
+            ]
+          : [{ type: 'SupplierBills', id: 'LIST' }],
+    }),
+
+    getSupplierBillById: builder.query<SupplierBill | null, string>({
+      async queryFn(id) {
+        await delay(60);
+        try {
+          const data = purchaseBillsRepository.getById(id);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (_res, _err, id) => [{ type: 'SupplierBills', id }],
+    }),
+
+    createSupplierBill: builder.mutation<SupplierBill, CreateSupplierBillDTO>({
+      async queryFn(dto) {
+        await delay(120);
+        try {
+          const data = purchaseBillsRepository.create(dto);
+          return { data };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: ['SupplierBills', 'Suppliers', 'SupplierLedger', 'PurchaseOrders', 'KPIs'],
+    }),
+
+    // Flow 08 Supplier Payments Endpoints
+    getSupplierPayments: builder.query<SupplierPayment[], SupplierPaymentFilterOptions | void>({
+      async queryFn(filter) {
+        await delay(80);
+        try {
+          const data = supplierPaymentsRepository.getAll(filter || undefined);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.map(({ id }) => ({ type: 'SupplierPayments' as const, id })),
+              { type: 'SupplierPayments', id: 'LIST' },
+            ]
+          : [{ type: 'SupplierPayments', id: 'LIST' }],
+    }),
+
+    getSupplierPaymentById: builder.query<SupplierPayment | null, string>({
+      async queryFn(id) {
+        await delay(60);
+        try {
+          const data = supplierPaymentsRepository.getById(id);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (_res, _err, id) => [{ type: 'SupplierPayments', id }],
+    }),
+
+    createSupplierPayment: builder.mutation<SupplierPayment, CreateSupplierPaymentDTO>({
+      async queryFn(dto) {
+        await delay(120);
+        try {
+          const data = supplierPaymentsRepository.create(dto);
+          return { data };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: [
+        'SupplierPayments',
+        'SupplierBills',
+        'Suppliers',
+        'SupplierLedger',
+        'KPIs',
+      ],
+    }),
+
+    // Flow 08 Supplier Ledger Endpoints
+    getSupplierLedger: builder.query<SupplierLedgerEntry[], string>({
+      async queryFn(supplierId) {
+        await delay(80);
+        try {
+          const data = supplierLedgerRepository.getLedger(supplierId);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (_res, _err, supplierId) => [{ type: 'SupplierLedger', id: supplierId }],
+    }),
+
+    getSupplierLedgerSummary: builder.query<
+      { totalBilled: number; totalPaid: number; totalDebitNotes: number; currentBalance: number },
+      string
+    >({
+      async queryFn(supplierId) {
+        await delay(60);
+        try {
+          const data = supplierLedgerRepository.getSummary(supplierId);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (_res, _err, supplierId) => [{ type: 'SupplierLedger', id: supplierId }],
+    }),
+
+    // Flow 08 Purchase Returns Endpoints
+    getPurchaseReturns: builder.query<PurchaseReturn[], PurchaseReturnFilterOptions | void>({
+      async queryFn(filter) {
+        await delay(80);
+        try {
+          const data = purchaseReturnsRepository.getAll(filter || undefined);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.map(({ id }) => ({ type: 'PurchaseReturns' as const, id })),
+              { type: 'PurchaseReturns', id: 'LIST' },
+            ]
+          : [{ type: 'PurchaseReturns', id: 'LIST' }],
+    }),
+
+    getPurchaseReturnById: builder.query<PurchaseReturn | null, string>({
+      async queryFn(id) {
+        await delay(60);
+        try {
+          const data = purchaseReturnsRepository.getById(id);
+          return { data };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: (_res, _err, id) => [{ type: 'PurchaseReturns', id }],
+    }),
+
+    createPurchaseReturn: builder.mutation<PurchaseReturn, CreatePurchaseReturnDTO>({
+      async queryFn(dto) {
+        await delay(120);
+        try {
+          const data = purchaseReturnsRepository.create(dto);
+          return { data };
+        } catch (error) {
+          return { error: { status: 400, data: (error as Error).message } };
+        }
+      },
+      invalidatesTags: [
+        'PurchaseReturns',
+        'SupplierBills',
+        'Suppliers',
+        'SupplierLedger',
+        'InventoryBalances',
+        'StockMovements',
+        'KPIs',
+      ],
+    }),
+
+    // Flow 08 Purchasing Dashboard KPIs Endpoint
+    getPurchasingDashboardKPIs: builder.query<PurchasingDashboardKPIs, { branchId?: string } | void>({
+      async queryFn(args) {
+        await delay(80);
+        try {
+          const branchId = args?.branchId;
+          const poSummary = purchaseOrdersRepository.getSummary(branchId);
+          const billsSummary = purchaseBillsRepository.getSummary(branchId);
+          const returns = purchaseReturnsRepository.getAll(branchId && branchId !== 'all' ? { branchId } : undefined);
+          const payments = supplierPaymentsRepository.getAll(branchId && branchId !== 'all' ? { branchId } : undefined);
+
+          const openPOs =
+            poSummary.pendingApproval + poSummary.approved + poSummary.partiallyReceived;
+          const pendingGoodsReceipts = poSummary.approved + poSummary.partiallyReceived;
+
+          const totalPaidToSuppliers = payments.reduce((sum, p) => sum + p.amount, 0);
+          const totalDebitNotesValue = returns.reduce((sum, r) => sum + r.totalAmount, 0);
+
+          const kpis: PurchasingDashboardKPIs = {
+            totalPurchasesValue: billsSummary.totalAmount,
+            totalPurchaseOrdersCount: poSummary.totalOrders,
+            pendingPurchaseOrdersCount: openPOs,
+            pendingGoodsReceiptsCount: pendingGoodsReceipts,
+            totalSupplierPayables: billsSummary.totalDue,
+            overdueBillsCount: billsSummary.overdueBillsCount,
+            overdueBillsAmount: billsSummary.overdueBillsAmount,
+            supplierPaymentsThisMonth: totalPaidToSuppliers,
+            purchaseReturnsCount: returns.length,
+            purchaseReturnsValue: totalDebitNotesValue,
+          };
+
+          return { data: kpis };
+        } catch (error) {
+          return { error: { status: 500, data: (error as Error).message } };
+        }
+      },
+      providesTags: [
+        'PurchaseOrders',
+        'GoodsReceipts',
+        'SupplierBills',
+        'SupplierPayments',
+        'PurchaseReturns',
+        'Suppliers',
+        'KPIs',
+      ],
+    }),
   }),
 });
 
@@ -1884,6 +2414,8 @@ export const {
   useUpdateBranchMutation,
   useToggleBranchStatusMutation,
   useUpdateBranchSettingsMutation,
+  useUpdateBranchPermissionsMutation,
+  useResetBranchPasswordMutation,
   useResetDemoDataMutation,
   useGetProductCatalogueQuery,
   useGetInvoicesQuery,
@@ -1991,6 +2523,40 @@ export const {
   useGetCustomerAdvancesQuery,
   useGetPriceListsQuery,
   useSetPriceListItemMutation,
+  // Flow 08 Suppliers Hooks
+  useGetSuppliersQuery,
+  useGetSupplierByIdQuery,
+  useCreateSupplierMutation,
+  useUpdateSupplierMutation,
+  useToggleSupplierStatusMutation,
+  // Flow 08 Purchase Orders Hooks
+  useGetPurchaseOrdersQuery,
+  useGetPurchaseOrderByIdQuery,
+  useCreatePurchaseOrderMutation,
+  useUpdatePurchaseOrderMutation,
+  useApprovePurchaseOrderMutation,
+  useCancelPurchaseOrderMutation,
+  // Flow 08 Goods Receipts Hooks
+  useGetGoodsReceiptsQuery,
+  useGetGoodsReceiptByIdQuery,
+  useReceiveGoodsMutation,
+  // Flow 08 Supplier Bills Hooks
+  useGetSupplierBillsQuery,
+  useGetSupplierBillByIdQuery,
+  useCreateSupplierBillMutation,
+  // Flow 08 Supplier Payments Hooks
+  useGetSupplierPaymentsQuery,
+  useGetSupplierPaymentByIdQuery,
+  useCreateSupplierPaymentMutation,
+  // Flow 08 Supplier Ledger Hooks
+  useGetSupplierLedgerQuery,
+  useGetSupplierLedgerSummaryQuery,
+  // Flow 08 Purchase Returns Hooks
+  useGetPurchaseReturnsQuery,
+  useGetPurchaseReturnByIdQuery,
+  useCreatePurchaseReturnMutation,
+  // Flow 08 Purchasing Dashboard KPIs Hook
+  useGetPurchasingDashboardKPIsQuery,
 } = erpApi;
 
 // Flow 04 Alias Hook Exports for direct naming consistency

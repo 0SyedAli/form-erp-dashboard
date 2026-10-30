@@ -3,12 +3,15 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
-import { Branch, BranchSettings } from '@/types';
+import { Branch, BranchSettings, BranchAccessPermissions } from '@/types';
+import { DEFAULT_BRANCH_PERMISSIONS } from '@/lib/demo-db';
 import { useAppSelector } from '@/store';
 import {
   useGetBranchesQuery,
   useGetBranchCountsQuery,
   useUpdateBranchSettingsMutation,
+  useUpdateBranchPermissionsMutation,
+  useResetBranchPasswordMutation,
 } from '@/store/services/apiSlice';
 import AddBranchModal from '@/components/branches/AddBranchModal';
 import EditBranchModal from '@/components/branches/EditBranchModal';
@@ -25,6 +28,9 @@ import {
   ExternalLink,
   ShieldAlert,
   Camera,
+  KeyRound,
+  ShieldCheck,
+  CheckCircle2,
 } from 'lucide-react';
 
 export default function BranchesManagementPage() {
@@ -47,9 +53,12 @@ export default function BranchesManagementPage() {
     useGetBranchCountsQuery();
 
   const [updateSettings, { isLoading: isSavingSettings }] = useUpdateBranchSettingsMutation();
+  const [updatePermissions, { isLoading: isSavingPermissions }] = useUpdateBranchPermissionsMutation();
+  const [resetPassword, { isLoading: isResettingPassword }] = useResetBranchPasswordMutation();
 
   // Selected Branch for detail view & settings
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState('');
 
   // Active selected branch entity
   const selectedBranch = useMemo(() => {
@@ -63,6 +72,7 @@ export default function BranchesManagementPage() {
 
   // Branch Settings pending user overrides (per branch ID)
   const [pendingSettings, setPendingSettings] = useState<Record<string, Partial<BranchSettings>>>({});
+  const [pendingPermissions, setPendingPermissions] = useState<Record<string, Partial<BranchAccessPermissions>>>({});
 
   // Active settings for currently selected branch
   const currentSettings: BranchSettings = useMemo(() => {
@@ -78,6 +88,14 @@ export default function BranchesManagementPage() {
     return { ...saved, ...overrides };
   }, [selectedBranch, pendingSettings]);
 
+  const currentPermissions: BranchAccessPermissions = useMemo(() => {
+    const defaults: BranchAccessPermissions = DEFAULT_BRANCH_PERMISSIONS;
+    if (!selectedBranch) return defaults;
+    const saved = selectedBranch.permissions || defaults;
+    const overrides = pendingPermissions[selectedBranch.id] || {};
+    return { ...saved, ...overrides };
+  }, [selectedBranch, pendingPermissions]);
+
   const toggleSetting = (key: keyof BranchSettings) => {
     if (!selectedBranch) return;
     setPendingSettings((prev) => ({
@@ -86,6 +104,34 @@ export default function BranchesManagementPage() {
         ...(prev[selectedBranch.id] || {}),
         [key]: !currentSettings[key],
       },
+    }));
+  };
+
+  const togglePermission = (key: keyof BranchAccessPermissions) => {
+    if (!selectedBranch) return;
+    setPendingPermissions((prev) => ({
+      ...prev,
+      [selectedBranch.id]: {
+        ...(prev[selectedBranch.id] || {}),
+        [key]: !currentPermissions[key],
+      },
+    }));
+  };
+
+  const setAllPermissions = (enabled: boolean) => {
+    if (!selectedBranch) return;
+    const allKeys: (keyof BranchAccessPermissions)[] = [
+      'pos', 'viewOwnSales', 'viewOwnRevenue', 'viewProducts', 'addEditProducts',
+      'viewStock', 'manageStock', 'stockTransfers', 'customers', 'customerCredit',
+      'purchases', 'suppliers', 'reports', 'returns', 'discountsOverrides'
+    ];
+    const newPerms: Partial<BranchAccessPermissions> = {};
+    allKeys.forEach((k) => {
+      newPerms[k] = enabled;
+    });
+    setPendingPermissions((prev) => ({
+      ...prev,
+      [selectedBranch.id]: newPerms,
     }));
   };
 
@@ -107,14 +153,20 @@ export default function BranchesManagementPage() {
     });
   };
 
-  const handleSaveSettings = async () => {
+  const handleSaveAccessControl = async () => {
     if (!selectedBranch) return;
 
     try {
-      await updateSettings({
-        id: selectedBranch.id,
-        settings: currentSettings,
-      }).unwrap();
+      await Promise.all([
+        updateSettings({
+          id: selectedBranch.id,
+          settings: currentSettings,
+        }).unwrap(),
+        updatePermissions({
+          id: selectedBranch.id,
+          permissions: currentPermissions,
+        }).unwrap(),
+      ]);
 
       setPendingSettings((prev) => {
         const next = { ...prev };
@@ -122,13 +174,40 @@ export default function BranchesManagementPage() {
         return next;
       });
 
+      setPendingPermissions((prev) => {
+        const next = { ...prev };
+        delete next[selectedBranch.id];
+        return next;
+      });
+
       showToast(
         'success',
-        'Operational Settings Updated',
-        `Governance toggles saved for ${selectedBranch.name}.`
+        'Branch Access & Settings Saved',
+        `Permissions and operational settings updated for ${selectedBranch.name}.`
       );
     } catch {
-      showToast('error', 'Update Failed', 'Could not update branch settings.');
+      showToast('error', 'Update Failed', 'Could not update branch access permissions.');
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!selectedBranch || !newPassword.trim()) {
+      showToast('error', 'Password Required', 'Please enter a new password.');
+      return;
+    }
+    try {
+      await resetPassword({
+        id: selectedBranch.id,
+        password: newPassword.trim(),
+      }).unwrap();
+      setNewPassword('');
+      showToast(
+        'success',
+        'Password Reset Successful',
+        `New password established for branch "${selectedBranch.loginId || selectedBranch.code}".`
+      );
+    } catch {
+      showToast('error', 'Reset Failed', 'Could not reset password.');
     }
   };
 
@@ -588,109 +667,239 @@ export default function BranchesManagementPage() {
             </div>
           </div>
 
-          {/* Right Column: Branch Settings */}
-          <div className="bg-white rounded-xl border border-gray-200/80 p-5 shadow-2xs flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-gray-900 text-sm">
-                  Branch Settings & Governance
-                </h3>
-                <span className="text-[11px] text-gray-400">
-                  {selectedBranch.name}
+          {/* Right Column: Branch Account & Permissions */}
+          <div className="bg-white rounded-xl border border-gray-200/80 p-5 shadow-2xs flex flex-col justify-between space-y-6">
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                <div>
+                  <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-brand-blue" />
+                    <span>Branch Account & Access Control</span>
+                  </h3>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    Credentials and module permissions for {selectedBranch.name}
+                  </p>
+                </div>
+                <span className="text-xs font-mono font-bold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md border border-blue-100">
+                  {selectedBranch.code}
                 </span>
               </div>
 
-              <div className="space-y-4 text-xs">
-                {/* Allow Retail Sales */}
-                <div className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50/50">
-                  <div>
-                    <span className="font-semibold text-gray-800 block">Allow Retail Sales</span>
-                    <span className="text-[11px] text-gray-400">
-                      Enable walk-in counter invoicing and POS at this shop
-                    </span>
+              {/* Login Credentials Box */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="w-4 h-4 text-slate-700" />
+                    <span className="text-xs font-bold text-slate-800">Branch Login Credentials</span>
                   </div>
-                  <button
-                    type="button"
+                  <span className="text-[10px] bg-slate-200 text-slate-700 font-semibold px-2 py-0.5 rounded">
+                    Direct POS Login
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="block text-gray-500 font-medium mb-1">Login ID</label>
+                    <div className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg font-mono font-bold text-gray-800">
+                      {selectedBranch.loginId || selectedBranch.code.toLowerCase().replace(/[^a-z0-9]/g, '')}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-500 font-medium mb-1">Reset Password</label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="password"
+                        placeholder="Enter new password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-brand-blue"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleResetPassword}
+                        disabled={isResettingPassword || !newPassword.trim()}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 disabled:opacity-40 text-white rounded-lg text-[11px] font-bold shrink-0 transition-colors cursor-pointer"
+                      >
+                        {isResettingPassword ? '...' : 'Reset'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Module Permissions Header with Bulk Actions */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
+                    Module Access Permissions (15)
+                  </h4>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAllPermissions(true)}
+                      className="text-[11px] font-semibold text-brand-blue hover:underline cursor-pointer"
+                    >
+                      Enable All
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newPerms: Partial<BranchAccessPermissions> = {
+                          pos: true,
+                          viewOwnSales: false,
+                          viewOwnRevenue: false,
+                          viewProducts: false,
+                          addEditProducts: false,
+                          viewStock: false,
+                          manageStock: false,
+                          stockTransfers: false,
+                          customers: false,
+                          customerCredit: false,
+                          purchases: false,
+                          suppliers: false,
+                          reports: false,
+                          returns: false,
+                          discountsOverrides: false,
+                        };
+                        setPendingPermissions((prev) => ({
+                          ...prev,
+                          [selectedBranch.id]: newPerms,
+                        }));
+                      }}
+                      className="text-[11px] font-semibold text-gray-600 hover:underline cursor-pointer"
+                    >
+                      POS Only (Default)
+                    </button>
+                  </div>
+                </div>
+
+                {/* 15 Permissions Grid */}
+                <div className="grid grid-cols-1 gap-2.5 max-h-80 overflow-y-auto pr-1">
+                  {[
+                    { key: 'pos', label: 'POS Counter & Invoicing', desc: 'Allows counter cashiers to create retail and wholesale bills' },
+                    { key: 'viewOwnSales', label: 'View Own Sales History', desc: 'Branch can view past invoices generated at this store' },
+                    { key: 'viewOwnRevenue', label: 'View Revenue & Sales Totals', desc: 'Branch can view revenue analytics and register metrics' },
+                    { key: 'viewProducts', label: 'View Product Catalogue', desc: 'Can browse product prices, sizes, and specifications' },
+                    { key: 'addEditProducts', label: 'Add & Edit Products', desc: 'Can modify prices, titles, or create new catalogue items' },
+                    { key: 'viewStock', label: 'View Stock Balances', desc: 'Can view inventory on hand for this branch' },
+                    { key: 'manageStock', label: 'Manage Stock & Counts', desc: 'Can update physical quantities and manage stock entries' },
+                    { key: 'stockTransfers', label: 'Stock Transfers', desc: 'Can send or receive stock from sister branches' },
+                    { key: 'customers', label: 'Customer Directory', desc: 'Can search and register customer contact profiles' },
+                    { key: 'customerCredit', label: 'Customer Credit & Udhaar', desc: 'Can issue credit invoices and record recovery payments' },
+                    { key: 'purchases', label: 'Purchases & Inward Orders', desc: 'Can create and receive purchase orders from suppliers' },
+                    { key: 'suppliers', label: 'Supplier Directory', desc: 'Can view suppliers, cost lists and payable balances' },
+                    { key: 'reports', label: 'Branch Reports', desc: 'Can access daily performance and financial summaries' },
+                    { key: 'returns', label: 'Returns & Exchanges', desc: 'Can process customer returns or supplier return notes' },
+                    { key: 'discountsOverrides', label: 'Discounts & Price Overrides', desc: 'Can apply bill discounts or custom price adjustments' },
+                  ].map((perm) => {
+                    const isChecked = !!currentPermissions[perm.key as keyof BranchAccessPermissions];
+                    return (
+                      <div
+                        key={perm.key}
+                        onClick={() => togglePermission(perm.key as keyof BranchAccessPermissions)}
+                        className={`flex items-start justify-between p-2.5 rounded-lg border transition-all cursor-pointer ${
+                          isChecked
+                            ? 'bg-blue-50/50 border-blue-200'
+                            : 'bg-gray-50/40 border-gray-100 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="pr-3">
+                          <span className={`text-xs font-semibold block ${isChecked ? 'text-blue-900' : 'text-gray-700'}`}>
+                            {perm.label}
+                          </span>
+                          <span className="text-[10px] text-gray-500 leading-tight block mt-0.5">
+                            {perm.desc}
+                          </span>
+                        </div>
+                        <div
+                          className={`w-8 h-4.5 rounded-full flex items-center px-0.5 transition-colors shrink-0 mt-0.5 ${
+                            isChecked ? 'bg-brand-blue justify-end' : 'bg-gray-300 justify-start'
+                          }`}
+                        >
+                          <div className="w-3.5 h-3.5 bg-white rounded-full shadow-xs" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Operational Governance Settings */}
+              <div className="border-t border-gray-100 pt-3">
+                <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-2.5">
+                  Operational Governance
+                </h4>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div
                     onClick={() => toggleSetting('allowRetailSales')}
-                    className={`w-9 h-5 rounded-full flex items-center px-1 transition-colors cursor-pointer shrink-0 ml-3 ${
-                      currentSettings.allowRetailSales ? 'bg-brand-blue justify-end' : 'bg-gray-300 justify-start'
-                    }`}
+                    className="flex items-center justify-between p-2 rounded-lg border border-gray-100 bg-gray-50/50 cursor-pointer"
                   >
-                    <div className="w-3.5 h-3.5 bg-white rounded-full shadow-xs" />
-                  </button>
-                </div>
-
-                {/* Allow Wholesale Sales */}
-                <div className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50/50">
-                  <div>
-                    <span className="font-semibold text-gray-800 block">Allow Wholesale Sales</span>
-                    <span className="text-[11px] text-gray-400">
-                      Enable commercial bulk delivery and B2B pricing terms
-                    </span>
+                    <span className="text-[11px] font-medium text-gray-700">Allow Retail Sales</span>
+                    <input
+                      type="checkbox"
+                      checked={currentSettings.allowRetailSales}
+                      onChange={() => {}}
+                      className="rounded text-brand-blue cursor-pointer"
+                    />
                   </div>
-                  <button
-                    type="button"
+                  <div
                     onClick={() => toggleSetting('allowWholesaleSales')}
-                    className={`w-9 h-5 rounded-full flex items-center px-1 transition-colors cursor-pointer shrink-0 ml-3 ${
-                      currentSettings.allowWholesaleSales ? 'bg-brand-blue justify-end' : 'bg-gray-300 justify-start'
-                    }`}
+                    className="flex items-center justify-between p-2 rounded-lg border border-gray-100 bg-gray-50/50 cursor-pointer"
                   >
-                    <div className="w-3.5 h-3.5 bg-white rounded-full shadow-xs" />
-                  </button>
-                </div>
-
-                {/* Manage Own Inventory */}
-                <div className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50/50">
-                  <div>
-                    <span className="font-semibold text-gray-800 block">Manage Own Inventory</span>
-                    <span className="text-[11px] text-gray-400">
-                      Independent local stock reordering & threshold alerts
-                    </span>
+                    <span className="text-[11px] font-medium text-gray-700">Allow Wholesale</span>
+                    <input
+                      type="checkbox"
+                      checked={currentSettings.allowWholesaleSales}
+                      onChange={() => {}}
+                      className="rounded text-brand-blue cursor-pointer"
+                    />
                   </div>
-                  <button
-                    type="button"
+                  <div
                     onClick={() => toggleSetting('manageOwnInventory')}
-                    className={`w-9 h-5 rounded-full flex items-center px-1 transition-colors cursor-pointer shrink-0 ml-3 ${
-                      currentSettings.manageOwnInventory ? 'bg-brand-blue justify-end' : 'bg-gray-300 justify-start'
-                    }`}
+                    className="flex items-center justify-between p-2 rounded-lg border border-gray-100 bg-gray-50/50 cursor-pointer"
                   >
-                    <div className="w-3.5 h-3.5 bg-white rounded-full shadow-xs" />
-                  </button>
-                </div>
-
-                {/* Show in Reports */}
-                <div className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50/50">
-                  <div>
-                    <span className="font-semibold text-gray-800 block">Show in Reports</span>
-                    <span className="text-[11px] text-gray-400">
-                      Include branch revenue in executive group consolidated report
-                    </span>
+                    <span className="text-[11px] font-medium text-gray-700">Manage Own Stock</span>
+                    <input
+                      type="checkbox"
+                      checked={currentSettings.manageOwnInventory}
+                      onChange={() => {}}
+                      className="rounded text-brand-blue cursor-pointer"
+                    />
                   </div>
-                  <button
-                    type="button"
+                  <div
                     onClick={() => toggleSetting('showInReports')}
-                    className={`w-9 h-5 rounded-full flex items-center px-1 transition-colors cursor-pointer shrink-0 ml-3 ${
-                      currentSettings.showInReports ? 'bg-brand-blue justify-end' : 'bg-gray-300 justify-start'
-                    }`}
+                    className="flex items-center justify-between p-2 rounded-lg border border-gray-100 bg-gray-50/50 cursor-pointer"
                   >
-                    <div className="w-3.5 h-3.5 bg-white rounded-full shadow-xs" />
-                  </button>
+                    <span className="text-[11px] font-medium text-gray-700">Show in Reports</span>
+                    <input
+                      type="checkbox"
+                      checked={currentSettings.showInReports}
+                      onChange={() => {}}
+                      className="rounded text-brand-blue cursor-pointer"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
             <button
-              onClick={handleSaveSettings}
-              disabled={isSavingSettings}
-              className="w-full mt-6 py-2.5 px-4 bg-brand-blue hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
+              onClick={handleSaveAccessControl}
+              disabled={isSavingSettings || isSavingPermissions}
+              className="w-full mt-4 py-2.5 px-4 bg-brand-blue hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
             >
-              {isSavingSettings ? (
+              {isSavingSettings || isSavingPermissions ? (
                 <>
                   <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Saving Settings...</span>
+                  <span>Saving Permissions & Governance...</span>
                 </>
               ) : (
-                <span>Save Changes</span>
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Save Access Permissions & Settings</span>
+                </>
               )}
             </button>
           </div>

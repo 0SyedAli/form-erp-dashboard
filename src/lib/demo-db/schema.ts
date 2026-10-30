@@ -1,6 +1,6 @@
-import { BranchType, BranchSettings } from '@/types';
+import { BranchType, BranchSettings, BranchAccessPermissions } from '@/types';
 
-export const DEMO_DB_VERSION = 'v5_flow05';
+export const DEMO_DB_VERSION = 'v8_simple_flow';
 
 export const STORAGE_KEYS = {
   BRANCHES: 'molty_erp_branches_v2', // backward compatible with Flow 02 branches
@@ -28,6 +28,13 @@ export const STORAGE_KEYS = {
   PAYMENT_COLLECTIONS: 'molty_erp_collections_v7',
   CUSTOMER_ADVANCES: 'molty_erp_customer_advances_v7',
   PRICE_LISTS: 'molty_erp_price_lists_v7',
+  SUPPLIERS: 'molty_erp_suppliers_v8',
+  PURCHASE_ORDERS: 'molty_erp_purchase_orders_v8',
+  GOODS_RECEIPTS: 'molty_erp_goods_receipts_v8',
+  SUPPLIER_BILLS: 'molty_erp_supplier_bills_v8',
+  SUPPLIER_PAYMENTS: 'molty_erp_supplier_payments_v8',
+  SUPPLIER_LEDGER: 'molty_erp_supplier_ledger_v8',
+  PURCHASE_RETURNS: 'molty_erp_purchase_returns_v8',
   LAST_RESET: 'molty_erp_last_reset',
 } as const;
 
@@ -100,6 +107,9 @@ export interface CreateBranchDTO {
   targetMonthlySales?: number;
   imageUrl?: string;
   settings?: Partial<BranchSettings>;
+  loginId?: string;
+  password?: string;
+  permissions?: Partial<BranchAccessPermissions>;
 }
 
 export interface UpdateBranchDTO {
@@ -117,6 +127,9 @@ export interface UpdateBranchDTO {
   imageUrl?: string;
   settings?: Partial<BranchSettings>;
   isActive?: boolean;
+  loginId?: string;
+  password?: string;
+  permissions?: Partial<BranchAccessPermissions>;
 }
 
 export interface BranchFilterOptions {
@@ -132,6 +145,24 @@ export const DEFAULT_BRANCH_SETTINGS: BranchSettings = {
   allowWholesaleSales: true,
   manageOwnInventory: false,
   showInReports: true,
+};
+
+export const DEFAULT_BRANCH_PERMISSIONS: BranchAccessPermissions = {
+  pos: true,
+  viewOwnSales: false,
+  viewOwnRevenue: false,
+  viewProducts: false,
+  addEditProducts: false,
+  viewStock: false,
+  manageStock: false,
+  stockTransfers: false,
+  customers: false,
+  customerCredit: false,
+  purchases: false,
+  suppliers: false,
+  reports: false,
+  returns: false,
+  discountsOverrides: false,
 };
 
 export interface ValidationErrorDetail {
@@ -468,5 +499,223 @@ export interface CollectionFilterOptions {
   startDate?: string;
   endDate?: string;
 }
+
+// --- Flow 08: Supplier Management & Purchasing DTOs ---
+
+export interface CreateSupplierDTO {
+  code?: string;
+  name: string;
+  contactPerson: string;
+  phone: string;
+  whatsapp?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  taxNumber?: string;
+  suppliedBrands?: string[];
+  creditEnabled?: boolean;
+  defaultCreditDays?: number;
+  defaultDueDays?: number;
+  paymentTerms?: string;
+  creditLimit?: number;
+  openingPayable?: number;
+  bankName?: string;
+  bankAccountNumber?: string;
+  status?: import('@/types').SupplierStatus;
+  notes?: string;
+}
+
+export interface UpdateSupplierDTO {
+  name?: string;
+  contactPerson?: string;
+  phone?: string;
+  whatsapp?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  taxNumber?: string;
+  suppliedBrands?: string[];
+  creditEnabled?: boolean;
+  defaultCreditDays?: number;
+  defaultDueDays?: number;
+  paymentTerms?: string;
+  creditLimit?: number;
+  bankName?: string;
+  bankAccountNumber?: string;
+  status?: import('@/types').SupplierStatus;
+  notes?: string;
+}
+
+export interface SupplierFilterOptions {
+  search?: string;
+  status?: 'ALL' | 'ACTIVE' | 'INACTIVE';
+  brandId?: string;
+  city?: string;
+  hasOutstanding?: boolean;
+}
+
+export interface CreatePurchaseOrderItemDTO {
+  variantId: string;
+  orderedQuantity: number;
+  unitCost: number;
+  lineDiscount?: number;
+  taxAmount?: number;
+}
+
+export interface CreatePurchaseOrderDTO {
+  supplierId: string;
+  destinationBranchId: string;
+  destinationLocationId: string;
+  orderDate?: string;
+  expectedDeliveryDate?: string;
+  paymentTerms?: string;
+  referenceNumber?: string;
+  notes?: string;
+  createdBy?: string;
+  createdByName?: string;
+  items: CreatePurchaseOrderItemDTO[];
+}
+
+export interface UpdatePurchaseOrderDTO {
+  destinationLocationId?: string;
+  expectedDeliveryDate?: string;
+  paymentTerms?: string;
+  referenceNumber?: string;
+  notes?: string;
+  items?: CreatePurchaseOrderItemDTO[];
+}
+
+export interface PurchaseOrderFilterOptions {
+  search?: string;
+  status?: import('@/types').PurchaseOrderStatus | 'ALL';
+  supplierId?: string;
+  branchId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface ReceiveGoodsItemDTO {
+  sku: string;
+  receivedQuantity: number;
+  damagedQuantity?: number;
+  unitCost?: number;
+  batchNumber?: string;
+}
+
+export interface ReceiveGoodsDTO {
+  poId: string;
+  deliveryReference: string;
+  receivedDate?: string;
+  receivedBy: string;
+  notes?: string;
+  destinationLocationId?: string;
+  items: ReceiveGoodsItemDTO[];
+}
+
+export interface GoodsReceiptFilterOptions {
+  search?: string;
+  poId?: string;
+  supplierId?: string;
+  branchId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface CreateSupplierBillItemDTO {
+  sku: string;
+  variantId?: string;
+  productName?: string;
+  quantity: number;
+  unitCost: number;
+  discount?: number;
+  tax?: number;
+}
+
+export interface CreateSupplierBillDTO {
+  supplierInvoiceNumber: string;
+  supplierId: string;
+  branchId: string;
+  poId?: string;
+  grnIds?: string[];
+  billDate?: string;
+  dueDate?: string;
+  notes?: string;
+  createdBy?: string;
+  items: CreateSupplierBillItemDTO[];
+}
+
+export interface SupplierBillFilterOptions {
+  search?: string;
+  supplierId?: string;
+  branchId?: string;
+  poId?: string;
+  status?: import('@/types').SupplierBillStatus | 'ALL';
+  paymentStatus?: import('@/types').SupplierBillPaymentStatus | 'ALL';
+  overdueOnly?: boolean;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface CreateSupplierPaymentDTO {
+  supplierId: string;
+  branchId: string;
+  paymentDate?: string;
+  paymentMethod: import('@/types').SupplierPaymentMethod;
+  amount: number;
+  referenceNumber?: string;
+  chequeDate?: string;
+  notes?: string;
+  paidBy?: string;
+  createdBy?: string;
+  allocations: Array<{
+    billId: string;
+    billNumber?: string;
+    allocatedAmount: number;
+  }>;
+}
+
+export interface SupplierPaymentFilterOptions {
+  search?: string;
+  supplierId?: string;
+  branchId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface SupplierLedgerFilterOptions {
+  search?: string;
+  supplierId: string;
+  type?: import('@/types').SupplierLedgerEntryType | 'ALL';
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface CreatePurchaseReturnItemDTO {
+  sku: string;
+  quantity: number;
+  unitCost?: number;
+}
+
+export interface CreatePurchaseReturnDTO {
+  supplierId: string;
+  branchId: string;
+  locationId: string;
+  poId?: string;
+  billId?: string;
+  returnDate?: string;
+  reason: string;
+  createdByName?: string;
+  notes?: string;
+  items: CreatePurchaseReturnItemDTO[];
+}
+
+export interface PurchaseReturnFilterOptions {
+  search?: string;
+  supplierId?: string;
+  branchId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
 
 

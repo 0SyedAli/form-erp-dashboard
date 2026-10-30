@@ -29,6 +29,8 @@ const branchSchema = z.object({
   phone: z.string().min(7, 'Valid contact number is required'),
   managerId: z.string().optional(),
   targetMonthlySales: z.number().min(0, 'Target sales must be positive'),
+  loginId: z.string().optional(),
+  password: z.string().optional(),
   allowRetailSales: z.boolean(),
   allowWholesaleSales: z.boolean(),
   manageOwnInventory: z.boolean(),
@@ -100,6 +102,8 @@ export default function AddBranchModal({
         managerId: data.managerId || undefined,
         targetMonthlySales: data.targetMonthlySales,
         imageUrl: photoUrl || undefined,
+        loginId: data.loginId?.trim().toLowerCase() || data.code.trim().toLowerCase(),
+        password: data.password || 'password123',
         settings: {
           allowRetailSales: data.allowRetailSales,
           allowWholesaleSales: data.allowWholesaleSales,
@@ -223,6 +227,30 @@ export default function AddBranchModal({
                   <option value="WAREHOUSE">Warehouse / Central Storage</option>
                   <option value="EXPRESS_COUNTER">Express Counter / Accessories</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-gray-700 font-medium mb-1.5 text-sm">
+                  Branch Login ID (for Direct POS Login)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. mainbranch, shop12"
+                  {...register('loginId')}
+                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 text-sm focus:outline-hidden focus:ring-1 focus:ring-brand-blue focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-gray-700 font-medium mb-1.5 text-sm">
+                  Initial Password
+                </label>
+                <input
+                  type="password"
+                  placeholder="Default: password123"
+                  {...register('password')}
+                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 text-sm focus:outline-hidden focus:ring-1 focus:ring-brand-blue focus:bg-white"
+                />
               </div>
             </div>
           </div>

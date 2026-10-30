@@ -72,6 +72,24 @@ export interface BranchSettings {
   showInReports: boolean;
 }
 
+export interface BranchAccessPermissions {
+  pos: boolean;
+  viewOwnSales: boolean;
+  viewOwnRevenue: boolean;
+  viewProducts: boolean;
+  addEditProducts: boolean;
+  viewStock: boolean;
+  manageStock: boolean;
+  stockTransfers: boolean;
+  customers: boolean;
+  customerCredit: boolean;
+  purchases: boolean;
+  suppliers: boolean;
+  reports: boolean;
+  returns: boolean;
+  discountsOverrides: boolean;
+}
+
 export interface Branch {
   id: string;
   code: string;
@@ -87,6 +105,9 @@ export interface Branch {
   isActive: boolean;
   targetMonthlySales: number;
   imageUrl?: string;
+  loginId?: string;
+  password?: string;
+  permissions?: BranchAccessPermissions;
   settings?: BranchSettings;
   createdAt?: string;
   updatedAt?: string;
@@ -434,7 +455,8 @@ export type StockMovementType =
   | 'ADJUSTMENT_OUT'
   | 'DAMAGED_STOCK'
   | 'RETURN_TO_SALEABLE'
-  | 'POS_SALE';
+  | 'POS_SALE'
+  | 'PURCHASE_RETURN';
 
 export interface StockMovement {
   id: string;
@@ -792,4 +814,284 @@ export interface PriceListItem {
   effectiveFrom?: string;
   status: 'ACTIVE' | 'INACTIVE';
 }
+
+/**
+ * ============================================================================
+ * Flow 08 — Supplier Management, Purchase Orders, Goods Receiving, Bills & Payables
+ * ============================================================================
+ */
+
+export type SupplierStatus = 'ACTIVE' | 'INACTIVE';
+
+export interface Supplier {
+  id: string;
+  code: string;
+  name: string;
+  contactPerson: string;
+  phone: string;
+  whatsapp?: string;
+  email?: string;
+  address: string;
+  city: string;
+  taxNumber?: string;
+  suppliedBrands?: string[];
+  creditEnabled: boolean;
+  defaultCreditDays: number;
+  defaultDueDays?: number;
+  paymentTerms?: string;
+  creditLimit?: number;
+  openingPayable: number;
+  currentOutstanding: number;
+  bankName?: string;
+  bankAccountNumber?: string;
+  status: SupplierStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PurchaseOrderStatus =
+  | 'DRAFT'
+  | 'PENDING_APPROVAL'
+  | 'APPROVED'
+  | 'PARTIALLY_RECEIVED'
+  | 'FULLY_RECEIVED'
+  | 'CANCELLED'
+  | 'CLOSED';
+
+export interface PurchaseOrderItem {
+  id: string;
+  variantId: string;
+  productId: string;
+  productName: string;
+  brandName: string;
+  categoryName: string;
+  sku: string;
+  sizeLabel: string;
+  thicknessLabel: string;
+  orderedQuantity: number;
+  receivedQuantity: number;
+  unitCost: number;
+  lineDiscount?: number;
+  taxAmount?: number;
+  lineTotal: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  poNumber: string;
+  supplierId: string;
+  supplierCode?: string;
+  supplierName: string;
+  destinationBranchId: string;
+  destinationBranchName: string;
+  destinationLocationId: string;
+  destinationLocationName: string;
+  orderDate: string;
+  expectedDeliveryDate: string;
+  paymentTerms: string;
+  referenceNumber?: string;
+  status: PurchaseOrderStatus;
+  items: PurchaseOrderItem[];
+  subtotal: number;
+  discountAmount: number;
+  taxAmount: number;
+  grandTotal: number;
+  notes?: string;
+  createdBy: string;
+  createdByName: string;
+  approvedBy?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GoodsReceiptNoteItem {
+  sku: string;
+  variantId: string;
+  productName: string;
+  sizeLabel?: string;
+  thicknessLabel?: string;
+  orderedQuantity: number;
+  previouslyReceived: number;
+  receivedQuantity: number;
+  damagedQuantity?: number;
+  unitCost: number;
+  lineTotal: number;
+  batchNumber?: string;
+}
+
+export interface GoodsReceiptNote {
+  id: string;
+  grnNumber: string;
+  poId: string;
+  poNumber: string;
+  supplierId: string;
+  supplierName: string;
+  branchId: string;
+  branchName: string;
+  destinationBranchName?: string;
+  locationId: string;
+  locationName: string;
+  destinationLocationName?: string;
+  deliveryReference: string;
+  receivedDate: string;
+  items: GoodsReceiptNoteItem[];
+  totalReceivedQuantity: number;
+  totalReceivedValue: number;
+  receivedBy: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export type SupplierBillStatus = 'DRAFT' | 'POSTED' | 'CANCELLED';
+export type SupplierBillPaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
+
+export interface SupplierBillItem {
+  sku: string;
+  variantId: string;
+  productName: string;
+  quantity: number;
+  unitCost: number;
+  discount?: number;
+  tax?: number;
+  total: number;
+}
+
+export interface SupplierBill {
+  id: string;
+  billNumber: string;
+  supplierInvoiceNumber: string;
+  supplierId: string;
+  supplierName: string;
+  branchId: string;
+  branchName: string;
+  poId?: string;
+  poNumber?: string;
+  grnIds: string[];
+  billDate: string;
+  dueDate: string;
+  items: SupplierBillItem[];
+  subtotal: number;
+  discountAmount: number;
+  taxAmount: number;
+  grandTotal: number;
+  amountPaid: number;
+  amountDue: number;
+  status: SupplierBillStatus;
+  paymentStatus: SupplierBillPaymentStatus;
+  notes?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type SupplierPaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'CHEQUE' | 'ONLINE' | 'PAYPAK_CARD';
+
+export interface SupplierPaymentAllocationItem {
+  billId: string;
+  billNumber: string;
+  supplierInvoiceNumber: string;
+  allocatedAmount: number;
+  previousDue: number;
+  newDue: number;
+}
+
+export interface SupplierPayment {
+  id: string;
+  voucherNumber: string;
+  supplierId: string;
+  supplierCode?: string;
+  supplierName: string;
+  branchId: string;
+  branchName: string;
+  paymentDate: string;
+  paymentMethod: SupplierPaymentMethod;
+  amount: number;
+  referenceNumber?: string;
+  chequeDate?: string;
+  chequeStatus?: 'PENDING_CLEARANCE' | 'CLEARED' | 'BOUNCED';
+  allocations: SupplierPaymentAllocationItem[];
+  unallocatedAdvance: number;
+  paidBy: string;
+  createdBy?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export type SupplierLedgerEntryType =
+  | 'BILL'
+  | 'PAYMENT'
+  | 'DEBIT_NOTE'
+  | 'ADVANCE'
+  | 'OPENING_BALANCE'
+  | 'ADJUSTMENT';
+
+export interface SupplierLedgerEntry {
+  id: string;
+  supplierId: string;
+  supplierName?: string;
+  date: string;
+  type: SupplierLedgerEntryType;
+  referenceNumber: string;
+  documentId?: string;
+  description: string;
+  debit: number; // Reduces payable (Payment, Debit Note)
+  credit: number; // Increases payable (Bill, Opening)
+  balance: number; // Running payable balance
+  branchId?: string;
+  branchName?: string;
+  createdByName?: string;
+  createdAt: string;
+}
+
+export interface PurchaseReturnItem {
+  sku: string;
+  variantId: string;
+  productName: string;
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
+  reason?: string;
+}
+
+export interface PurchaseReturn {
+  id: string;
+  returnNumber: string;
+  debitNoteNumber: string;
+  supplierId: string;
+  supplierName: string;
+  branchId: string;
+  branchName: string;
+  locationId: string;
+  locationName: string;
+  poId?: string;
+  poNumber?: string;
+  billId?: string;
+  billNumber?: string;
+  returnDate: string;
+  reason: string;
+  items: PurchaseReturnItem[];
+  totalAmount: number;
+  status: 'COMPLETED' | 'CANCELLED';
+  createdByName?: string;
+  processedBy?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface PurchasingDashboardKPIs {
+  totalPurchasesValue: number;
+  totalPurchaseOrdersCount: number;
+  pendingPurchaseOrdersCount: number;
+  pendingGoodsReceiptsCount: number;
+  totalSupplierPayables: number;
+  overdueBillsCount: number;
+  overdueBillsAmount: number;
+  supplierPaymentsThisMonth: number;
+  purchaseReturnsCount: number;
+  purchaseReturnsValue: number;
+}
+
 

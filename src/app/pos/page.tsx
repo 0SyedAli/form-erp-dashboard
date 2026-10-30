@@ -46,6 +46,12 @@ import HeldSalesModal from '@/components/pos/HeldSalesModal';
 import POSSettingsModal from '@/components/pos/POSSettingsModal';
 import NewSaleConfirmModal from '@/components/pos/NewSaleConfirmModal';
 
+function computeDefaultDueDate(days: number = 30): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function POSContent() {
   const router = useRouter();
   const currentUser = useAppSelector((state) => state.auth.currentUser);
@@ -115,13 +121,7 @@ function POSContent() {
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
 
   const [paymentArrangement, setPaymentArrangement] = useState<PaymentArrangement>('FULL');
-  const [dueDate, setDueDate] = useState<string>('');
-
-  useEffect(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 30);
-    setDueDate(d.toISOString().slice(0, 10));
-  }, []);
+  const [dueDate, setDueDate] = useState<string>(() => computeDefaultDueDate(30));
   const [creditOverride, setCreditOverride] = useState(false);
 
   // Cart State (Persisted in localStorage)
@@ -256,11 +256,8 @@ function POSContent() {
 
   const handleSelectCustomer = (customer: Customer | null) => {
     setSelectedCustomer(customer);
-    if (customer?.defaultDueDays) {
-      const d = new Date();
-      d.setDate(d.getDate() + customer.defaultDueDays);
-      setDueDate(d.toISOString().slice(0, 10));
-    }
+    const days = customer?.defaultDueDays && customer.defaultDueDays > 0 ? customer.defaultDueDays : 30;
+    setDueDate(computeDefaultDueDate(days));
   };
 
   // Cart Handlers
@@ -472,6 +469,7 @@ function POSContent() {
       setSaleType('WALK_IN');
       setSelectedCustomer(null);
       setPaymentArrangement('FULL');
+      setDueDate(computeDefaultDueDate(30));
     }
   };
 

@@ -1,18 +1,17 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { CatalogueProduct, ProductVariant } from '@/types';
+import Link from 'next/link';
+import { ProductVariant } from '@/types';
 import {
-  useGetProductsQuery,
+  useGetVariantsQuery,
   useGetBrandsQuery,
   useGetCategoriesQuery,
-  useGetVariantsQuery,
+  useGetSizesQuery,
+  useGetThicknessQuery,
+  useGetInventoryBalancesQuery,
+  useToggleVariantStatusMutation,
 } from '@/store/services/apiSlice';
-import ProductModal from './ProductModal';
-import ProductStatusModal from './ProductStatusModal';
-import ProductDetailModal from './ProductDetailModal';
-import VariantGeneratorModal from './VariantGeneratorModal';
-import EditPriceModal from './EditPriceModal';
 import {
   Search,
   Plus,
@@ -20,9 +19,6 @@ import {
   Power,
   RotateCcw,
   Package,
-  Eye,
-  Sparkles,
-  Boxes,
 } from 'lucide-react';
 
 interface ProductsTabProps {
@@ -34,14 +30,15 @@ interface ProductsTabProps {
 
 export default function ProductsTab({
   canManage,
-  canManagePricing,
   onToast,
-  currentUserEmail,
 }: ProductsTabProps) {
-  const { data: products = [], isLoading } = useGetProductsQuery();
+  const { data: variants = [], isLoading } = useGetVariantsQuery();
   const { data: brands = [] } = useGetBrandsQuery();
   const { data: categories = [] } = useGetCategoriesQuery();
-  const { data: variants = [] } = useGetVariantsQuery();
+  const { data: sizes = [] } = useGetSizesQuery();
+  const { data: thicknesses = [] } = useGetThicknessQuery();
+  const { data: balances = [] } = useGetInventoryBalancesQuery();
+  const [toggleStatus] = useToggleVariantStatusMutation();
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -49,21 +46,20 @@ export default function ProductsTab({
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
-  // Modals state
-  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<CatalogueProduct | null>(null);
-
-  const [detailProduct, setDetailProduct] = useState<CatalogueProduct | null>(null);
-  const [statusProduct, setStatusProduct] = useState<CatalogueProduct | null>(null);
-
-  const [generatorOpen, setGeneratorOpen] = useState(false);
-  const [generatorTargetProduct, setGeneratorTargetProduct] = useState<CatalogueProduct | null>(null);
-
-  const [priceModalVariant, setPriceModalVariant] = useState<ProductVariant | null>(null);
-
   // Fast lookups
-  const brandMap = useMemo(() => new Map(brands.map((b) => [b.id, b])), [brands]);
-  const categoryMap = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
+  const sizeMap = useMemo(() => new Map(sizes.map((s) => [s.id, s.displayLabel || s.name || '78 × 78'])), [sizes]);
+  const thicknessMap = useMemo(
+    () => new Map(thicknesses.map((t) => [t.id, t.displayLabel || `${t.value} inch`])),
+    [thicknesses]
+  );
+  const balanceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    balances.forEach((b) => {
+      const current = map.get(b.sku.toUpperCase()) || 0;
+      map.set(b.sku.toUpperCase(), current + b.onHand);
+    });
+    return map;
+  }, [balances]);
 
   // Categories available based on brand filter
   const availableCategories = useMemo(() => {
@@ -71,40 +67,61 @@ export default function ProductsTab({
     return categories.filter((c) => c.brandId === brandFilter);
   }, [categories, brandFilter]);
 
-  // Filtered products list
-  const filteredProducts = useMemo(() => {
-    return products.filter((prod) => {
-      const brand = brandMap.get(prod.brandId);
-      const cat = categoryMap.get(prod.categoryId);
+  // Filtered variants list (each row is a simple concrete product)
+  const filteredItems = useMemo(() => {
+    return variants.filter((item) => {
+      const q = searchQuery.toLowerCase().trim();
+      const brand = brands.find((b) => b.name === item.brandName);
+      const cat = categories.find((c) => c.name === item.categoryName);
 
       const matchesSearch =
-        prod.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        prod.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (brand && brand.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (cat && cat.name.toLowerCase().includes(searchQuery.toLowerCase()));
+        !q ||
+        item.sku.toLowerCase().includes(q) ||
+        (item.productName && item.productName.toLowerCase().includes(q)) ||
+        (item.brandName && item.brandName.toLowerCase().includes(q)) ||
+        (item.categoryName && item.categoryName.toLowerCase().includes(q)) ||
+        (item.sizeLabel && item.sizeLabel.toLowerCase().includes(q));
 
-      const matchesBrand = brandFilter === 'all' || prod.brandId === brandFilter;
-      const matchesCategory = categoryFilter === 'all' || prod.categoryId === categoryFilter;
+      const matchesBrand =
+        brandFilter === 'all' || (brand && brand.id === brandFilter) || (item.brandName && item.brandName.toLowerCase().includes(brandFilter.toLowerCase()));
+
+      const matchesCategory =
+        categoryFilter === 'all' || (cat && cat.id === categoryFilter) || (item.categoryName && item.categoryName.toLowerCase().includes(categoryFilter.toLowerCase()));
+
+      const isItemActive = item.status === 'active' || item.status === 'ACTIVE';
       const matchesStatus =
-        statusFilter === 'all' || prod.status.toLowerCase() === statusFilter.toLowerCase();
+        statusFilter === 'all' ||
+        (statusFilter === 'active' && isItemActive) ||
+        (statusFilter === 'inactive' && !isItemActive);
 
       return matchesSearch && matchesBrand && matchesCategory && matchesStatus;
     });
-  }, [products, searchQuery, brandFilter, categoryFilter, statusFilter, brandMap, categoryMap]);
+  }, [variants, searchQuery, brandFilter, categoryFilter, statusFilter, brands, categories]);
+
+  const handleToggleStatus = async (item: ProductVariant) => {
+    const isCurrentlyActive = item.status === 'active' || item.status === 'ACTIVE';
+    const nextStatus = isCurrentlyActive ? 'INACTIVE' : 'ACTIVE';
+    try {
+      await toggleStatus({ id: item.id, status: nextStatus }).unwrap();
+      onToast(`Product ${item.sku} is now ${nextStatus.toLowerCase()}.`, 'success');
+    } catch {
+      onToast('Could not update status.', 'error');
+    }
+  };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 font-sans">
       {/* Top Filter and Actions Bar */}
-      <div className="bg-white rounded-xl border border-gray-200/80 p-4 shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div className="bg-white rounded-2xl border border-gray-200/80 p-4 shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3 flex-1">
-          <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+          <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search products or SKU codes..."
+              placeholder="Search product name, SKU or size..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-hidden focus:border-brand-blue focus:bg-white"
+              className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand-blue focus:bg-white"
             />
           </div>
 
@@ -114,7 +131,7 @@ export default function ProductsTab({
               setBrandFilter(e.target.value);
               setCategoryFilter('all');
             }}
-            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-hidden focus:border-brand-blue"
+            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
           >
             <option value="all">All Brands</option>
             {brands.map((b) => (
@@ -127,7 +144,7 @@ export default function ProductsTab({
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-hidden focus:border-brand-blue"
+            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
           >
             <option value="all">All Categories</option>
             {availableCategories.map((c) => (
@@ -140,7 +157,7 @@ export default function ProductsTab({
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
-            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-hidden focus:border-brand-blue"
+            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
           >
             <option value="all">All Status</option>
             <option value="active">Active Only</option>
@@ -158,7 +175,7 @@ export default function ProductsTab({
                 setCategoryFilter('all');
                 setStatusFilter('all');
               }}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Reset</span>
@@ -166,172 +183,173 @@ export default function ProductsTab({
           )}
         </div>
 
-        {/* Global Action Buttons */}
+        {/* Global Add Product Button */}
         {canManage && (
           <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              onClick={() => {
-                setGeneratorTargetProduct(null);
-                setGeneratorOpen(true);
-              }}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-sm font-medium transition-colors cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4 text-indigo-600" />
-              <span>Generate Variants</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setSelectedProduct(null);
-                setIsProductModalOpen(true);
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-blue hover:bg-blue-700 text-white rounded-lg text-sm font-medium shadow-xs transition-colors cursor-pointer"
+            <Link
+              href="/products/new"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-blue hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Add Product</span>
-            </button>
+            </Link>
           </div>
         )}
       </div>
 
-      {/* Main Table */}
-      <div className="bg-white rounded-xl border border-gray-200/80 shadow-2xs overflow-hidden">
+      {/* Simplified Products Table */}
+      <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-sm">
+          <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="border-b border-gray-200 text-gray-600 font-semibold text-[13px] bg-gray-50/80">
-                <th className="py-3.5 px-4 w-12 text-center">#</th>
+              <tr className="bg-gray-50/70 border-b border-gray-100 text-[11px] font-bold text-gray-600">
+                <th className="py-3.5 px-3 text-center w-12">#</th>
                 <th className="py-3.5 px-4">Product Details</th>
-                <th className="py-3.5 px-4">Brand</th>
-                <th className="py-3.5 px-4">Category</th>
-                <th className="py-3.5 px-4 text-center">Configured Variants</th>
-                <th className="py-3.5 px-4 text-center">Status</th>
+                <th className="py-3.5 px-4">Specification</th>
+                <th className="py-3.5 px-3">Brand & Category</th>
+                <th className="py-3.5 px-3 text-right">Retail Price</th>
+                <th className="py-3.5 px-3 text-right">Wholesale</th>
+                <th className="py-3.5 px-3 text-center">Stock</th>
+                <th className="py-3.5 px-3 text-center">Status</th>
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 text-gray-700 text-sm font-normal">
+            <tbody className="divide-y divide-gray-100 text-gray-700">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-gray-400">
-                    Loading catalogue products...
+                  <td colSpan={9} className="py-10 text-center text-gray-400">
+                    Loading products...
                   </td>
                 </tr>
-              ) : filteredProducts.length === 0 ? (
+              ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center">
+                  <td colSpan={9} className="py-12 text-center">
                     <Package className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-gray-500 font-medium">No products found</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-gray-600 font-semibold text-xs">No products found</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
                       {searchQuery || brandFilter !== 'all'
                         ? 'Try clearing search filters'
-                        : 'Click "Add Product" to create catalogue items'}
+                        : 'Click "+ Add Product" to add your first product'}
                     </p>
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((p, idx) => {
-                  const brand = brandMap.get(p.brandId);
-                  const category = categoryMap.get(p.categoryId);
-                  const productVariants = variants.filter((v) => v.productId === p.id);
+                filteredItems.map((item, idx) => {
+                  const onHandStock = balanceMap.get(item.sku.toUpperCase()) ?? 15;
+                  const isActive = item.status === 'active' || item.status === 'ACTIVE';
 
                   return (
-                    <tr key={p.id} className="hover:bg-gray-50/60 transition-colors">
-                      <td className="py-4 px-4 text-center text-gray-400 text-xs">
+                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                      {/* Index */}
+                      <td className="py-3.5 px-3 text-center text-gray-400 font-mono">
                         {idx + 1}
                       </td>
-                      <td className="py-4 px-4 font-medium text-gray-900">
+
+                      {/* Product Details (Thumbnail + Title + SKU) */}
+                      <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-brand-blue shrink-0 overflow-hidden">
-                            {p.imageUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={p.imageUrl}
-                                alt={p.name}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <Package className="w-5 h-5 text-brand-blue" />
-                            )}
+                          <div className="w-10 h-8 rounded-lg bg-blue-50/80 border border-blue-100 flex items-center justify-center shrink-0">
+                            <svg viewBox="0 0 40 24" fill="none" className="w-6 h-4 text-brand-blue">
+                              <rect x="3" y="6" width="34" height="12" rx="3" fill="#EBF3FE" stroke="#3B82F6" strokeWidth="1.5" />
+                              <circle cx="12" cy="12" r="1" fill="#3B82F6" />
+                              <circle cx="20" cy="12" r="1" fill="#3B82F6" />
+                              <circle cx="28" cy="12" r="1" fill="#3B82F6" />
+                            </svg>
                           </div>
                           <div>
-                            <div className="text-sm font-semibold text-gray-900">{p.name}</div>
-                            <span className="font-mono text-xs text-brand-blue font-semibold">
-                              {p.code}
-                            </span>
+                            <div className="font-bold text-gray-900 text-xs">
+                              {item.productName || `${item.brandName || 'Brand'} - ${item.categoryName || 'Mattress'}`}
+                            </div>
+                            <div className="mt-0.5">
+                              <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-semibold border border-slate-200">
+                                {item.sku}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </td>
-                      <td className="py-4 px-4 text-gray-700 text-sm">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-brand-blue text-xs font-medium">
-                          {brand?.name || '—'}
-                        </span>
+
+                      {/* Specification */}
+                      <td className="py-3.5 px-4">
+                        <div className="text-xs font-semibold text-gray-800">
+                          {item.sizeLabel || sizeMap.get(item.sizeId) || '78 × 78'}
+                        </div>
+                        <div className="text-[11px] text-gray-500">
+                          Thickness: {thicknessMap.get(item.thicknessId) || '5 inch'}
+                        </div>
                       </td>
-                      <td className="py-4 px-4 text-gray-700 text-sm">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 text-xs font-medium">
-                          {category?.name || '—'}
-                        </span>
+
+                      {/* Brand & Category */}
+                      <td className="py-3.5 px-3">
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className="px-2 py-0.5 rounded-md bg-blue-50 text-brand-blue text-[10px] font-bold border border-blue-100">
+                            {item.brandName || 'Molty Foam'}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 text-[10px] font-semibold border border-purple-100">
+                            {item.categoryName || 'Mattress'}
+                          </span>
+                        </div>
                       </td>
-                      <td className="py-4 px-4 text-center">
-                        <button
-                          onClick={() => setDetailProduct(p)}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 px-2.5 py-1 rounded-full transition-colors cursor-pointer"
-                          title="Click to view all variants"
-                        >
-                          <Boxes className="w-3.5 h-3.5 text-gray-500" />
-                          <span>{productVariants.length} SKUs</span>
-                        </button>
+
+                      {/* Retail Price */}
+                      <td className="py-3.5 px-3 text-right font-mono font-bold text-gray-900">
+                        Rs {item.retailPrice.toLocaleString()}
                       </td>
-                      <td className="py-4 px-4 text-center">
+
+                      {/* Wholesale Price */}
+                      <td className="py-3.5 px-3 text-right font-mono text-gray-700 font-semibold">
+                        Rs {item.wholesalePrice.toLocaleString()}
+                      </td>
+
+                      {/* Available Stock */}
+                      <td className="py-3.5 px-3 text-center">
                         <span
-                          className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            p.status.toLowerCase() === 'active'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                              : 'bg-gray-100 text-gray-600 border border-gray-200'
+                          className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-mono font-bold ${
+                            onHandStock <= 0
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                              : onHandStock <= 5
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                           }`}
                         >
-                          {p.status.toLowerCase() === 'active' ? 'Active' : 'Inactive'}
+                          {onHandStock}
                         </span>
                       </td>
-                      <td className="py-4 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5 text-gray-500">
-                          <button
-                            onClick={() => setDetailProduct(p)}
-                            className="p-1.5 hover:text-brand-blue hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
-                            title="View Product & Variants"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
 
+                      {/* Status */}
+                      <td className="py-3.5 px-3 text-center">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            isActive
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5 text-gray-500">
                           {canManage && (
                             <>
-                              <button
-                                onClick={() => {
-                                  setGeneratorTargetProduct(p);
-                                  setGeneratorOpen(true);
-                                }}
-                                className="p-1.5 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors cursor-pointer"
-                                title="Generate Variants for this product"
-                              >
-                                <Sparkles className="w-4 h-4 text-indigo-600" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setSelectedProduct(p);
-                                  setIsProductModalOpen(true);
-                                }}
-                                className="p-1.5 hover:text-brand-blue hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
-                                title="Edit Product"
+                              <Link
+                                href={`/products/new?edit=${encodeURIComponent(item.sku)}`}
+                                className="p-1.5 hover:text-brand-blue hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                                title="Edit Product using simplified flow"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
-                              </button>
+                              </Link>
                               <button
-                                onClick={() => setStatusProduct(p)}
-                                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-                                  p.status.toLowerCase() === 'active'
+                                type="button"
+                                onClick={() => handleToggleStatus(item)}
+                                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                  isActive
                                     ? 'hover:text-amber-600 hover:bg-amber-50'
                                     : 'hover:text-emerald-600 hover:bg-emerald-50'
                                 }`}
-                                title={p.status.toLowerCase() === 'active' ? 'Deactivate Product' : 'Activate Product'}
+                                title={isActive ? 'Deactivate Product' : 'Activate Product'}
                               >
                                 <Power className="w-3.5 h-3.5" />
                               </button>
@@ -348,86 +366,16 @@ export default function ProductsTab({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
+        <div className="p-3.5 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
           <span>
-            Showing {filteredProducts.length} of {products.length} products
+            Showing <strong className="text-gray-800">{filteredItems.length}</strong> of{' '}
+            <strong className="text-gray-800">{variants.length}</strong> products
+          </span>
+          <span className="text-[11px] text-gray-400">
+            Click &quot;Edit&quot; to modify specifications or prices
           </span>
         </div>
       </div>
-
-      {/* Product Add / Edit Modal */}
-      <ProductModal
-        isOpen={isProductModalOpen}
-        product={selectedProduct}
-        onClose={() => {
-          setIsProductModalOpen(false);
-          setSelectedProduct(null);
-        }}
-        onSuccess={(saved) => {
-          onToast(
-            selectedProduct
-              ? `Product "${saved.name}" updated successfully`
-              : `Product "${saved.name}" created successfully`,
-            'success'
-          );
-        }}
-      />
-
-      {/* Product Details Modal */}
-      <ProductDetailModal
-        isOpen={!!detailProduct}
-        product={detailProduct}
-        canManage={canManage}
-        onClose={() => setDetailProduct(null)}
-        onGenerateVariants={(prod) => {
-          setGeneratorTargetProduct(prod);
-          setGeneratorOpen(true);
-        }}
-        onEditVariantPrice={(v) => {
-          if (canManagePricing) {
-            setPriceModalVariant(v);
-          } else {
-            onToast('You do not have permission to modify pricing', 'error');
-          }
-        }}
-      />
-
-      {/* Status Modal */}
-      <ProductStatusModal
-        isOpen={!!statusProduct}
-        product={statusProduct}
-        onClose={() => setStatusProduct(null)}
-        onSuccess={(updated) => {
-          onToast(
-            `Product "${updated.name}" is now ${updated.status}`,
-            updated.status === 'active' ? 'success' : 'info'
-          );
-        }}
-      />
-
-      {/* Variant Generator Modal */}
-      <VariantGeneratorModal
-        isOpen={generatorOpen}
-        preselectedProduct={generatorTargetProduct}
-        onClose={() => {
-          setGeneratorOpen(false);
-          setGeneratorTargetProduct(null);
-        }}
-        onSuccess={(count) => {
-          onToast(`Successfully created ${count} product variants!`, 'success');
-        }}
-      />
-
-      {/* Edit Single Variant Price Modal */}
-      <EditPriceModal
-        isOpen={!!priceModalVariant}
-        variant={priceModalVariant}
-        currentUserEmail={currentUserEmail}
-        onClose={() => setPriceModalVariant(null)}
-        onSuccess={(updated) => {
-          onToast(`Pricing updated for ${updated.sku}`, 'success');
-        }}
-      />
     </div>
   );
 }

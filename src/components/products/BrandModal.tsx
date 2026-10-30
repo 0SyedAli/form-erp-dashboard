@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Brand } from '@/types';
@@ -52,7 +52,7 @@ export default function BrandModal({
     register,
     handleSubmit,
     setValue,
-    watch,
+    control,
     reset,
     formState: { errors },
   } = useForm<BrandFormData>({
@@ -66,7 +66,7 @@ export default function BrandModal({
     },
   });
 
-  const logoValue = watch('logo');
+  const logoValue = useWatch({ control, name: 'logo' });
 
   useEffect(() => {
     if (brand) {
@@ -86,8 +86,12 @@ export default function BrandModal({
         status: 'active',
       });
     }
-    setApiError(null);
   }, [brand, reset, isOpen]);
+
+  const handleClose = () => {
+    setApiError(null);
+    onClose();
+  };
 
   if (!isOpen) return null;
 
@@ -145,7 +149,7 @@ export default function BrandModal({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
             aria-label="Close modal"
           >
@@ -231,7 +235,7 @@ export default function BrandModal({
           <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium transition-colors cursor-pointer"
             >
               Cancel

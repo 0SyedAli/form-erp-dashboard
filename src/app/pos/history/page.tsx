@@ -8,7 +8,7 @@ import {
   useGetCustomersQuery,
 } from '@/store/services/apiSlice';
 import { useAppSelector } from '@/store';
-import { Invoice, SaleType, InvoicePaymentStatus } from '@/types';
+import { Invoice } from '@/types';
 import {
   ArrowLeft,
   Search,
@@ -17,13 +17,11 @@ import {
   DollarSign,
   TrendingUp,
   CreditCard,
-  FileText,
   Building2,
   Truck,
   User,
   Calendar,
   AlertCircle,
-  Clock,
   CheckCircle,
 } from 'lucide-react';
 import InvoiceReceiptModal from '@/components/pos/InvoiceReceiptModal';

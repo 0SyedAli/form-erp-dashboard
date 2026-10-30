@@ -349,11 +349,11 @@ describe('Flow 04 — Product Catalogue, Brands, Categories, Variants & Pricing 
 
   // 15. Safe data migration
   it('15. Safe data migration: initializes with current schema version without corrupting prior data', () => {
-    expect(DEMO_DB_VERSION).toBe('v5_flow05');
+    expect(DEMO_DB_VERSION).toMatch(/^v\d+_/);
 
     // Ensure version is recorded in storage
     const currentVersion = demoStorage.getVersion();
-    expect(currentVersion).toBe('v5_flow05');
+    expect(currentVersion).toBe(DEMO_DB_VERSION);
   });
 
   // 16. Role-based permissions

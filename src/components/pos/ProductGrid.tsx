@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import { CatalogueProduct, ProductVariant, InventoryBalance, SaleType } from '@/types';
 import { Package, AlertCircle } from 'lucide-react';
 
@@ -94,11 +95,13 @@ export default function ProductGrid({
                 {/* Product Image */}
                 <div className="w-full h-36 bg-slate-100 rounded-xl overflow-hidden relative mb-3 flex items-center justify-center">
                   {product.imageUrl ? (
-                    <img
+                    <Image
                       src={product.imageUrl}
                       alt={product.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      loading="lazy"
+                      fill
+                      sizes="(max-width: 768px) 100vw, 300px"
+                      className="object-cover group-hover:scale-105 transition-transform duration-300"
+                      unoptimized
                     />
                   ) : (
                     <div className="flex flex-col items-center justify-center text-slate-400">
