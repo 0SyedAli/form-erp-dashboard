@@ -1,43 +1,22 @@
 {
-  "name": "form-erp-dashboard",
-  "version": "0.1.0",
+  "name": "molty-foam-erp",
+  "version": "1.0.0",
   "private": true,
-  "type": "module",
+  "description": "Molty Foam Multi-Branch Retail, Wholesale & Distributor ERP",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "test": "vitest run"
-  },
-  "dependencies": {
-    "@emotion/react": "^11.14.0",
-    "@emotion/styled": "^11.14.1",
-    "@hookform/resolvers": "^6.0.1",
-    "@mui/material": "^9.5.0",
-    "@reduxjs/toolkit": "^2.13.0",
-    "clsx": "^2.1.1",
-    "lucide-react": "^1.62.0",
-    "next": "16.4.3",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "react-hook-form": "^7.91.0",
-    "react-redux": "^9.3.0",
-    "recharts": "^3.10.1",
-    "tailwind-merge": "^3.7.0",
-    "zod": "^4.6.7"
-  },
-  "devDependencies": {
-    "@tailwindcss/turbopack": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^4.7.0",
-    "eslint": "^9",
-    "eslint-config-next": "16.4.3",
-    "jsdom": "^27.0.1",
-    "tailwindcss": "^4",
-    "typescript": "^5",
-    "vitest": "^4.1.12"
+    "dev": "npm run dev:frontend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "build": "npm run build:frontend && npm run build:backend",
+    "build:frontend": "npm run build --prefix frontend",
+    "build:backend": "npm run build --prefix backend",
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "npm run test --prefix frontend",
+    "test:backend": "npm run test --prefix backend",
+    "lint": "npm run lint:frontend && npm run lint:backend",
+    "lint:frontend": "npm run lint --prefix frontend",
+    "lint:backend": "npm run lint --prefix backend",
+    "seed:backend": "npm run seed --prefix backend"
   }
 }
+
