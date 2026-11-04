@@ -264,7 +264,7 @@ export function calculateBranchPerformance(
     }
 
     const invoiceCount = branchInvoices.length;
-    const targetMonthlySales = branch.targetMonthlySales;
+    const targetMonthlySales = branch.targetMonthlySales || 0;
     const achievementPercentage = targetMonthlySales > 0 
       ? Math.round((netSales / targetMonthlySales) * 100) 
       : 0;

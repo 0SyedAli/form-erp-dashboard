@@ -13,6 +13,11 @@ import {
   useGetGoodsReceiptsQuery,
   useGetSupplierBillsQuery,
 } from '@/store/services/apiSlice';
+import {
+  useGetPurchaseOrderByIdQuery as useGetBackendPOByIdQuery,
+  useApprovePurchaseOrderMutation as useApproveBackendPOMutation,
+  useCancelPurchaseOrderMutation as useCancelBackendPOMutation,
+} from '@/store/services/purchasesApi';
 import { hasPermission } from '@/lib/permissions';
 import {
   ArrowLeft,
@@ -25,18 +30,62 @@ import {
 } from 'lucide-react';
 
 function PurchaseOrderDetailsContent() {
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
   const params = useParams();
   const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string);
 
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
-  const { data: po, isLoading } = useGetPurchaseOrderByIdQuery(id);
-  const { data: grns = [] } = useGetGoodsReceiptsQuery({ poId: id });
-  const { data: allBills = [] } = useGetSupplierBillsQuery();
-  const bills = allBills.filter((b) => b.poId === id);
 
-  const [approvePOMutation, { isLoading: isApproving }] = useApprovePurchaseOrderMutation();
-  const [cancelPOMutation, { isLoading: isCancelling }] = useCancelPurchaseOrderMutation();
+  // Demo Queries
+  const { data: demoPO, isLoading: isDemoLoading } = useGetPurchaseOrderByIdQuery(id, { skip: isBackendMode });
+  const { data: demoGrns = [] } = useGetGoodsReceiptsQuery({ poId: id }, { skip: isBackendMode });
+  const { data: allDemoBills = [] } = useGetSupplierBillsQuery(undefined, { skip: isBackendMode });
+  const [approvePOMutation, { isLoading: isDemoApproving }] = useApprovePurchaseOrderMutation();
+  const [cancelPOMutation, { isLoading: isDemoCancelling }] = useCancelPurchaseOrderMutation();
+
+  // Backend Queries
+  const { data: backendPO, isLoading: isBackendLoading } = useGetBackendPOByIdQuery(id, { skip: !isBackendMode });
+  const [approvePOBackend, { isLoading: isBackendApproving }] = useApproveBackendPOMutation();
+  const [cancelPOBackend, { isLoading: isBackendCancelling }] = useCancelBackendPOMutation();
+
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const po = React.useMemo(() => {
+    if (isBackendMode && backendPO) {
+      return {
+        ...backendPO,
+        id: backendPO._id || (backendPO as any).id,
+        poNumber: backendPO.orderNumber || (backendPO as any).poNumber,
+        supplierName: (backendPO.supplierId as any)?.name || (backendPO as any).supplierName || 'Unknown Supplier',
+        supplierId: (backendPO.supplierId as any)?._id || (backendPO.supplierId as any)?.id || backendPO.supplierId,
+        destinationBranchId: (backendPO.branchId as any)?._id || (backendPO.branchId as any)?.id || backendPO.branchId,
+        destinationBranchName: (backendPO.branchId as any)?.name || 'Branch',
+        receivingLocationName: (backendPO.stockLocationId as any)?.name || 'Default Stockroom',
+        items: (backendPO.items || []).map((i: any) => ({
+          ...i,
+          variantName: i.productName || i.sku,
+          orderedQuantity: i.orderedQuantity,
+          receivedQuantity: i.receivedQuantity || 0,
+          unitCost: i.unitCost,
+          lineDiscount: i.lineDiscount || 0,
+          taxAmount: i.taxAmount || 0,
+          totalCost: i.lineTotal || i.orderedQuantity * i.unitCost,
+        })),
+        orderDate: (backendPO.orderDate || '').slice(0, 10),
+        subtotal: backendPO.subtotal,
+        totalDiscount: backendPO.discountAmount,
+        totalCost: backendPO.totalAmount,
+      };
+    }
+    return demoPO;
+  }, [isBackendMode, backendPO, demoPO]);
+
+  const grns = isBackendMode ? (backendPO?.receipts || []) : demoGrns;
+  const bills = isBackendMode ? (backendPO?.bills || []) : allDemoBills.filter((b) => b.poId === id);
+
+  const isLoading = isBackendMode ? isBackendLoading : isDemoLoading;
+  const isApproving = isBackendMode ? isBackendApproving : isDemoApproving;
+  const isCancelling = isBackendMode ? isBackendCancelling : isDemoCancelling;
 
   const canApprove = hasPermission(currentUser, 'purchases.approve');
   const canReceive = hasPermission(currentUser, 'purchases.receive');
@@ -68,12 +117,16 @@ function PurchaseOrderDetailsContent() {
     if (!window.confirm(`Approve purchase order #${po.poNumber}?`)) return;
     setActionError(null);
     try {
-      await approvePOMutation({
-        id: po.id,
-        approvedBy: currentUser?.name || 'Authorized Manager',
-      }).unwrap();
+      if (isBackendMode) {
+        await approvePOBackend(id).unwrap();
+      } else {
+        await approvePOMutation({
+          id: po.id,
+          approvedBy: currentUser?.name || 'Authorized Manager',
+        }).unwrap();
+      }
     } catch (err: unknown) {
-      setActionError((err as { data?: string })?.data || 'Failed to approve purchase order.');
+      setActionError((err as { data?: string })?.data || (err as any)?.data?.error?.message || 'Failed to approve purchase order.');
     }
   };
 
@@ -82,9 +135,13 @@ function PurchaseOrderDetailsContent() {
     if (reason === null) return;
     setActionError(null);
     try {
-      await cancelPOMutation({ id: po.id, reason }).unwrap();
+      if (isBackendMode) {
+        await cancelPOBackend({ id, reason }).unwrap();
+      } else {
+        await cancelPOMutation({ id: po.id, reason }).unwrap();
+      }
     } catch (err: unknown) {
-      setActionError((err as { data?: string })?.data || 'Failed to cancel purchase order.');
+      setActionError((err as { data?: string })?.data || (err as any)?.data?.error?.message || 'Failed to cancel purchase order.');
     }
   };
 
@@ -123,19 +180,18 @@ function PurchaseOrderDetailsContent() {
               <div className="flex items-center gap-3">
                 <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{po.poNumber}</h1>
                 <span
-                  className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${
-                    po.status === 'APPROVED'
+                  className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${po.status === 'APPROVED'
                       ? 'bg-blue-50 text-blue-700 border-blue-200'
                       : po.status === 'PENDING_APPROVAL'
-                      ? 'bg-amber-50 text-amber-700 border-amber-200'
-                      : po.status === 'PARTIALLY_RECEIVED'
-                      ? 'bg-purple-50 text-purple-700 border-purple-200'
-                      : po.status === 'FULLY_RECEIVED'
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : po.status === 'CANCELLED'
-                      ? 'bg-rose-50 text-rose-700 border-rose-200'
-                      : 'bg-slate-50 text-slate-700 border-slate-200'
-                  }`}
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : po.status === 'PARTIALLY_RECEIVED'
+                          ? 'bg-purple-50 text-purple-700 border-purple-200'
+                          : po.status === 'FULLY_RECEIVED'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : po.status === 'CANCELLED'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : 'bg-slate-50 text-slate-700 border-slate-200'
+                    }`}
                 >
                   {po.status.replace('_', ' ')}
                 </span>
@@ -169,7 +225,7 @@ function PurchaseOrderDetailsContent() {
             {(po.status === 'APPROVED' || po.status === 'PARTIALLY_RECEIVED') && canReceive && (
               <Link
                 href={`/purchases/receiving?poId=${po.id}`}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-brand-burgundy hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-rose-700 hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
               >
                 <ArrowDownToLine className="w-3.5 h-3.5" />
                 <span>Receive Goods (GRN)</span>
@@ -220,7 +276,7 @@ function PurchaseOrderDetailsContent() {
               >
                 {po.supplierName}
               </Link>
-              <p className="text-xs text-slate-500 mt-0.5">Supplier Code: {po.supplierCode || po.supplierId}</p>
+              <p className="text-xs text-slate-500 mt-0.5">Supplier Code: {(po as any).supplierCode || (po as any).supplierId}</p>
             </div>
             <div className="pt-2 border-t border-slate-100 text-xs text-slate-600 space-y-1">
               <div className="flex justify-between">
@@ -243,7 +299,7 @@ function PurchaseOrderDetailsContent() {
             </span>
             <div>
               <h3 className="text-base font-bold text-slate-900">{po.destinationBranchName}</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Location: {po.destinationLocationName}</p>
+              <p className="text-xs text-slate-500 mt-0.5">Location: {(po as any).destinationLocationName || (po as any).receivingLocationName || 'Warehouse'}</p>
             </div>
             <div className="pt-2 border-t border-slate-100 text-xs text-slate-600 space-y-1">
               <div className="flex justify-between">
@@ -307,13 +363,12 @@ function PurchaseOrderDetailsContent() {
 
                       <td className="py-3.5 px-4 text-center">
                         <span
-                          className={`font-semibold ${
-                            item.receivedQuantity >= item.orderedQuantity
+                          className={`font-semibold ${item.receivedQuantity >= item.orderedQuantity
                               ? 'text-emerald-700'
                               : item.receivedQuantity > 0
-                              ? 'text-amber-700'
-                              : 'text-slate-400'
-                          }`}
+                                ? 'text-amber-700'
+                                : 'text-slate-400'
+                            }`}
                         >
                           {item.receivedQuantity}
                         </span>
@@ -321,11 +376,10 @@ function PurchaseOrderDetailsContent() {
 
                       <td className="py-3.5 px-4 text-center">
                         <span
-                          className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                            remaining === 0
+                          className={`text-xs font-semibold px-2 py-0.5 rounded-full ${remaining === 0
                               ? 'bg-emerald-50 text-emerald-700'
                               : 'bg-slate-100 text-slate-700'
-                          }`}
+                            }`}
                         >
                           {remaining}
                         </span>
@@ -375,7 +429,7 @@ function PurchaseOrderDetailsContent() {
               <div className="flex justify-between text-sm font-bold text-slate-900 pt-2 border-t border-slate-200">
                 <span>Grand Total:</span>
                 <span className="text-brand-burgundy font-bold">
-                  Rs. {po.grandTotal.toLocaleString()}
+                  Rs. {((po as any).grandTotal ?? (po as any).totalCost ?? 0).toLocaleString()}
                 </span>
               </div>
             </div>
@@ -395,16 +449,16 @@ function PurchaseOrderDetailsContent() {
 
             {grns.length > 0 ? (
               <div className="divide-y divide-slate-100 text-xs">
-                {grns.map((g) => (
-                  <div key={g.id} className="py-2.5 flex items-center justify-between">
+                {grns.map((g: any) => (
+                  <div key={g.id || g._id} className="py-2.5 flex items-center justify-between">
                     <div>
-                      <span className="font-semibold text-slate-800 block">{g.grnNumber}</span>
+                      <span className="font-semibold text-slate-800 block">{g.grnNumber || g.receiptNumber}</span>
                       <span className="text-slate-400">
                         {g.receivedDate} • {g.receivedBy}
                       </span>
                     </div>
                     <span className="text-emerald-700 font-semibold">
-                      {g.items.reduce((s, i) => s + i.receivedQuantity, 0)} items received
+                      {(g.items || []).reduce((s: number, i: any) => s + (i.receivedQuantity || i.quantityReceived || 0), 0)} items received
                     </span>
                   </div>
                 ))}

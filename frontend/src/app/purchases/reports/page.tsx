@@ -5,13 +5,17 @@ import AppLayout from '@/components/layout/AppLayout';
 import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
-  useGetSuppliersQuery,
   useGetPurchaseOrdersQuery,
   useGetSupplierBillsQuery,
   useGetSupplierPaymentsQuery,
   useGetPurchaseReturnsQuery,
-  useGetBranchesQuery,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
+import { useGetSuppliersQuery } from '@/store/services/purchasesApi';
+import {
+  useGetPurchasingSummaryQuery,
+  useGetPayablesSummaryQuery,
+} from '@/store/services/reportsApi';
 import { getUserAuthorizedBranches } from '@/lib/permissions';
 import {
   Printer,
@@ -28,10 +32,16 @@ import {
 } from 'recharts';
 
 function PurchasingReportsContent() {
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
-  const { data: allBranches = [] } = useGetBranchesQuery();
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const { data: allBranches = [] } = useGetBranchesQuery(undefined, { skip: !mounted });
   const authorizedBranches = getUserAuthorizedBranches(currentUser, allBranches);
 
   const [selectedBranchId, setSelectedBranchId] = useState<string>(
@@ -39,21 +49,43 @@ function PurchasingReportsContent() {
   );
 
   const branchArg = selectedBranchId === 'all' ? undefined : selectedBranchId;
-  const { data: suppliers = [] } = useGetSuppliersQuery();
-  const { data: purchaseOrders = [] } = useGetPurchaseOrdersQuery(branchArg ? { branchId: branchArg } : undefined);
-  const { data: bills = [] } = useGetSupplierBillsQuery(branchArg ? { branchId: branchArg } : undefined);
-  const { data: payments = [] } = useGetSupplierPaymentsQuery(branchArg ? { branchId: branchArg } : undefined);
-  const { data: returns = [] } = useGetPurchaseReturnsQuery(branchArg ? { branchId: branchArg } : undefined);
+  const { data: suppliersData } = useGetSuppliersQuery(undefined, { skip: !mounted });
+  const suppliers: any[] = suppliersData?.suppliers || [];
+  const { data: purchaseOrders = [] } = useGetPurchaseOrdersQuery(branchArg ? { branchId: branchArg } : undefined, { skip: !mounted });
+  const { data: bills = [] } = useGetSupplierBillsQuery(branchArg ? { branchId: branchArg } : undefined, { skip: !mounted });
+  const { data: payments = [] } = useGetSupplierPaymentsQuery(branchArg ? { branchId: branchArg } : undefined, { skip: !mounted });
+  const { data: returns = [] } = useGetPurchaseReturnsQuery(branchArg ? { branchId: branchArg } : undefined, { skip: !mounted });
+
+  const { data: backendSummary } = useGetPurchasingSummaryQuery(
+    branchArg ? { branchId: branchArg } : undefined,
+    { skip: !mounted || !isBackendMode }
+  );
+  const { data: backendPayables } = useGetPayablesSummaryQuery(undefined, {
+    skip: !mounted || !isBackendMode || !isSuperAdmin,
+  });
 
   // Financial Separation Totals
-  const totalOrderedValue = purchaseOrders
-    .filter((p) => p.status !== 'CANCELLED')
-    .reduce((sum, p) => sum + p.grandTotal, 0);
+  const totalOrderedValue = isBackendMode
+    ? backendSummary?.totalOrderedValue ?? 0
+    : purchaseOrders
+        .filter((p) => p.status !== 'CANCELLED')
+        .reduce((sum, p) => sum + p.grandTotal, 0);
 
-  const totalBilledValue = bills.reduce((sum, b) => sum + b.grandTotal, 0);
-  const totalPaidValue = payments.reduce((sum, p) => sum + p.amount, 0);
-  const totalDebitNotesValue = returns.reduce((sum, r) => sum + r.totalAmount, 0);
-  const totalCurrentPayable = bills.reduce((sum, b) => sum + b.amountDue, 0);
+  const totalBilledValue = isBackendMode
+    ? backendSummary?.totalBillAmount ?? 0
+    : bills.reduce((sum, b) => sum + b.grandTotal, 0);
+
+  const totalPaidValue = isBackendMode
+    ? backendSummary?.totalPaidAmount ?? 0
+    : payments.reduce((sum, p) => sum + p.amount, 0);
+
+  const totalDebitNotesValue = isBackendMode
+    ? backendSummary?.totalReturnValue ?? 0
+    : returns.reduce((sum, r) => sum + r.totalAmount, 0);
+
+  const totalCurrentPayable = isBackendMode
+    ? backendPayables?.totalOutstandingPayables ?? backendSummary?.totalBillDue ?? 0
+    : bills.reduce((sum, b) => sum + b.amountDue, 0);
 
   // Supplier Breakdown Data
   const supplierRows = useMemo(() => {

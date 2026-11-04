@@ -11,18 +11,52 @@ import {
   useGetSupplierLedgerSummaryQuery,
 } from '@/store/services/apiSlice';
 import {
+  useGetSupplierByIdQuery as useGetBackendSupplierByIdQuery,
+  useGetSupplierLedgerQuery as useGetBackendLedgerQuery,
+} from '@/store/services/purchasesApi';
+import {
   ArrowLeft,
   Printer,
   CreditCard,
 } from 'lucide-react';
 
 function SupplierLedgerContent() {
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
   const params = useParams();
   const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string);
 
-  const { data: supplier, isLoading: isSupLoading } = useGetSupplierByIdQuery(id);
-  const { data: ledger = [], isLoading: isLedgerLoading } = useGetSupplierLedgerQuery(id);
-  const { data: summary } = useGetSupplierLedgerSummaryQuery(id);
+  // Demo Queries
+  const { data: demoSupplier, isLoading: isDemoSupLoading } = useGetSupplierByIdQuery(id, { skip: isBackendMode });
+  const { data: demoLedger = [], isLoading: isDemoLedgerLoading } = useGetSupplierLedgerQuery(id, { skip: isBackendMode });
+  const { data: demoSummary } = useGetSupplierLedgerSummaryQuery(id, { skip: isBackendMode });
+
+  // Backend Queries
+  const { data: backendSupData, isLoading: isBackendSupLoading } = useGetBackendSupplierByIdQuery(id, { skip: !isBackendMode });
+  const { data: backendLedgerData, isLoading: isBackendLedgerLoading } = useGetBackendLedgerQuery(
+    { id },
+    { skip: !isBackendMode }
+  );
+
+  const supplier = isBackendMode ? (backendLedgerData?.supplier || backendSupData) : demoSupplier;
+  const ledger = useMemo(() => {
+    if (isBackendMode) {
+      return (backendLedgerData?.entries || []).map((e: any) => ({
+        ...e,
+        id: e.id || e._id,
+        date: e.date || (e.entryDate ? new Date(e.entryDate).toISOString() : ''),
+        type: e.type || e.entryType,
+        balance: e.balance ?? e.runningBalance ?? 0,
+        reference: e.reference || e.referenceNumber,
+        description: e.description || e.narration,
+      }));
+    }
+    return demoLedger;
+  }, [isBackendMode, backendLedgerData, demoLedger]);
+
+  const summary = isBackendMode ? backendLedgerData?.summary : demoSummary;
+
+  const isSupLoading = isBackendMode ? isBackendSupLoading : isDemoSupLoading;
+  const isLedgerLoading = isBackendMode ? isBackendLedgerLoading : isDemoLedgerLoading;
 
   // Filters
   const [typeFilter, setTypeFilter] = useState('ALL');
@@ -30,7 +64,7 @@ function SupplierLedgerContent() {
   const [endDate, setEndDate] = useState('');
 
   const filteredEntries = useMemo(() => {
-    return ledger.filter((e) => {
+    return (ledger || []).filter((e: any) => {
       if (typeFilter !== 'ALL' && e.type !== typeFilter) return false;
       if (startDate && new Date(e.date).getTime() < new Date(startDate).getTime()) return false;
       if (endDate && new Date(e.date).getTime() > new Date(endDate).getTime()) return false;
@@ -38,8 +72,8 @@ function SupplierLedgerContent() {
     });
   }, [ledger, typeFilter, startDate, endDate]);
 
-  const totalCredits = filteredEntries.reduce((sum, e) => sum + e.credit, 0);
-  const totalDebits = filteredEntries.reduce((sum, e) => sum + e.debit, 0);
+  const totalCredits = filteredEntries.reduce((sum: number, e: any) => sum + (e.credit || 0), 0);
+  const totalDebits = filteredEntries.reduce((sum: number, e: any) => sum + (e.debit || 0), 0);
   const closingBalance = summary?.currentBalance ?? (ledger.length > 0 ? ledger[ledger.length - 1].balance : 0);
 
   if (isSupLoading) {
@@ -112,7 +146,7 @@ function SupplierLedgerContent() {
 
             <Link
               href={`/payments/suppliers?supplierId=${supplier.id}`}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-brand-burgundy hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-rose-700 hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
             >
               <CreditCard className="w-3.5 h-3.5" />
               <span>Make Payment</span>
@@ -147,9 +181,8 @@ function SupplierLedgerContent() {
               Current Payable Balance
             </span>
             <span
-              className={`text-2xl font-bold mt-1 block ${
-                closingBalance > 0 ? 'text-rose-700' : 'text-slate-900'
-              }`}
+              className={`text-2xl font-bold mt-1 block ${closingBalance > 0 ? 'text-rose-700' : 'text-slate-900'
+                }`}
             >
               Rs. {closingBalance.toLocaleString()}
             </span>
@@ -225,7 +258,7 @@ function SupplierLedgerContent() {
                     </td>
                   </tr>
                 ) : filteredEntries.length > 0 ? (
-                  filteredEntries.map((e) => (
+                  filteredEntries.map((e: any) => (
                     <tr key={e.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-3.5 px-4 whitespace-nowrap text-xs text-slate-600">
                         {e.date}
@@ -233,15 +266,14 @@ function SupplierLedgerContent() {
 
                       <td className="py-3.5 px-4">
                         <span
-                          className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                            e.type === 'BILL'
+                          className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full border ${e.type === 'BILL'
                               ? 'bg-rose-50 text-brand-burgundy border-rose-200'
                               : e.type === 'PAYMENT'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : e.type === 'DEBIT_NOTE'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200'
-                              : 'bg-slate-100 text-slate-700 border-slate-200'
-                          }`}
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : e.type === 'DEBIT_NOTE'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-slate-100 text-slate-700 border-slate-200'
+                            }`}
                         >
                           {e.type.replace('_', ' ')}
                         </span>

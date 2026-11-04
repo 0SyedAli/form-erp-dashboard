@@ -9,6 +9,8 @@ export class PosController {
       loginId: req.account?.loginId || '',
       role: req.account?.role || 'BRANCH',
       branchId: req.account?.branchId?._id?.toString() || req.account?.branchId?.toString(),
+      name: (req.account?.branchId as any)?.name,
+      permissions: req.account?.permissions as Record<string, boolean> | undefined,
     };
   }
 

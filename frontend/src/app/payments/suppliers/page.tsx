@@ -7,11 +7,15 @@ import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetSupplierPaymentsQuery,
-  useGetSuppliersQuery,
-  useGetBranchesQuery,
   useGetSupplierBillsQuery,
   useCreateSupplierPaymentMutation,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
+import {
+  useGetSupplierPaymentsQuery as useGetBackendPaymentsQuery,
+  useGetSuppliersQuery,
+  useCreateSupplierPaymentMutation as useCreateBackendPaymentMutation,
+} from '@/store/services/purchasesApi';
 import { hasPermission } from '@/lib/permissions';
 import { SupplierPayment, SupplierPaymentMethod } from '@/types';
 import {
@@ -24,16 +28,41 @@ import {
 } from 'lucide-react';
 
 function SupplierPaymentsContent() {
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
   const searchParams = useSearchParams();
   const preselectedSupplierId = searchParams?.get('supplierId');
   const preselectedBillId = searchParams?.get('billId');
 
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
-  const { data: payments = [], isLoading: isPaymentsLoading } = useGetSupplierPaymentsQuery();
-  const { data: suppliers = [] } = useGetSuppliersQuery();
+
+  // Queries
+  const { data: demoPayments = [], isLoading: isDemoLoading } = useGetSupplierPaymentsQuery(undefined, { skip: isBackendMode });
+  const { data: backendSuppliersData } = useGetSuppliersQuery(undefined, { skip: !isBackendMode });
+  const suppliers = (isBackendMode ? backendSuppliersData?.suppliers : []) || [];
   const { data: branches = [] } = useGetBranchesQuery();
-  const { data: allBills = [] } = useGetSupplierBillsQuery();
-  const [createPaymentMutation, { isLoading: isSubmitting }] = useCreateSupplierPaymentMutation();
+  const { data: allBills = [] } = useGetSupplierBillsQuery(undefined, { skip: isBackendMode });
+  const [createPaymentMutation, { isLoading: isDemoSubmitting }] = useCreateSupplierPaymentMutation();
+
+  // Backend queries
+  const { data: backendPaymentsData, isLoading: isBackendLoading } = useGetBackendPaymentsQuery(undefined, { skip: !isBackendMode });
+  const [createPaymentBackend, { isLoading: isBackendSubmitting }] = useCreateBackendPaymentMutation();
+
+  const payments = useMemo(() => {
+    if (isBackendMode) {
+      return (backendPaymentsData?.payments || []).map((p: any) => ({
+        ...p,
+        id: p._id || p.id,
+        voucherNumber: p.paymentNumber || p.voucherNumber,
+        supplierName: p.supplierId?.name || 'Unknown Supplier',
+        supplierId: p.supplierId?._id || p.supplierId?.id || p.supplierId,
+        referenceNumber: p.reference || p.referenceNumber,
+      }));
+    }
+    return demoPayments;
+  }, [isBackendMode, backendPaymentsData, demoPayments]);
+
+  const isPaymentsLoading = isBackendMode ? isBackendLoading : isDemoLoading;
+  const isSubmitting = isBackendMode ? isBackendSubmitting : isDemoSubmitting;
 
   const canPay = hasPermission(currentUser, 'payments.suppliers.create');
 
@@ -131,20 +160,39 @@ function SupplierPaymentsContent() {
       });
 
     try {
-      const created = await createPaymentMutation({
-        supplierId,
-        branchId,
-        paymentDate,
-        amount,
-        paymentMethod,
-        referenceNumber: referenceNumber.trim() || undefined,
-        notes: notes.trim() || undefined,
-        createdBy: currentUser?.name || 'Accounts Officer',
-        allocations: allocationItems,
-      }).unwrap();
+      if (isBackendMode) {
+        const created = await createPaymentBackend({
+          supplierId,
+          branchId,
+          amount: Number(amount),
+          paymentMethod,
+          reference: referenceNumber.trim() || undefined,
+          notes: notes.trim() || undefined,
+          allocations: allocationItems.map((a) => ({
+            billId: a.billId,
+            allocatedAmount: Number(a.allocatedAmount),
+          })),
+        }).unwrap();
 
-      setIsModalOpen(false);
-      setViewingPayment(created);
+        setIsModalOpen(false);
+        setViewingPayment(created as any);
+      } else {
+        const created = await createPaymentMutation({
+          supplierId,
+          branchId,
+          paymentDate,
+          amount,
+          paymentMethod,
+          referenceNumber: referenceNumber.trim() || undefined,
+          notes: notes.trim() || undefined,
+          createdBy: currentUser?.name || 'Accounts Officer',
+          allocations: allocationItems,
+        }).unwrap();
+
+        setIsModalOpen(false);
+        setViewingPayment(created);
+      }
+
       // Reset
       setSupplierId('');
       setAmount(0);
@@ -152,7 +200,7 @@ function SupplierPaymentsContent() {
       setReferenceNumber('');
       setNotes('');
     } catch (err: unknown) {
-      setFormError((err as { data?: string })?.data || 'Failed to record supplier payment.');
+      setFormError((err as { data?: string })?.data || (err as any)?.data?.error?.message || 'Failed to record supplier payment.');
     }
   };
 
@@ -193,7 +241,7 @@ function SupplierPaymentsContent() {
                 setFormError(null);
                 setIsModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 bg-brand-burgundy hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors self-start sm:self-auto"
+              className="inline-flex items-center gap-2 bg-rose-700 hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors self-start sm:self-auto"
             >
               <Plus className="w-4 h-4" />
               <span>Record Payment Voucher</span>
@@ -557,7 +605,7 @@ function SupplierPaymentsContent() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-5 py-2 text-xs font-semibold text-white bg-brand-burgundy hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-rose-700 hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
                 >
                   {isSubmitting ? 'Posting...' : 'Issue Payment Voucher'}
                 </button>

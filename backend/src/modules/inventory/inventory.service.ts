@@ -19,6 +19,18 @@ export interface UserContext {
   branchId?: string;
 }
 
+async function resolveBranchObjectId(branchIdStr?: string): Promise<mongoose.Types.ObjectId | undefined> {
+  if (!branchIdStr || branchIdStr === 'ALL' || branchIdStr === 'all') return undefined;
+  if (mongoose.Types.ObjectId.isValid(branchIdStr)) {
+    return new mongoose.Types.ObjectId(branchIdStr);
+  }
+  const branch = await Branch.findOne({
+    $or: [{ code: branchIdStr }, { id: branchIdStr }],
+  });
+  if (branch) return branch._id as mongoose.Types.ObjectId;
+  return new mongoose.Types.ObjectId();
+}
+
 export class InventoryService {
   /**
    * Helper: Generate unique audit/receipt numbers
@@ -56,12 +68,14 @@ export class InventoryService {
       if (!userContext.branchId) {
         throw new AppError('Branch user is not bound to a valid branch.', 403, 'UNBOUND_BRANCH');
       }
-      filter.branchId = new mongoose.Types.ObjectId(userContext.branchId);
+      const bId = await resolveBranchObjectId(userContext.branchId);
+      if (bId) filter.branchId = bId;
     } else if (query.branchId) {
-      filter.branchId = new mongoose.Types.ObjectId(query.branchId);
+      const bId = await resolveBranchObjectId(query.branchId);
+      if (bId) filter.branchId = bId;
     }
 
-    if (query.stockLocationId) {
+    if (query.stockLocationId && mongoose.Types.ObjectId.isValid(query.stockLocationId)) {
       filter.stockLocationId = new mongoose.Types.ObjectId(query.stockLocationId);
     }
 
@@ -113,7 +127,7 @@ export class InventoryService {
         onHand,
         reserved,
         available,
-        reorderLevel: b.reorderLevel ?? 5,
+        reorderLevel: b.reorderLevel,
         updatedAt: b.updatedAt,
       };
     });
@@ -163,9 +177,11 @@ export class InventoryService {
     const filter: Record<string, unknown> = { isActive: true };
 
     if (userContext.role !== 'SUPER_ADMIN') {
-      filter.branchId = new mongoose.Types.ObjectId(userContext.branchId);
+      const bId = await resolveBranchObjectId(userContext.branchId);
+      if (bId) filter.branchId = bId;
     } else if (branchId) {
-      filter.branchId = new mongoose.Types.ObjectId(branchId);
+      const bId = await resolveBranchObjectId(branchId);
+      if (bId) filter.branchId = bId;
     }
 
     const locations = await StockLocation.find(filter)
@@ -205,12 +221,14 @@ export class InventoryService {
     }
 
     if (userContext.role !== 'SUPER_ADMIN') {
-      filter.branchId = new mongoose.Types.ObjectId(userContext.branchId);
+      const bId = await resolveBranchObjectId(userContext.branchId);
+      if (bId) filter.branchId = bId;
     } else if (branchId) {
-      filter.branchId = new mongoose.Types.ObjectId(branchId);
+      const bId = await resolveBranchObjectId(branchId);
+      if (bId) filter.branchId = bId;
     }
 
-    if (locationId) {
+    if (locationId && mongoose.Types.ObjectId.isValid(locationId)) {
       filter.stockLocationId = new mongoose.Types.ObjectId(locationId);
     }
 
@@ -1298,12 +1316,14 @@ export class InventoryService {
     const filter: Record<string, unknown> = {};
 
     if (userContext.role !== 'SUPER_ADMIN') {
-      filter.branchId = new mongoose.Types.ObjectId(userContext.branchId);
+      const bId = await resolveBranchObjectId(userContext.branchId);
+      if (bId) filter.branchId = bId;
     } else if (query.branchId) {
-      filter.branchId = new mongoose.Types.ObjectId(query.branchId);
+      const bId = await resolveBranchObjectId(query.branchId);
+      if (bId) filter.branchId = bId;
     }
 
-    if (query.stockLocationId) {
+    if (query.stockLocationId && mongoose.Types.ObjectId.isValid(query.stockLocationId)) {
       filter.stockLocationId = new mongoose.Types.ObjectId(query.stockLocationId);
     }
 
@@ -1370,7 +1390,7 @@ export class InventoryService {
   public static async getStockAlerts(
     query: {
       branchId?: string;
-      status?: 'ALL' | 'OUT_OF_STOCK' | 'LOW_STOCK';
+      status?: 'ALL' | 'OUT_OF_STOCK' | 'LOW_STOCK' | 'NOT_CONFIGURED';
       brandId?: string;
       categoryId?: string;
       search?: string;
@@ -1385,9 +1405,11 @@ export class InventoryService {
 
     const branchFilter: Record<string, unknown> = {};
     if (userContext.role !== 'SUPER_ADMIN') {
-      branchFilter.branchId = new mongoose.Types.ObjectId(userContext.branchId);
+      const bId = await resolveBranchObjectId(userContext.branchId);
+      if (bId) branchFilter.branchId = bId;
     } else if (query.branchId) {
-      branchFilter.branchId = new mongoose.Types.ObjectId(query.branchId);
+      const bId = await resolveBranchObjectId(query.branchId);
+      if (bId) branchFilter.branchId = bId;
     }
 
     if (query.search) {
@@ -1428,12 +1450,14 @@ export class InventoryService {
       const onHand = b.onHand || 0;
       const reserved = b.reserved || 0;
       const available = Math.max(0, onHand - reserved);
-      const reorderLevel = b.reorderLevel ?? 5;
+      const reorderLevel = b.reorderLevel;
 
-      let statusType: 'OUT_OF_STOCK' | 'LOW_STOCK' | 'NORMAL';
+      let statusType: 'OUT_OF_STOCK' | 'LOW_STOCK' | 'NORMAL' | 'NOT_CONFIGURED';
       if (available <= 0) {
         statusType = 'OUT_OF_STOCK';
         outOfStockCount++;
+      } else if (reorderLevel == null || reorderLevel === undefined) {
+        statusType = 'NOT_CONFIGURED';
       } else if (available <= reorderLevel) {
         statusType = 'LOW_STOCK';
         lowStockCount++;
@@ -1445,7 +1469,8 @@ export class InventoryService {
       // Filter by status if requested
       if (query.status === 'OUT_OF_STOCK' && statusType !== 'OUT_OF_STOCK') continue;
       if (query.status === 'LOW_STOCK' && statusType !== 'LOW_STOCK') continue;
-      if (query.status === 'ALL' && statusType === 'NORMAL') continue; // Alerts only include low and out of stock by default
+      if (query.status === 'NOT_CONFIGURED' && statusType !== 'NOT_CONFIGURED') continue;
+      if (query.status === 'ALL' && statusType === 'NORMAL') continue; // Alerts only include low, out of stock, or unconfigured by default
 
       // Brand and category filters
       const variant = b.variantId as any;
@@ -1495,7 +1520,8 @@ export class InventoryService {
   public static async getInventorySummary(userContext: UserContext) {
     const filter: Record<string, unknown> = {};
     if (userContext.role !== 'SUPER_ADMIN') {
-      filter.branchId = new mongoose.Types.ObjectId(userContext.branchId);
+      const bId = await resolveBranchObjectId(userContext.branchId);
+      if (bId) filter.branchId = bId;
     }
 
     const [balances, inTransitTransfers] = await Promise.all([
@@ -1517,14 +1543,14 @@ export class InventoryService {
       const onHand = b.onHand || 0;
       const reserved = b.reserved || 0;
       const available = Math.max(0, onHand - reserved);
-      const reorderLevel = b.reorderLevel ?? 5;
+      const reorderLevel = b.reorderLevel;
 
       totalOnHand += onHand;
       totalReserved += reserved;
 
       if (available <= 0) {
         outOfStockCount++;
-      } else if (available <= reorderLevel) {
+      } else if (reorderLevel != null && available <= reorderLevel) {
         lowStockCount++;
       }
     }

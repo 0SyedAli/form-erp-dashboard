@@ -6,12 +6,16 @@ import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetPurchaseReturnsQuery,
-  useGetSuppliersQuery,
-  useGetBranchesQuery,
   useGetStockLocationsQuery,
   useGetProductVariantsQuery,
   useCreatePurchaseReturnMutation,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
+import {
+  useGetPurchaseReturnsQuery as useGetBackendReturnsQuery,
+  useGetSuppliersQuery,
+  useCreatePurchaseReturnMutation as useCreateBackendReturnMutation,
+} from '@/store/services/purchasesApi';
 import { hasPermission } from '@/lib/permissions';
 import { PurchaseReturn } from '@/types';
 import {
@@ -25,13 +29,39 @@ import {
 } from 'lucide-react';
 
 function PurchaseReturnsContent() {
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
-  const { data: returns = [], isLoading: isReturnsLoading } = useGetPurchaseReturnsQuery();
-  const { data: suppliers = [] } = useGetSuppliersQuery();
+
+  // Queries
+  const { data: demoReturns = [], isLoading: isDemoLoading } = useGetPurchaseReturnsQuery(undefined, { skip: isBackendMode });
+  const { data: backendSuppliersData } = useGetSuppliersQuery(undefined, { skip: !isBackendMode });
+  const suppliers = (isBackendMode ? backendSuppliersData?.suppliers : []) || [];
   const { data: branches = [] } = useGetBranchesQuery();
-  const { data: stockLocations = [] } = useGetStockLocationsQuery();
-  const { data: variants = [] } = useGetProductVariantsQuery();
-  const [createReturnMutation, { isLoading: isSubmitting }] = useCreatePurchaseReturnMutation();
+  const { data: stockLocations = [] } = useGetStockLocationsQuery(undefined, { skip: isBackendMode });
+  const { data: variants = [] } = useGetProductVariantsQuery(undefined, { skip: isBackendMode });
+  const [createReturnMutation, { isLoading: isDemoSubmitting }] = useCreatePurchaseReturnMutation();
+
+  // Backend queries
+  const { data: backendReturnsData, isLoading: isBackendLoading } = useGetBackendReturnsQuery(undefined, { skip: !isBackendMode });
+  const [createReturnBackend, { isLoading: isBackendSubmitting }] = useCreateBackendReturnMutation();
+
+  const returns = useMemo(() => {
+    if (isBackendMode) {
+      return (backendReturnsData?.returns || []).map((r: any) => ({
+        ...r,
+        id: r._id || r.id,
+        returnNumber: r.returnNumber,
+        debitNoteNumber: r.debitNoteNumber,
+        supplierName: r.supplierId?.name || 'Unknown Supplier',
+        branchName: r.branchId?.name || 'Branch',
+        returnDate: (r.returnDate || '').slice(0, 10),
+      }));
+    }
+    return demoReturns;
+  }, [isBackendMode, backendReturnsData, demoReturns]);
+
+  const isReturnsLoading = isBackendMode ? isBackendLoading : isDemoLoading;
+  const isSubmitting = isBackendMode ? isBackendSubmitting : isDemoSubmitting;
 
   const canManageReturns = hasPermission(currentUser, 'purchases.returns.manage');
 
@@ -129,24 +159,41 @@ function PurchaseReturnsContent() {
     }
 
     try {
-      const res = await createReturnMutation({
-        supplierId,
-        branchId,
-        locationId: effectiveLocationId,
-        reason: `${reason}${returnNotes ? ': ' + returnNotes.trim() : ''}`,
-        createdByName: currentUser?.name || 'Store Manager',
-        items: items.map((i) => ({
-          sku: i.sku,
-          variantId: i.variantId,
-          quantity: Number(i.quantity),
-          unitCost: Number(i.unitCost),
-        })),
-      }).unwrap();
+      if (isBackendMode) {
+        const res = await createReturnBackend({
+          supplierId,
+          branchId,
+          stockLocationId: effectiveLocationId || undefined,
+          reason: `${reason}${returnNotes ? ': ' + returnNotes.trim() : ''}`,
+          items: items.map((i) => ({
+            sku: i.sku,
+            quantity: Number(i.quantity),
+            unitCost: Number(i.unitCost),
+          })),
+        }).unwrap();
 
-      setIsModalOpen(false);
-      setViewingReturn(res);
+        setIsModalOpen(false);
+        setViewingReturn(res as any);
+      } else {
+        const res = await createReturnMutation({
+          supplierId,
+          branchId,
+          locationId: effectiveLocationId,
+          reason: `${reason}${returnNotes ? ': ' + returnNotes.trim() : ''}`,
+          createdByName: currentUser?.name || 'Store Manager',
+          items: items.map((i) => ({
+            sku: i.sku,
+            variantId: i.variantId,
+            quantity: Number(i.quantity),
+            unitCost: Number(i.unitCost),
+          })),
+        }).unwrap();
+
+        setIsModalOpen(false);
+        setViewingReturn(res);
+      }
     } catch (err: unknown) {
-      setFormError((err as { data?: string })?.data || 'Failed to process purchase return.');
+      setFormError((err as { data?: string })?.data || (err as any)?.data?.error?.message || 'Failed to process purchase return.');
     }
   };
 
@@ -172,7 +219,7 @@ function PurchaseReturnsContent() {
                 setFormError(null);
                 setIsModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 bg-brand-burgundy hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors self-start sm:self-auto"
+              className="inline-flex items-center gap-2 bg-rose-700 hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors self-start sm:self-auto"
             >
               <Plus className="w-4 h-4" />
               <span>New Return / Debit Note</span>
@@ -527,7 +574,7 @@ function PurchaseReturnsContent() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-5 py-2 text-xs font-semibold text-white bg-brand-burgundy hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-rose-700 hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
                 >
                   {isSubmitting ? 'Processing...' : 'Issue Debit Note'}
                 </button>

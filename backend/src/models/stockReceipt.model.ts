@@ -3,8 +3,12 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IReceiptItem {
   sku: string;
   variantId?: mongoose.Types.ObjectId;
+  productName?: string;
+  sizeLabel?: string;
+  thicknessLabel?: string;
   quantityOrdered: number;
   quantityReceived: number;
+  damagedQuantity?: number;
   unitCost: number;
   lineTotal: number;
 }
@@ -30,8 +34,12 @@ const ReceiptItemSchema = new Schema<IReceiptItem>(
   {
     sku: { type: String, required: true },
     variantId: { type: Schema.Types.ObjectId, ref: 'Variant' },
+    productName: { type: String },
+    sizeLabel: { type: String },
+    thicknessLabel: { type: String },
     quantityOrdered: { type: Number, required: true, min: 1 },
     quantityReceived: { type: Number, required: true, min: 0 },
+    damagedQuantity: { type: Number, default: 0, min: 0 },
     unitCost: { type: Number, required: true, min: 0 },
     lineTotal: { type: Number, required: true, min: 0 },
   },
@@ -71,6 +79,7 @@ const StockReceiptSchema = new Schema<IStockReceipt>(
       type: Schema.Types.ObjectId,
       ref: 'StockLocation',
       required: true,
+      index: true,
     },
     items: [ReceiptItemSchema],
     totalQuantity: {
@@ -90,6 +99,7 @@ const StockReceiptSchema = new Schema<IStockReceipt>(
     receivedDate: {
       type: Date,
       default: Date.now,
+      index: true,
     },
     status: {
       type: String,
@@ -106,4 +116,3 @@ const StockReceiptSchema = new Schema<IStockReceipt>(
 );
 
 export const StockReceipt = mongoose.model<IStockReceipt>('StockReceipt', StockReceiptSchema);
-

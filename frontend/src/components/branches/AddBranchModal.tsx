@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { BranchType, Branch } from '@/types';
-import { useCreateBranchMutation } from '@/store/services/apiSlice';
+import { useCreateBranchMutation } from '@/store/services/catalogueApi';
 import { X, Building2, Store } from 'lucide-react';
 
 const branchSchema = z.object({

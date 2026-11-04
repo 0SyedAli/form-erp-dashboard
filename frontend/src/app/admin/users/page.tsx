@@ -14,7 +14,6 @@ import AddUserModal from '@/components/users/AddUserModal';
 import EditUserModal from '@/components/users/EditUserModal';
 import UserStatusModal from '@/components/users/UserStatusModal';
 import RoleManagementModal from '@/components/users/RoleManagementModal';
-import ResetDemoModal from '@/components/branches/ResetDemoModal';
 import PermissionsMatrix from '@/components/users/PermissionsMatrix';
 import Toast, { ToastMessage } from '@/components/common/Toast';
 import {
@@ -192,16 +191,6 @@ export default function UsersManagementPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Reset Demo Data Button */}
-          <button
-            onClick={() => setIsResetOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium shadow-2xs transition-colors cursor-pointer"
-            title="Reset to default 10 verified personas"
-          >
-            <RotateCcw className="w-4 h-4 text-gray-500" />
-            <span className="hidden sm:inline">Reset Demo Data</span>
-          </button>
-
           {/* Role Management Modal Button */}
           <button
             onClick={() => setIsRoleModalOpen(true)}
@@ -739,19 +728,6 @@ export default function UsersManagementPage() {
         isOpen={isRoleModalOpen}
         onClose={() => setIsRoleModalOpen(false)}
         onSuccessToast={(msg) => showToast('success', 'Role Updated', msg)}
-      />
-
-      {/* Reset Demo Data Modal */}
-      <ResetDemoModal
-        isOpen={isResetOpen}
-        onClose={() => setIsResetOpen(false)}
-        onSuccess={() => {
-          showToast(
-            'info',
-            'Demo Database Reset',
-            'Baseline 10 verified personas and 5 cluster shops successfully restored.'
-          );
-        }}
       />
     </AppLayout>
   );

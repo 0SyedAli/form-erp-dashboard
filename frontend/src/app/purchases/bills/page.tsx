@@ -8,12 +8,16 @@ import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetSupplierBillsQuery,
-  useGetSuppliersQuery,
-  useGetBranchesQuery,
   useGetPurchaseOrdersQuery,
   useGetProductVariantsQuery,
   useCreateSupplierBillMutation,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
+import {
+  useGetSupplierBillsQuery as useGetBackendBillsQuery,
+  useGetSuppliersQuery,
+  useCreateSupplierBillMutation as useCreateBackendBillMutation,
+} from '@/store/services/purchasesApi';
 import { hasPermission } from '@/lib/permissions';
 import { SupplierBill } from '@/types';
 import {
@@ -38,16 +42,44 @@ interface BillItemRow {
 }
 
 function SupplierBillsContent() {
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
   const searchParams = useSearchParams();
   const poIdParam = searchParams?.get('createForPo');
 
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
-  const { data: bills = [], isLoading: isBillsLoading } = useGetSupplierBillsQuery();
-  const { data: suppliers = [] } = useGetSuppliersQuery();
+
+  // Queries
+  const { data: demoBills = [], isLoading: isDemoBillsLoading } = useGetSupplierBillsQuery(undefined, { skip: isBackendMode });
+  const { data: backendSuppliersData } = useGetSuppliersQuery(undefined, { skip: !isBackendMode });
+  const suppliers = (isBackendMode ? backendSuppliersData?.suppliers : []) || [];
   const { data: branches = [] } = useGetBranchesQuery();
-  const { data: purchaseOrders = [] } = useGetPurchaseOrdersQuery();
-  const { data: variants = [] } = useGetProductVariantsQuery();
-  const [createBillMutation, { isLoading: isCreatingBill }] = useCreateSupplierBillMutation();
+  const { data: purchaseOrders = [] } = useGetPurchaseOrdersQuery(undefined, { skip: isBackendMode });
+  const { data: variants = [] } = useGetProductVariantsQuery(undefined, { skip: isBackendMode });
+  const [createBillMutation, { isLoading: isDemoCreatingBill }] = useCreateSupplierBillMutation();
+
+  // Backend queries
+  const { data: backendBillsData, isLoading: isBackendBillsLoading } = useGetBackendBillsQuery(undefined, { skip: !isBackendMode });
+  const [createBillBackend, { isLoading: isBackendCreatingBill }] = useCreateBackendBillMutation();
+
+  const bills = useMemo(() => {
+    if (isBackendMode) {
+      return (backendBillsData?.bills || []).map((b: any) => ({
+        ...b,
+        id: b._id || b.id,
+        supplierName: b.supplierId?.name || 'Unknown Supplier',
+        branchName: b.branchId?.name || 'Branch',
+        grandTotal: b.totalAmount || 0,
+        amountDue: b.balanceDue || 0,
+        paidAmount: b.paidAmount || 0,
+        invoiceDate: (b.billDate || '').slice(0, 10),
+        dueDate: (b.dueDate || '').slice(0, 10),
+      }));
+    }
+    return demoBills;
+  }, [isBackendMode, backendBillsData, demoBills]);
+
+  const isBillsLoading = isBackendMode ? isBackendBillsLoading : isDemoBillsLoading;
+  const isCreatingBill = isBackendMode ? isBackendCreatingBill : isDemoCreatingBill;
 
   const canPostBill = hasPermission(currentUser, 'bills.post');
 
@@ -112,7 +144,7 @@ function SupplierBillsContent() {
     setSupplierId(supId);
     const sup = suppliers.find((s) => s.id === supId);
     if (sup) {
-      const days = sup.defaultDueDays || sup.defaultCreditDays || 30;
+      const days = (sup as any).defaultDueDays || (sup as any).defaultCreditDays || 30;
       const d = new Date(billDate);
       d.setDate(d.getDate() + days);
       setDueDate(d.toISOString().slice(0, 10));
@@ -218,31 +250,52 @@ function SupplierBillsContent() {
     }
 
     try {
-      const created = await createBillMutation({
-        supplierId,
-        supplierInvoiceNumber: supplierInvoiceNumber.trim(),
-        branchId,
-        poId: poId || undefined,
-        grnIds: [],
-        billDate,
-        dueDate,
-        notes: notes.trim() || undefined,
-        createdBy: currentUser?.name || 'Accounts Officer',
-        items: items.map((i) => ({
-          sku: i.sku,
-          variantId: i.variantId,
-          productName: i.productName,
-          quantity: Number(i.quantity),
-          unitCost: Number(i.unitCost),
-          discount: Number(i.discount || 0),
-          tax: Number(i.tax || 0),
-        })),
-      }).unwrap();
+      if (isBackendMode) {
+        const created = await createBillBackend({
+          supplierId,
+          supplierInvoiceNumber: supplierInvoiceNumber.trim(),
+          branchId,
+          purchaseOrderId: poId || undefined,
+          dueDate: new Date(dueDate).toISOString(),
+          notes: notes.trim() || undefined,
+          items: items.map((i) => ({
+            sku: i.sku,
+            quantity: Number(i.quantity),
+            unitCost: Number(i.unitCost),
+            discount: Number(i.discount || 0),
+            tax: Number(i.tax || 0),
+          })),
+        }).unwrap();
 
-      setIsModalOpen(false);
-      setViewingBill(created);
+        setIsModalOpen(false);
+        setViewingBill(created as any);
+      } else {
+        const created = await createBillMutation({
+          supplierId,
+          supplierInvoiceNumber: supplierInvoiceNumber.trim(),
+          branchId,
+          poId: poId || undefined,
+          grnIds: [],
+          billDate,
+          dueDate,
+          notes: notes.trim() || undefined,
+          createdBy: currentUser?.name || 'Accounts Officer',
+          items: items.map((i) => ({
+            sku: i.sku,
+            variantId: i.variantId,
+            productName: i.productName,
+            quantity: Number(i.quantity),
+            unitCost: Number(i.unitCost),
+            discount: Number(i.discount || 0),
+            tax: Number(i.tax || 0),
+          })),
+        }).unwrap();
+
+        setIsModalOpen(false);
+        setViewingBill(created);
+      }
     } catch (err: unknown) {
-      setFormError((err as { data?: string })?.data || 'Failed to post supplier bill.');
+      setFormError((err as { data?: string })?.data || (err as any)?.data?.error?.message || 'Failed to post supplier bill.');
     }
   };
 
@@ -269,7 +322,7 @@ function SupplierBillsContent() {
                 setFormError(null);
                 setIsModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 bg-brand-burgundy hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors self-start sm:self-auto"
+              className="inline-flex items-center gap-2 bg-rose-700 hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors self-start sm:self-auto"
             >
               <Plus className="w-4 h-4" />
               <span>Register Vendor Bill</span>
@@ -310,7 +363,7 @@ function SupplierBillsContent() {
             </div>
             <Link
               href="/payments/suppliers"
-              className="px-3.5 py-2 bg-brand-burgundy text-white rounded-lg text-xs font-semibold hover:bg-rose-900 transition-colors shrink-0"
+              className="px-3.5 py-2 bg-rose-700 text-white rounded-lg text-xs font-semibold hover:bg-rose-900 transition-colors shrink-0"
             >
               Make Payment
             </Link>
@@ -439,15 +492,14 @@ function SupplierBillsContent() {
 
                         <td className="py-3.5 px-4 text-center">
                           <span
-                            className={`inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${
-                              isOverdue
+                            className={`inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${isOverdue
                                 ? 'bg-rose-50 text-rose-700 border-rose-200'
                                 : b.paymentStatus === 'PAID'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : b.paymentStatus === 'PARTIALLY_PAID'
-                                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                : 'bg-slate-100 text-slate-700 border-slate-200'
-                            }`}
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : b.paymentStatus === 'PARTIALLY_PAID'
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                              }`}
                           >
                             {isOverdue ? 'OVERDUE' : b.paymentStatus.replace('_', ' ')}
                           </span>
@@ -725,7 +777,7 @@ function SupplierBillsContent() {
                 <button
                   type="submit"
                   disabled={isCreatingBill}
-                  className="px-5 py-2 text-xs font-semibold text-white bg-brand-burgundy hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-rose-700 hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
                 >
                   {isCreatingBill ? 'Posting...' : 'Post Bill (A/P)'}
                 </button>
@@ -816,7 +868,7 @@ function SupplierBillsContent() {
               {viewingBill.amountDue > 0 && (
                 <Link
                   href={`/payments/suppliers?supplierId=${viewingBill.supplierId}&billId=${viewingBill.id}`}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-brand-burgundy hover:bg-rose-900 rounded-lg transition-colors"
+                  className="px-4 py-2 text-xs font-semibold text-white bg-rose-700 hover:bg-rose-900 rounded-lg transition-colors"
                 >
                   Pay This Bill
                 </Link>

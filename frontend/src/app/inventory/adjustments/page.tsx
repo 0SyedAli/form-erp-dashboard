@@ -5,12 +5,12 @@ import AppLayout from '@/components/layout/AppLayout';
 import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
-  useGetBranchesQuery,
   useGetStockLocationsQuery,
   useGetInventoryBalancesQuery,
   useAdjustStockMutation,
   useGetStockMovementsQuery,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
 import { getUserAuthorizedBranches } from '@/lib/permissions';
 import { StockAdjustmentReason, InventoryBalance } from '@/types';
 import Toast, { ToastMessage } from '@/components/common/Toast';

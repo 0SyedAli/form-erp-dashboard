@@ -6,7 +6,6 @@ import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetStockTransfersQuery,
-  useGetBranchesQuery,
   useGetStockLocationsQuery,
   useGetProductVariantsQuery,
   useGetInventoryBalancesQuery,
@@ -16,6 +15,7 @@ import {
   useReceiveStockTransferMutation,
   useCancelStockTransferMutation,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
 import { getUserAuthorizedBranches } from '@/lib/permissions';
 import { StockTransfer, StockTransferStatus } from '@/types';
 import Toast, { ToastMessage } from '@/components/common/Toast';

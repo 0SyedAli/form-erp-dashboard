@@ -1,12 +1,22 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+export type SupplierLedgerEntryType =
+  | 'BILL'
+  | 'PAYMENT'
+  | 'DEBIT_NOTE'
+  | 'ADVANCE'
+  | 'OPENING_BALANCE'
+  | 'REVERSAL';
+
 export interface ISupplierLedgerEntry extends Document {
   supplierId: mongoose.Types.ObjectId;
   branchId: mongoose.Types.ObjectId;
-  entryType: 'BILL' | 'PAYMENT' | 'RETURN' | 'OPENING_BALANCE';
+  entryDate: Date;
+  entryType: SupplierLedgerEntryType;
+  referenceNumber: string;
   referenceBillId?: string;
   referencePaymentId?: string;
-  debit: number; // Payments made to supplier (reduces our payable)
+  debit: number; // Payments / Debit notes made to supplier (reduces our payable)
   credit: number; // Bills received from supplier (increases our payable)
   runningBalance: number;
   narration: string;
@@ -28,10 +38,22 @@ const SupplierLedgerEntrySchema = new Schema<ISupplierLedgerEntry>(
       required: true,
       index: true,
     },
+    entryDate: {
+      type: Date,
+      default: Date.now,
+      index: true,
+    },
     entryType: {
       type: String,
-      enum: ['BILL', 'PAYMENT', 'RETURN', 'OPENING_BALANCE'],
+      enum: ['BILL', 'PAYMENT', 'DEBIT_NOTE', 'ADVANCE', 'OPENING_BALANCE', 'REVERSAL'],
       required: true,
+      index: true,
+    },
+    referenceNumber: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true,
     },
     referenceBillId: {
       type: String,
@@ -78,10 +100,9 @@ const SupplierLedgerEntrySchema = new Schema<ISupplierLedgerEntry>(
   }
 );
 
-SupplierLedgerEntrySchema.index({ supplierId: 1, timestamp: -1 });
+SupplierLedgerEntrySchema.index({ supplierId: 1, entryDate: -1, timestamp: -1 });
 
 export const SupplierLedgerEntry = mongoose.model<ISupplierLedgerEntry>(
   'SupplierLedgerEntry',
   SupplierLedgerEntrySchema
 );
-

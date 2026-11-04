@@ -203,8 +203,29 @@ const SalesInvoiceSchema = new Schema<ISalesInvoice>(
   },
   {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
+
+SalesInvoiceSchema.virtual('netAmount').get(function () {
+  return this.total;
+});
+SalesInvoiceSchema.virtual('grossAmount').get(function () {
+  return this.subtotal;
+});
+SalesInvoiceSchema.virtual('discountAmount').get(function () {
+  return this.discount;
+});
+SalesInvoiceSchema.virtual('amountPaid').get(function () {
+  return this.paidAmount;
+});
+SalesInvoiceSchema.virtual('amountDue').get(function () {
+  return this.balanceDue;
+});
+SalesInvoiceSchema.virtual('date').get(function () {
+  return this.createdAt;
+});
 
 SalesInvoiceSchema.index({ branchId: 1, createdAt: -1 });
 

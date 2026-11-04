@@ -33,35 +33,58 @@ interface AuthState {
   sessionRestored: boolean;
 }
 
-const initialState: AuthState = {
-  currentUser: DEMO_USERS[0],
-  account: {
-    id: 'USR-ADMIN-01',
-    loginId: 'admin',
-    name: 'Syed Ahtesham',
-    email: 'admin@moltyfoam.store',
-    role: 'SUPER_ADMIN',
-    permissions: {
-      pos: true,
-      viewOwnSales: true,
-      viewProducts: true,
-      addEditProducts: true,
-      viewStock: true,
-      manageStock: true,
-      stockTransfers: true,
-      customers: true,
-      customerCredit: true,
-      purchases: true,
-      suppliers: true,
-      reports: true,
-      returns: true,
-      discountsOverrides: true,
+const AUTH_STORAGE_KEY = 'molty_auth_session';
+
+function getInitialState(): AuthState {
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.account) {
+          return {
+            currentUser: accountToUser(parsed.account),
+            account: parsed.account,
+            isAuthenticated: true,
+            sessionRestored: true,
+          };
+        }
+      }
+    } catch {}
+  }
+
+  return {
+    currentUser: DEMO_USERS[0],
+    account: {
+      id: 'USR-ADMIN-01',
+      loginId: 'admin',
+      name: 'Syed Ahtesham',
+      email: 'admin@moltyfoam.store',
+      role: 'SUPER_ADMIN',
+      permissions: {
+        pos: true,
+        viewOwnSales: true,
+        viewProducts: true,
+        addEditProducts: true,
+        viewStock: true,
+        manageStock: true,
+        stockTransfers: true,
+        customers: true,
+        customerCredit: true,
+        purchases: true,
+        suppliers: true,
+        reports: true,
+        returns: true,
+        discountsOverrides: true,
+      },
+      isActive: true,
     },
-    isActive: true,
-  },
-  isAuthenticated: true,
-  sessionRestored: false,
-};
+    isAuthenticated: true,
+    sessionRestored: false,
+  };
+}
+
+const initialState: AuthState = getInitialState();
 
 export const authSlice = createSlice({
   name: 'auth',
@@ -72,6 +95,11 @@ export const authSlice = createSlice({
       state.currentUser = accountToUser(action.payload);
       state.isAuthenticated = true;
       state.sessionRestored = true;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ account: action.payload }));
+        } catch {}
+      }
     },
     setCurrentUser: (state, action: PayloadAction<User>) => {
       state.currentUser = action.payload;
@@ -82,6 +110,11 @@ export const authSlice = createSlice({
       state.account = null;
       state.isAuthenticated = false;
       state.sessionRestored = true;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+        } catch {}
+      }
     },
     markSessionChecked: (state) => {
       state.sessionRestored = true;

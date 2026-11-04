@@ -179,7 +179,7 @@ Physical stock balances are decoupled from the catalogue definitions:
 ## 13. OpenAPI / Swagger 3.0 Documentation
 
 All catalogue routes, request bodies, error schemas, and response formats are registered in `backend/src/docs/swagger.ts` and available at:
-`http://localhost:5000/api/docs`
+`http://localhost:5001/api/docs`
 
 ---
 

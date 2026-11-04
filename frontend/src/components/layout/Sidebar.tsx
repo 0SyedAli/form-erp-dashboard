@@ -147,17 +147,17 @@ export default function Sidebar({
     },
     ...(isSuperAdmin
       ? [
-          {
-            title: 'Branches',
-            href: '/admin/branches',
-            icon: Building2,
-            requiredPermission: 'branches:view',
-          },
-        ]
+        {
+          title: 'Branches',
+          href: '/admin/branches',
+          icon: Building2,
+          requiredPermission: 'branches:view',
+        },
+      ]
       : []),
     {
-      title: 'Reports',
-      href: '/purchases/reports',
+      title: 'Reports & Analytics',
+      href: '/reports',
       icon: FileSpreadsheet,
       requiredPermission: 'reports:view',
     },
@@ -206,9 +206,8 @@ export default function Sidebar({
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-40 w-60 bg-brand-navy text-slate-300 flex flex-col transition-all duration-300 ease-in-out border-r border-slate-800 ${
-          isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}
+        className={`fixed top-0 bottom-0 left-0 z-40 w-60 bg-brand-navy text-slate-300 flex flex-col transition-all duration-300 ease-in-out border-r border-slate-800 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+          }`}
       >
         {/* Brand Header */}
         <div className="h-18 flex items-center px-5 border-b border-slate-800/60 bg-[#0A101D]">
@@ -243,11 +242,10 @@ export default function Sidebar({
               return (
                 <div key={item.title} className="space-y-1">
                   <div
-                    className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
-                      isActive
+                    className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${isActive
                         ? 'bg-brand-blue text-white font-semibold shadow-xs'
                         : 'text-slate-300 hover:text-white hover:bg-slate-800/60 font-medium'
-                    }`}
+                      }`}
                     onClick={() => setIsManageStockExpanded(!isManageStockExpanded)}
                   >
                     <Link
@@ -256,9 +254,8 @@ export default function Sidebar({
                       className="flex items-center gap-3 flex-1"
                     >
                       <Icon
-                        className={`w-4.5 h-4.5 shrink-0 ${
-                          isActive ? 'text-white' : 'text-slate-400'
-                        }`}
+                        className={`w-4.5 h-4.5 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'
+                          }`}
                       />
                       <span className="truncate">{item.title}</span>
                     </Link>
@@ -271,9 +268,8 @@ export default function Sidebar({
                       className="p-1 text-slate-400 hover:text-white"
                     >
                       <ChevronDown
-                        className={`w-3.5 h-3.5 transition-transform ${
-                          showSubs ? 'rotate-180' : ''
-                        }`}
+                        className={`w-3.5 h-3.5 transition-transform ${showSubs ? 'rotate-180' : ''
+                          }`}
                       />
                     </button>
                   </div>
@@ -289,11 +285,10 @@ export default function Sidebar({
                             key={sub.href}
                             href={sub.href}
                             onClick={onMobileClose}
-                            className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                              isSubActive
+                            className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${isSubActive
                                 ? 'bg-slate-800 text-blue-400 font-semibold'
                                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
-                            }`}
+                              }`}
                           >
                             {SubIcon && <SubIcon className="w-3.5 h-3.5" />}
                             <span>{sub.title}</span>
@@ -311,16 +306,14 @@ export default function Sidebar({
                 key={item.title}
                 href={item.href}
                 onClick={onMobileClose}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  isActive
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive
                     ? 'bg-brand-blue text-white font-semibold shadow-xs'
                     : 'text-slate-300 hover:text-white hover:bg-slate-800/60 font-medium'
-                }`}
+                  }`}
               >
                 <Icon
-                  className={`w-4.5 h-4.5 shrink-0 ${
-                    isActive ? 'text-white' : 'text-slate-400'
-                  }`}
+                  className={`w-4.5 h-4.5 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'
+                    }`}
                 />
                 <span className="truncate">{item.title}</span>
               </Link>
@@ -330,14 +323,14 @@ export default function Sidebar({
 
         {/* Footer Account Summary */}
         <div className="p-3.5 border-t border-slate-800/80 bg-[#0A101D] text-[13px] text-slate-400 font-sans">
-          <div className="flex items-center justify-between">
+          {/* <div className="flex items-center justify-between">
             <span className="truncate font-semibold text-slate-300 text-xs">
               {currentUser?.name}
             </span>
             <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-medium">
               {isSuperAdmin ? 'Super Admin' : 'Branch'}
             </span>
-          </div>
+          </div> */}
           <div className="flex items-center justify-between mt-1.5">
             <span className="text-[11px] text-slate-500 truncate">
               {isSuperAdmin ? 'Full Business Access' : (currentUser?.designation || 'Active Terminal')}

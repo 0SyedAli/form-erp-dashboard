@@ -15,6 +15,7 @@ import {
   Payment,
   HeldSale,
   IdempotencyKey,
+  AuditLog,
 } from '../../models/index.js';
 import {
   SALE_TYPES,
@@ -34,6 +35,8 @@ export interface UserContext {
   loginId: string;
   role: 'SUPER_ADMIN' | 'BRANCH';
   branchId?: string;
+  name?: string;
+  permissions?: Record<string, boolean>;
 }
 
 export class PosService {
@@ -269,7 +272,7 @@ export class PosService {
       // 6. Payment & Credit Evaluation
       let paidAmountRupees = 0;
       let balanceDueRupees = 0;
-      let cashReceivedRupees = input.cashReceived || 0;
+      const cashReceivedRupees = input.cashReceived || 0;
       let changeReturnedRupees = 0;
       let paymentStatus: PaymentStatus = PAYMENT_STATUSES.PAID;
 
@@ -320,7 +323,24 @@ export class PosService {
         const existingOutstanding = customer.outstandingBalance || 0;
         const availableCredit = Math.max(0, customer.creditLimit - existingOutstanding);
 
-        if (!customer.creditEnabled && !input.creditOverride) {
+        const isOverrideRequested = Boolean(input.creditOverride);
+
+        if (isOverrideRequested) {
+          // 2.1 Critical Safety Check: Server-Side Authorization for Credit Override
+          const hasOverrideAuth =
+            userContext.role === 'SUPER_ADMIN' ||
+            Boolean(userContext.permissions?.discountsOverrides);
+
+          if (!hasOverrideAuth) {
+            throw new AppError(
+              'Unauthorized: Credit limit override requires Super Admin or discountsOverrides permission.',
+              403,
+              'UNAUTHORIZED_CREDIT_OVERRIDE'
+            );
+          }
+        }
+
+        if (!customer.creditEnabled && !isOverrideRequested) {
           throw new AppError(
             `Credit is not enabled for customer "${customer.name}". Supervisor override required.`,
             403,
@@ -328,7 +348,7 @@ export class PosService {
           );
         }
 
-        if (balanceDueRupees > availableCredit && !input.creditOverride) {
+        if (balanceDueRupees > availableCredit && !isOverrideRequested) {
           throw new AppError(
             `Customer credit limit exceeded. Available credit: Rs. ${availableCredit.toLocaleString()}, required: Rs. ${balanceDueRupees.toLocaleString()}. Supervisor override is required.`,
             400,
@@ -344,7 +364,18 @@ export class PosService {
         }
       }
 
-      // 8. Atomic Concurrency-Safe Stock Deduction
+      // Server-verified credit approver identity (never trust client-supplied approver)
+      const isCreditOverrideApplied = Boolean(input.creditOverride);
+      const serverApprovedBy = isCreditOverrideApplied
+        ? userContext.role === 'SUPER_ADMIN'
+          ? `Super Admin (${userContext.loginId || userContext.name || 'System'})`
+          : `Supervisor (${userContext.loginId || userContext.name || 'Manager'})`
+        : undefined;
+      const serverOverrideReason = isCreditOverrideApplied
+        ? input.overrideReason?.trim() || 'Authorized supervisor credit override'
+        : undefined;
+
+      // 8. Atomic Concurrency-Safe Stock Deduction (Safety Check 2.2: Available = onHand - reserved)
       // Consolidate repeated SKUs across cart lines
       const skuQuantityMap = new Map<string, number>();
       for (const item of input.items) {
@@ -352,8 +383,32 @@ export class PosService {
         skuQuantityMap.set(skuKey, (skuQuantityMap.get(skuKey) || 0) + item.quantity);
       }
 
-      // Generate Invoice Reference early for movement tracking
+      // Generate Invoice Reference early for movement tracking & audit log
       const invoiceNumber = await generateDailySequence('INV', session);
+
+      // If credit override was applied, record an immutable audit log entry
+      if (isCreditOverrideApplied) {
+        await AuditLog.create(
+          [
+            {
+              accountId: userContext.accountId ? new mongoose.Types.ObjectId(userContext.accountId) : undefined,
+              action: 'CREDIT_LIMIT_OVERRIDE',
+              entity: 'SalesInvoice',
+              entityId: invoiceNumber,
+              details: {
+                customerId: customer?._id?.toString(),
+                customerName: customer?.name,
+                creditLimit: customer?.creditLimit,
+                existingOutstanding: customer?.outstandingBalance || 0,
+                requiredCredit: balanceDueRupees,
+                approvedBy: serverApprovedBy,
+                reason: serverOverrideReason,
+              },
+            },
+          ],
+          { session }
+        );
+      }
 
       for (const [skuKey, totalRequiredQty] of skuQuantityMap.entries()) {
         const updatedBal = await StockBalance.findOneAndUpdate(
@@ -361,7 +416,12 @@ export class PosService {
             branchId: effectiveBranchId,
             stockLocationId: targetLocation._id,
             sku: skuKey,
-            onHand: { $gte: totalRequiredQty },
+            $expr: {
+              $gte: [
+                { $subtract: ['$onHand', { $ifNull: ['$reserved', 0] }] },
+                totalRequiredQty,
+              ],
+            },
           },
           {
             $inc: { onHand: -totalRequiredQty },
@@ -445,9 +505,9 @@ export class PosService {
             cashReceived: cashReceivedRupees,
             changeReturned: changeReturnedRupees,
             dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
-            creditOverride: input.creditOverride,
-            creditApprovedBy: input.creditOverride ? input.creditApprovedBy || userContext.loginId : undefined,
-            overrideReason: input.overrideReason,
+            creditOverride: isCreditOverrideApplied,
+            creditApprovedBy: serverApprovedBy,
+            overrideReason: serverOverrideReason,
             cashierName: userContext.loginId,
             notes: input.notes,
             idempotencyKey: input.idempotencyKey,
@@ -510,9 +570,11 @@ export class PosService {
             {
               key: input.idempotencyKey,
               endpoint: '/pos/checkout',
+              accountId: new mongoose.Types.ObjectId(userContext.accountId || userContext.branchId),
+              requestHash: `HASH-${input.idempotencyKey}`,
               responseStatus: 201,
               responseBody: { invoiceNumber },
-              expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+              status: 'RESOLVED',
             },
           ],
           { session }

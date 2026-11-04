@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-import { Branch, Account, Session, AuditLog, IAccount } from '../../models/index.js';
+import { Branch, Account, Session, AuditLog, StockLocation, IAccount } from '../../models/index.js';
 import { ACCOUNT_ROLES, STANDARD_BRANCH_PERMISSIONS, BranchPermissions } from '../../constants/index.js';
 import { AppError } from '../../utils/apiResponse.js';
 import {
+  CreateBranchInput,
   CreateBranchAccountInput,
   UpdateBranchAccountInput,
   ResetPasswordInput,
@@ -296,6 +297,96 @@ export class BranchAccountService {
     return {
       success: true,
       message: `Branch account '${account.loginId}' deactivated. All active sessions invalidated.`,
+    };
+  }
+
+  /**
+   * Creates a brand new Branch, default StockLocation, and Branch Account atomically.
+   */
+  public static async createBranch(input: CreateBranchInput, adminAccountId?: string) {
+    const code = input.code.trim().toUpperCase();
+    const loginId = input.loginId.trim().toLowerCase();
+
+    // Check if code or loginId already in use
+    const existingBranch = await Branch.findOne({
+      $or: [{ code }, { loginId }],
+    });
+    if (existingBranch) {
+      if (existingBranch.code === code) {
+        throw new AppError(`Branch with code '${code}' already exists.`, 409, 'BRANCH_EXISTS');
+      }
+      throw new AppError(`Branch with login ID '${loginId}' already exists.`, 409, 'LOGIN_ID_EXISTS');
+    }
+
+    const existingAccount = await Account.findOne({
+      $or: [{ loginId }, ...(input.email ? [{ email: input.email.toLowerCase() }] : [])],
+    });
+    if (existingAccount) {
+      throw new AppError(`Account with login ID or email already exists.`, 409, 'ACCOUNT_EXISTS');
+    }
+
+    const permissions: BranchPermissions = {
+      ...STANDARD_BRANCH_PERMISSIONS,
+      ...(input.settings?.manageOwnInventory ? { manageStock: true } : {}),
+      ...(input.settings?.allowWholesaleSales ? { customerCredit: true } : {}),
+    };
+
+    const branch = await Branch.create({
+      name: input.name.trim(),
+      code,
+      shopNumber: input.shopNumber.trim(),
+      type: input.type || 'RETAIL_STORE',
+      city: input.city || 'Karachi',
+      address: input.address.trim(),
+      phone: input.phone.trim(),
+      loginId,
+      targetMonthlySales: input.targetMonthlySales || 0,
+      permissions,
+      isActive: true,
+    });
+
+    // Create default primary StockLocation
+    await StockLocation.create({
+      branchId: branch._id,
+      code: `${code}-LOC-01`,
+      name: `${branch.name} Stockroom`,
+      type: 'SALES_FLOOR',
+      isActive: true,
+    });
+
+    // Create Account
+    const rawPassword = input.password || 'password123';
+    const passwordHash = await bcrypt.hash(rawPassword, 10);
+    const account = await Account.create({
+      loginId,
+      name: input.name.trim(),
+      email: input.email || (loginId.includes('@') ? loginId : `${loginId}@moltyfoam.local`),
+      passwordHash,
+      role: ACCOUNT_ROLES.BRANCH,
+      branchId: branch._id,
+      permissions,
+      isActive: true,
+    });
+
+    // Audit log
+    await AuditLog.create({
+      action: 'BRANCH_CREATED',
+      entity: 'Branch',
+      entityId: branch._id.toString(),
+      accountId: adminAccountId ? new mongoose.Types.ObjectId(adminAccountId) : undefined,
+      branchId: branch._id,
+      details: { code, name: branch.name, loginId },
+    });
+
+    return {
+      ...branch.toObject(),
+      id: branch._id.toString(),
+      _id: branch._id.toString(),
+      account: {
+        id: account._id.toString(),
+        loginId: account.loginId,
+        role: account.role,
+      },
     };
   }
 }

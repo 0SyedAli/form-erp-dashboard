@@ -1,6 +1,6 @@
 import { BranchType, BranchSettings, BranchAccessPermissions } from '@/types';
 
-export const DEMO_DB_VERSION = 'v8_simple_flow';
+export const DEMO_DB_VERSION = 'v11_clean_atlas_reset';
 
 export const STORAGE_KEYS = {
   BRANCHES: 'molty_erp_branches_v2', // backward compatible with Flow 02 branches

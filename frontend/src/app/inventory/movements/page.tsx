@@ -6,10 +6,10 @@ import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetStockMovementsQuery,
-  useGetBranchesQuery,
   useGetStockLocationsQuery,
   useGetProductVariantsQuery,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
 import { getUserAuthorizedBranches } from '@/lib/permissions';
 import { StockMovement, StockMovementType } from '@/types';
 import {

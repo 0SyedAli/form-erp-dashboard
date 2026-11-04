@@ -86,6 +86,18 @@ const AccountSchema = new Schema<IAccount>(
   },
   {
     timestamps: true,
+    toJSON: {
+      transform(_doc, ret: Record<string, any>) {
+        delete ret.passwordHash;
+        return ret;
+      },
+    },
+    toObject: {
+      transform(_doc, ret: Record<string, any>) {
+        delete ret.passwordHash;
+        return ret;
+      },
+    },
   }
 );
 

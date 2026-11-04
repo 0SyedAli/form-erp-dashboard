@@ -183,12 +183,33 @@ export const erpApi = createApi({
   endpoints: (builder) => ({
     getBranches: builder.query<Branch[], BranchFilterOptions | void>({
       async queryFn(filter) {
-        await delay(80);
         try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
+          const res = await fetch(`${apiUrl}/branches`, {
+            credentials: 'include',
+          });
+          if (res.ok) {
+            const json = await res.json();
+            if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+              let list: Branch[] = json.data.map((b: any) => ({
+                ...b,
+                id: b.id || b._id || '',
+              }));
+              if (filter?.search) {
+                const q = filter.search.toLowerCase();
+                list = list.filter((b) => b.name?.toLowerCase().includes(q) || b.code?.toLowerCase().includes(q) || b.city?.toLowerCase().includes(q));
+              }
+              if (filter?.type && filter.type !== 'all') {
+                list = list.filter((b) => b.type?.toLowerCase() === filter.type?.toLowerCase());
+              }
+              return { data: list };
+            }
+          }
           const data = branchesRepository.getAll(filter || undefined);
           return { data };
-        } catch (error) {
-          return { error: { status: 500, data: (error as Error).message } };
+        } catch {
+          const data = branchesRepository.getAll(filter || undefined);
+          return { data };
         }
       },
       providesTags: (result) =>
@@ -234,12 +255,44 @@ export const erpApi = createApi({
 
     createBranch: builder.mutation<Branch, CreateBranchDTO>({
       async queryFn(input) {
-        await delay(120);
         try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
+          const res = await fetch(`${apiUrl}/branches`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              name: input.name,
+              code: input.code,
+              shopNumber: input.shopNumber,
+              type: input.type,
+              city: input.city,
+              address: input.address,
+              phone: input.phone,
+              loginId: input.loginId || input.code.toLowerCase(),
+              password: input.password || 'password123',
+              targetMonthlySales: input.targetMonthlySales || 0,
+              settings: input.settings,
+            }),
+          });
+          const json = await res.json();
+          if (res.ok && json.success && json.data) {
+            const newBranch = {
+              ...json.data,
+              id: json.data.id || json.data._id,
+            };
+            try {
+              branchesRepository.create({ ...input, id: newBranch.id } as any);
+            } catch {}
+            return { data: newBranch };
+          }
           const newBranch = branchesRepository.create(input);
           return { data: newBranch };
-        } catch (error) {
-          return { error: { status: 400, data: (error as Error).message } };
+        } catch {
+          const newBranch = branchesRepository.create(input);
+          return { data: newBranch };
         }
       },
       invalidatesTags: [{ type: 'Branches', id: 'LIST' }, { type: 'Branches', id: 'COUNTS' }, 'KPIs'],

@@ -7,9 +7,9 @@ import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetInventoryDashboardKPIsQuery,
-  useGetBranchesQuery,
   useGetInventoryBalancesQuery,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
 import { getUserAuthorizedBranches } from '@/lib/permissions';
 import {
   Boxes,

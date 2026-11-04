@@ -520,6 +520,86 @@ export const openApiSpec = {
         responses: { '200': { description: 'Overdue invoices' } },
       },
     },
+    '/reports/dashboard/admin': {
+      get: {
+        summary: 'Consolidated Super Admin Business Dashboard',
+        tags: ['Reporting & Dashboards'],
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { '200': { description: 'Consolidated enterprise metrics' } },
+      },
+    },
+    '/reports/dashboard/branch': {
+      get: {
+        summary: 'Branch Operational Dashboard',
+        tags: ['Reporting & Dashboards'],
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { '200': { description: 'Branch specific metrics' } },
+      },
+    },
+    '/reports/sales/summary': {
+      get: {
+        summary: 'Sales Summary & Breakdown',
+        tags: ['Reporting & Dashboards'],
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { '200': { description: 'Sales summary metrics' } },
+      },
+    },
+    '/reports/receivables/summary': {
+      get: {
+        summary: 'Customer Receivables Snapshot',
+        tags: ['Reporting & Dashboards'],
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { '200': { description: 'Receivables summary' } },
+      },
+    },
+    '/reports/receivables/aging': {
+      get: {
+        summary: 'Customer Receivables Aging Schedule',
+        tags: ['Reporting & Dashboards'],
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { '200': { description: 'Aging schedule buckets' } },
+      },
+    },
+    '/reports/inventory/summary': {
+      get: {
+        summary: 'Inventory Stock Summary',
+        tags: ['Reporting & Dashboards'],
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { '200': { description: 'Inventory stock metrics' } },
+      },
+    },
+    '/reports/inventory/valuation': {
+      get: {
+        summary: 'Inventory Valuation Report (Cost Basis)',
+        tags: ['Reporting & Dashboards'],
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { '200': { description: 'Stock valuation metrics' } },
+      },
+    },
+    '/reports/purchases/summary': {
+      get: {
+        summary: 'Purchasing & Procurement Summary',
+        tags: ['Reporting & Dashboards'],
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { '200': { description: 'Purchases summary metrics' } },
+      },
+    },
+    '/reports/payables/summary': {
+      get: {
+        summary: 'Accounts Payable Summary',
+        tags: ['Reporting & Dashboards'],
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { '200': { description: 'Payables summary metrics' } },
+      },
+    },
+    '/reports/reconciliation': {
+      get: {
+        summary: 'Cross-Module Financial Reconciliation Audit',
+        tags: ['Reporting & Dashboards'],
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        responses: { '200': { description: 'Audit result and discrepancy checks' } },
+      },
+    },
   },
 };
 

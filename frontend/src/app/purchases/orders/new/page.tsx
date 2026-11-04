@@ -8,12 +8,16 @@ import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetSuppliersQuery,
-  useGetBranchesQuery,
   useGetStockLocationsQuery,
   useGetProductVariantsQuery,
   useGetCatalogueProductsQuery,
   useCreatePurchaseOrderMutation,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
+import {
+  useGetSuppliersQuery as useGetBackendSuppliersQuery,
+  useCreatePurchaseOrderMutation as useCreateBackendPOMutation,
+} from '@/store/services/purchasesApi';
 import { getUserAuthorizedBranches } from '@/lib/permissions';
 import {
   Plus,
@@ -36,14 +40,29 @@ function CreatePurchaseOrderContent() {
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
+
   const { data: allBranches = [] } = useGetBranchesQuery();
   const authorizedBranches = getUserAuthorizedBranches(currentUser, allBranches);
-  const { data: suppliers = [] } = useGetSuppliersQuery();
+  const { data: demoSuppliers = [] } = useGetSuppliersQuery(undefined, { skip: isBackendMode });
+  const { data: backendSuppliersData } = useGetBackendSuppliersQuery(undefined, { skip: !isBackendMode });
+  const suppliers = useMemo(() => {
+    if (isBackendMode) {
+      return (backendSuppliersData?.suppliers || []).map((s: any) => ({
+        ...s,
+        id: s.id || s._id,
+      }));
+    }
+    return demoSuppliers;
+  }, [isBackendMode, backendSuppliersData, demoSuppliers]);
+
   const { data: stockLocations = [] } = useGetStockLocationsQuery();
   const { data: variants = [] } = useGetProductVariantsQuery();
   const { data: products = [] } = useGetCatalogueProductsQuery();
 
-  const [createPOMutation, { isLoading: isSubmitting }] = useCreatePurchaseOrderMutation();
+  const [createPOMutation, { isLoading: isDemoSubmitting }] = useCreatePurchaseOrderMutation();
+  const [createPOBackend, { isLoading: isBackendSubmitting }] = useCreateBackendPOMutation();
+  const isSubmitting = isBackendMode ? isBackendSubmitting : isDemoSubmitting;
 
   // Form State
   const [supplierId, setSupplierId] = useState<string>('');
@@ -172,27 +191,49 @@ function CreatePurchaseOrderContent() {
     }
 
     try {
-      const createdPO = await createPOMutation({
-        supplierId,
-        destinationBranchId,
-        destinationLocationId: effectiveLocationId,
-        orderDate,
-        expectedDeliveryDate: expectedDeliveryDate || new Date().toISOString().slice(0, 10),
-        notes: notes.trim() || undefined,
-        createdBy: currentUser?.name || 'Procurement Officer',
-        createdByName: currentUser?.name || 'Procurement Officer',
-        items: items.map((i) => ({
-          variantId: i.variantId,
-          orderedQuantity: Number(i.orderedQuantity),
-          unitCost: Number(i.unitCost),
-          lineDiscount: Number(i.lineDiscount || 0),
-          taxAmount: Number(i.taxAmount || 0),
-        })),
-      }).unwrap();
+      if (isBackendMode) {
+        const res = await createPOBackend({
+          supplierId,
+          branchId: destinationBranchId,
+          stockLocationId: effectiveLocationId,
+          expectedDeliveryDate: expectedDeliveryDate || undefined,
+          notes: notes.trim() || undefined,
+          items: items.map((i) => {
+            const v = variants.find((varItem) => varItem.id === i.variantId || (varItem as any)._id === i.variantId);
+            return {
+              sku: v?.sku || i.variantId,
+              quantity: Number(i.orderedQuantity),
+              unitCost: Number(i.unitCost),
+              lineDiscount: Number(i.lineDiscount || 0),
+              taxAmount: Number(i.taxAmount || 0),
+            };
+          }),
+        }).unwrap();
 
-      router.push(`/purchases/orders/${createdPO.id}`);
+        router.push(`/purchases/orders/${res.id || res._id}`);
+      } else {
+        const createdPO = await createPOMutation({
+          supplierId,
+          destinationBranchId,
+          destinationLocationId: effectiveLocationId,
+          orderDate,
+          expectedDeliveryDate: expectedDeliveryDate || new Date().toISOString().slice(0, 10),
+          notes: notes.trim() || undefined,
+          createdBy: currentUser?.name || 'Procurement Officer',
+          createdByName: currentUser?.name || 'Procurement Officer',
+          items: items.map((i) => ({
+            variantId: i.variantId,
+            orderedQuantity: Number(i.orderedQuantity),
+            unitCost: Number(i.unitCost),
+            lineDiscount: Number(i.lineDiscount || 0),
+            taxAmount: Number(i.taxAmount || 0),
+          })),
+        }).unwrap();
+
+        router.push(`/purchases/orders/${createdPO.id}`);
+      }
     } catch (err: unknown) {
-      setErrorMsg((err as { data?: string })?.data || 'Failed to create purchase order.');
+      setErrorMsg((err as { data?: string })?.data || (err as any)?.data?.error?.message || 'Failed to create purchase order.');
     }
   };
 
@@ -483,7 +524,7 @@ function CreatePurchaseOrderContent() {
             type="button"
             onClick={() => handleSubmit()}
             disabled={isSubmitting}
-            className="inline-flex items-center gap-2 bg-brand-burgundy hover:bg-rose-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-xs transition-colors"
+            className="inline-flex items-center gap-2 bg-rose-700 hover:bg-rose-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-xs transition-colors"
           >
             <Send className="w-4 h-4" />
             <span>{isSubmitting ? 'Submitting...' : 'Submit Purchase Order'}</span>

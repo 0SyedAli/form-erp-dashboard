@@ -6,6 +6,7 @@ import { connectDatabase, disconnectDatabase } from '../config/database.js';
 import { Branch, Account, StockLocation } from '../models/index.js';
 import { ACCOUNT_ROLES, STANDARD_BRANCH_PERMISSIONS, StockLocationType } from '../constants/index.js';
 import { logger } from '../utils/logger.js';
+import { cleanAndSeedCatalogue } from './cleanAndSeedCatalogue.js';
 
 interface BranchSeedData {
   code: string;
@@ -211,6 +212,9 @@ export async function runSeed(customUri?: string) {
         }
       }
     }
+
+    // 3. Clean and seed standard Molty Foam catalogue master data
+    await cleanAndSeedCatalogue();
 
     logger.info('MongoDB seed and location migration completed successfully.');
   } catch (error) {

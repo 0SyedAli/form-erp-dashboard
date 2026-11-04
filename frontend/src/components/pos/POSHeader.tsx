@@ -103,7 +103,7 @@ export default function POSHeader({
         <div className="hidden md:flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 font-medium">
           <Store className="w-3.5 h-3.5 text-blue-600" />
           <span className="font-semibold text-slate-800 truncate max-w-[170px]">
-            {activeBranch?.name || 'Main Branch'}
+            {activeBranch?.name || 'No Branch Selected'}
           </span>
         </div>
 

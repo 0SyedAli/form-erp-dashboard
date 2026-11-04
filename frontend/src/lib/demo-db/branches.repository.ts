@@ -58,7 +58,7 @@ export class BranchesRepository {
           b.name.toLowerCase().includes(q) ||
           b.code.toLowerCase().includes(q) ||
           (b.shopNumber && b.shopNumber.toLowerCase().includes(q)) ||
-          b.managerName.toLowerCase().includes(q) ||
+          ((b.managerName || '').toLowerCase().includes(q)) ||
           b.address.toLowerCase().includes(q) ||
           b.city.toLowerCase().includes(q)
         );
@@ -107,7 +107,7 @@ export class BranchesRepository {
           return (a.shopNumber || '').localeCompare(b.shopNumber || '') * order;
         }
         if (options.sortBy === 'targetMonthlySales') {
-          return (a.targetMonthlySales - b.targetMonthlySales) * order;
+          return ((a.targetMonthlySales || 0) - (b.targetMonthlySales || 0)) * order;
         }
         if (options.sortBy === 'status') {
           return (Number(b.isActive) - Number(a.isActive)) * order;

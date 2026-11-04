@@ -91,6 +91,7 @@ export interface BranchAccessPermissions {
 }
 
 export interface Branch {
+  _id?: string;
   id: string;
   code: string;
   name: string;
@@ -100,10 +101,10 @@ export interface Branch {
   address: string;
   phone: string;
   managerId?: string;
-  managerName: string;
-  managerEmail: string;
-  isActive: boolean;
-  targetMonthlySales: number;
+  managerName?: string;
+  managerEmail?: string;
+  isActive?: boolean;
+  targetMonthlySales?: number;
   imageUrl?: string;
   loginId?: string;
   password?: string;

@@ -7,11 +7,16 @@ import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetPurchaseOrdersQuery,
-  useGetSuppliersQuery,
-  useGetBranchesQuery,
   useApprovePurchaseOrderMutation,
   useCancelPurchaseOrderMutation,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
+import {
+  useGetPurchaseOrdersQuery as useGetBackendPurchaseOrdersQuery,
+  useGetSuppliersQuery,
+  useApprovePurchaseOrderMutation as useApproveBackendPOMutation,
+  useCancelPurchaseOrderMutation as useCancelBackendPOMutation,
+} from '@/store/services/purchasesApi';
 import { getUserAuthorizedBranches, hasPermission } from '@/lib/permissions';
 import {
   Search,
@@ -28,7 +33,8 @@ function PurchaseOrdersListContent() {
 
   const { data: allBranches = [] } = useGetBranchesQuery();
   const authorizedBranches = getUserAuthorizedBranches(currentUser, allBranches);
-  const { data: suppliers = [] } = useGetSuppliersQuery();
+  const { data: suppliersData } = useGetSuppliersQuery();
+  const suppliers = suppliersData?.suppliers || [];
 
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [supplierFilter, setSupplierFilter] = useState<string>('ALL');
@@ -37,25 +43,58 @@ function PurchaseOrdersListContent() {
   );
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { data: purchaseOrders = [], isLoading } = useGetPurchaseOrdersQuery();
-  const [approvePOMutation, { isLoading: isApproving }] = useApprovePurchaseOrderMutation();
-  const [cancelPOMutation, { isLoading: isCancelling }] = useCancelPurchaseOrderMutation();
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
+
+  const { data: demoOrders = [], isLoading: isDemoLoading } = useGetPurchaseOrdersQuery(undefined, {
+    skip: isBackendMode,
+  });
+  const [approvePOMutation, { isLoading: isDemoApproving }] = useApprovePurchaseOrderMutation();
+  const [cancelPOMutation, { isLoading: isDemoCancelling }] = useCancelPurchaseOrderMutation();
+
+  const { data: backendData, isLoading: isBackendLoading } = useGetBackendPurchaseOrdersQuery(undefined, {
+    skip: !isBackendMode,
+  });
+  const [approvePOBackend, { isLoading: isBackendApproving }] = useApproveBackendPOMutation();
+  const [cancelPOBackend, { isLoading: isBackendCancelling }] = useCancelBackendPOMutation();
+
+  const purchaseOrders = useMemo(() => {
+    if (isBackendMode) {
+      return (backendData?.orders || []).map((po: any) => ({
+        ...po,
+        id: po.id || po._id,
+        poNumber: po.orderNumber || po.poNumber,
+        supplierName: po.supplierId?.name || po.supplierName || 'Unknown Supplier',
+        destinationBranchId: po.branchId?._id || po.branchId || '',
+        destinationBranchName: po.branchId?.name || po.destinationBranchName || 'Branch',
+        itemCount: po.items?.length || 0,
+        subtotal: po.subtotal || 0,
+        totalDiscount: po.discountAmount || 0,
+        taxAmount: po.taxAmount || 0,
+        totalCost: po.totalAmount || 0,
+      }));
+    }
+    return demoOrders;
+  }, [isBackendMode, backendData, demoOrders]);
+
+  const isLoading = isBackendMode ? isBackendLoading : isDemoLoading;
+  const isApproving = isBackendMode ? isBackendApproving : isDemoApproving;
+  const isCancelling = isBackendMode ? isBackendCancelling : isDemoCancelling;
 
   const canApprove = hasPermission(currentUser, 'purchases.approve');
   const canCreate = hasPermission(currentUser, 'purchases.create');
 
   // Filtered List
   const filteredOrders = useMemo(() => {
-    return purchaseOrders.filter((po) => {
+    return purchaseOrders.filter((po: any) => {
       if (statusFilter !== 'ALL' && po.status !== statusFilter) return false;
-      if (supplierFilter !== 'ALL' && po.supplierId !== supplierFilter) return false;
+      if (supplierFilter !== 'ALL' && (po.supplierId?._id || po.supplierId) !== supplierFilter) return false;
       if (branchFilter !== 'ALL' && po.destinationBranchId !== branchFilter) return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const matchesPO = po.poNumber.toLowerCase().includes(q);
-        const matchesSupplier = po.supplierName.toLowerCase().includes(q);
-        const matchesNotes = po.notes?.toLowerCase().includes(q);
+        const matchesPO = (po.poNumber || '').toLowerCase().includes(q);
+        const matchesSupplier = (po.supplierName || '').toLowerCase().includes(q);
+        const matchesNotes = (po.notes || '').toLowerCase().includes(q);
         if (!matchesPO && !matchesSupplier && !matchesNotes) return false;
       }
 
@@ -66,12 +105,16 @@ function PurchaseOrdersListContent() {
   const handleQuickApprove = async (poId: string) => {
     if (!window.confirm('Are you sure you want to approve this purchase order?')) return;
     try {
-      await approvePOMutation({
-        id: poId,
-        approvedBy: currentUser?.name || 'Authorized Manager',
-      }).unwrap();
+      if (isBackendMode) {
+        await approvePOBackend(poId).unwrap();
+      } else {
+        await approvePOMutation({
+          id: poId,
+          approvedBy: currentUser?.name || 'Authorized Manager',
+        }).unwrap();
+      }
     } catch (err: unknown) {
-      alert((err as { data?: string })?.data || 'Failed to approve purchase order.');
+      alert((err as { data?: string })?.data || (err as any)?.data?.error?.message || 'Failed to approve purchase order.');
     }
   };
 
@@ -79,9 +122,13 @@ function PurchaseOrdersListContent() {
     const reason = window.prompt('Please enter the reason for cancellation:');
     if (reason === null) return;
     try {
-      await cancelPOMutation({ id: poId, reason }).unwrap();
+      if (isBackendMode) {
+        await cancelPOBackend({ id: poId, reason }).unwrap();
+      } else {
+        await cancelPOMutation({ id: poId, reason }).unwrap();
+      }
     } catch (err: unknown) {
-      alert((err as { data?: string })?.data || 'Failed to cancel purchase order.');
+      alert((err as { data?: string })?.data || (err as any)?.data?.error?.message || 'Failed to cancel purchase order.');
     }
   };
 
@@ -102,7 +149,7 @@ function PurchaseOrdersListContent() {
           {canCreate && (
             <Link
               href="/purchases/orders/new"
-              className="inline-flex items-center gap-2 bg-brand-burgundy hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors self-start sm:self-auto"
+              className="inline-flex items-center gap-2 bg-rose-700 hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors self-start sm:self-auto"
             >
               <Plus className="w-4 h-4" />
               <span>Create Purchase Order</span>
@@ -202,8 +249,8 @@ function PurchaseOrdersListContent() {
                   </tr>
                 ) : filteredOrders.length > 0 ? (
                   filteredOrders.map((po) => {
-                    const totalOrderedQty = po.items.reduce((sum, i) => sum + i.orderedQuantity, 0);
-                    const totalReceivedQty = po.items.reduce((sum, i) => sum + i.receivedQuantity, 0);
+                    const totalOrderedQty = (po.items || []).reduce((sum: number, i: any) => sum + (i.orderedQuantity || 0), 0);
+                    const totalReceivedQty = (po.items || []).reduce((sum: number, i: any) => sum + (i.receivedQuantity || 0), 0);
                     const percentReceived =
                       totalOrderedQty > 0 ? Math.round((totalReceivedQty / totalOrderedQty) * 100) : 0;
 
@@ -246,13 +293,12 @@ function PurchaseOrdersListContent() {
                             </span>
                             <div className="w-20 bg-slate-100 h-1.5 rounded-full mt-1 overflow-hidden">
                               <div
-                                className={`h-full ${
-                                  percentReceived === 100
+                                className={`h-full ${percentReceived === 100
                                     ? 'bg-emerald-500'
                                     : percentReceived > 0
-                                    ? 'bg-amber-500'
-                                    : 'bg-slate-300'
-                                }`}
+                                      ? 'bg-amber-500'
+                                      : 'bg-slate-300'
+                                  }`}
                                 style={{ width: `${percentReceived}%` }}
                               />
                             </div>
@@ -265,19 +311,18 @@ function PurchaseOrdersListContent() {
 
                         <td className="py-3.5 px-4 text-center">
                           <span
-                            className={`inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${
-                              po.status === 'APPROVED'
+                            className={`inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${po.status === 'APPROVED'
                                 ? 'bg-blue-50 text-blue-700 border-blue-200'
                                 : po.status === 'PENDING_APPROVAL'
-                                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                : po.status === 'PARTIALLY_RECEIVED'
-                                ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                : po.status === 'FULLY_RECEIVED'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : po.status === 'CANCELLED'
-                                ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                : 'bg-slate-50 text-slate-700 border-slate-200'
-                            }`}
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : po.status === 'PARTIALLY_RECEIVED'
+                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                    : po.status === 'FULLY_RECEIVED'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : po.status === 'CANCELLED'
+                                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                        : 'bg-slate-50 text-slate-700 border-slate-200'
+                              }`}
                           >
                             {po.status.replace('_', ' ')}
                           </span>

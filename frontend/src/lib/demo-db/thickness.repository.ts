@@ -16,6 +16,25 @@ class ThicknessRepository {
       demoStorage.setItem(STORAGE_KEYS.THICKNESS, [...SEED_THICKNESS]);
       return [...SEED_THICKNESS];
     }
+    // Auto-repair any items with missing or empty displayLabel in client localStorage
+    let needsUpdate = false;
+    const sanitized = list.map((t, idx) => {
+      if (!t.displayLabel || !t.displayLabel.trim()) {
+        needsUpdate = true;
+        const seedMatch = SEED_THICKNESS[idx] || SEED_THICKNESS.find((seed) => seed.id === t.id);
+        const fallbackLabel =
+          seedMatch?.displayLabel || (t.value ? `${t.value} Inches` : '5 Inches');
+        return {
+          ...t,
+          displayLabel: fallbackLabel,
+        };
+      }
+      return t;
+    });
+    if (needsUpdate) {
+      demoStorage.setItem(STORAGE_KEYS.THICKNESS, sanitized);
+      return sanitized;
+    }
     return list;
   }
 

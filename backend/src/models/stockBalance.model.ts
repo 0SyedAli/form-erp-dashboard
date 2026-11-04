@@ -50,14 +50,19 @@ const StockBalanceSchema = new Schema<IStockBalance>(
     },
     reorderLevel: {
       type: Number,
-      default: 5,
       min: 0,
     },
   },
   {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
+
+StockBalanceSchema.virtual('available').get(function () {
+  return Math.max(0, (this.onHand || 0) - (this.reserved || 0));
+});
 
 // Compound unique index ensuring one balance record per SKU per location per branch
 StockBalanceSchema.index({ branchId: 1, stockLocationId: 1, sku: 1 }, { unique: true });

@@ -6,9 +6,9 @@ import AppLayout from '@/components/layout/AppLayout';
 import { useAppSelector } from '@/store';
 import {
   useGetStockMovementsQuery as useGetDemoStockMovementsQuery,
-  useGetBranchesQuery,
   useGetStockLocationsQuery as useGetDemoStockLocationsQuery,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
 import {
   useGetStockMovementsQuery as useGetBackendStockMovementsQuery,
   useGetStockLocationsQuery as useGetBackendStockLocationsQuery,
@@ -169,7 +169,7 @@ function StockHistoryContent() {
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>
-                <strong>Backend Connection Error:</strong> Unable to load stock movement ledger from Express MongoDB API. Verify that the backend server is running on port 5000.
+                <strong>Backend Connection Error:</strong> Unable to load stock movement ledger from Express MongoDB API. Verify that the backend server is running on port 5001.
               </span>
             </div>
             <button

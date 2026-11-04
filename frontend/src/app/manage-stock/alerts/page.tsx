@@ -6,9 +6,9 @@ import AppLayout from '@/components/layout/AppLayout';
 import { useAppSelector } from '@/store';
 import {
   useGetInventoryBalancesQuery,
-  useGetBranchesQuery,
   useGetStockLocationsQuery,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
 import { useGetStockAlertsQuery } from '@/store/services/inventoryApi';
 import {
   ArrowLeft,
@@ -207,7 +207,7 @@ function StockAlertsContent() {
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>
-                <strong>Backend Connection Error:</strong> Unable to load stock alerts from Express MongoDB API. Verify that the backend server is running on port 5000.
+                <strong>Backend Connection Error:</strong> Unable to load stock alerts from Express MongoDB API. Verify that the backend server is running on port 5001.
               </span>
             </div>
             <button

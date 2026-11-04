@@ -6,9 +6,14 @@ import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetInventoryBalancesQuery,
-  useGetBranchesQuery,
   useGetInventoryDashboardKPIsQuery,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
+import {
+  useGetInventoryValuationQuery,
+  useGetInventoryLowStockQuery,
+  useGetInventoryMovementsQuery,
+} from '@/store/services/reportsApi';
 import { getUserAuthorizedBranches } from '@/lib/permissions';
 import {
   DollarSign,
@@ -31,16 +36,30 @@ export default function InventoryReportsPage() {
     'valuation'
   );
 
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const activeBranchFilter = selectedBranchId === 'all' ? undefined : selectedBranchId;
-  const { data: balances = [] } = useGetInventoryBalancesQuery({
-    branchId: activeBranchFilter,
-  });
-  const { data: kpis } = useGetInventoryDashboardKPIsQuery(activeBranchFilter);
+  const { data: balances = [] } = useGetInventoryBalancesQuery(
+    { branchId: activeBranchFilter },
+    { skip: !mounted }
+  );
+  const { data: kpis } = useGetInventoryDashboardKPIsQuery(activeBranchFilter, { skip: !mounted });
+  const { data: backendValuation } = useGetInventoryValuationQuery(undefined, { skip: !mounted || !isBackendMode || !isSuperAdmin });
+  const { data: backendLowStock } = useGetInventoryLowStockQuery(
+    { branchId: activeBranchFilter },
+    { skip: !mounted || !isBackendMode }
+  );
 
   // Valuation computations
   const valuedBalances = balances.filter((b) => b.unitCost !== undefined && b.unitCost > 0);
   const unvaluedBalances = balances.filter((b) => !b.unitCost || b.unitCost <= 0);
-  const totalValuation = valuedBalances.reduce((s, b) => s + (b.unitCost! * b.onHand), 0);
+  const totalValuation = isBackendMode
+    ? backendValuation?.totalValuation ?? valuedBalances.reduce((s, b) => s + (b.unitCost! * b.onHand), 0)
+    : valuedBalances.reduce((s, b) => s + (b.unitCost! * b.onHand), 0);
 
   // Low stock list
   const lowStockItems = balances.filter((b) => b.stockStatus === 'LOW_STOCK' || b.stockStatus === 'OUT_OF_STOCK');

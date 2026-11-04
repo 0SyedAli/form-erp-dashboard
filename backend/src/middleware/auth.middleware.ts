@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { env } from '../config/env.js';
 import { Session, Account, IAccount, ISession, hashToken } from '../models/index.js';
 import { ACCOUNT_ROLES } from '../constants/index.js';
 import { sendError } from '../utils/apiResponse.js';
@@ -43,6 +44,12 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     });
 
     if (!session) {
+      res.clearCookie(SESSION_COOKIE_NAME, {
+        httpOnly: true,
+        secure: env.COOKIE_SECURE,
+        sameSite: 'lax',
+        path: '/',
+      });
       sendError(res, 'Session is invalid or has expired. Please log in again.', 401, 'SESSION_EXPIRED');
       return;
     }
@@ -50,7 +57,13 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     const account = await Account.findById(session.accountId);
 
     if (!account || !account.isActive) {
-      sendError(res, 'Account not found or has been deactivated.', 403, 'ACCOUNT_DEACTIVATED');
+      res.clearCookie(SESSION_COOKIE_NAME, {
+        httpOnly: true,
+        secure: env.COOKIE_SECURE,
+        sameSite: 'lax',
+        path: '/',
+      });
+      sendError(res, 'Session is invalid or account deactivated. Please log in again.', 401, 'SESSION_EXPIRED');
       return;
     }
 

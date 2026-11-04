@@ -10,8 +10,23 @@ import { setAuthenticatedAccount, markSessionChecked } from './slices/authSlice'
 
 function SessionInitializer({ children }: { children: React.ReactNode }) {
   const dispatch = useAppDispatch();
+  const [mounted, setMounted] = React.useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    try {
+      const raw = localStorage.getItem('molty_auth_session');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.account) {
+          dispatch(setAuthenticatedAccount(parsed.account));
+        }
+      }
+    } catch {}
+  }, [dispatch]);
+
   const { data, isSuccess, isError } = useGetMeQuery(undefined, {
-    skip: typeof window === 'undefined',
+    skip: !mounted,
   });
 
   useEffect(() => {

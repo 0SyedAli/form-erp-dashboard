@@ -6,13 +6,13 @@ import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetStockCountsQuery,
-  useGetBranchesQuery,
   useGetStockLocationsQuery,
   useGetInventoryBalancesQuery,
   useCreateStockCountMutation,
   useUpdateStockCountItemsMutation,
   useReconcileAndPostStockCountMutation,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
 import { getUserAuthorizedBranches } from '@/lib/permissions';
 import { StockCount } from '@/types';
 import Toast, { ToastMessage } from '@/components/common/Toast';

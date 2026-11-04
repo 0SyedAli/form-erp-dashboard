@@ -11,6 +11,12 @@ import {
   useUpdateSupplierMutation,
   useToggleSupplierStatusMutation,
 } from '@/store/services/apiSlice';
+import {
+  useGetSuppliersQuery as useGetBackendSuppliersQuery,
+  useCreateSupplierMutation as useCreateBackendSupplierMutation,
+  useUpdateSupplierMutation as useUpdateBackendSupplierMutation,
+  useUpdateSupplierStatusMutation as useUpdateBackendSupplierStatusMutation,
+} from '@/store/services/purchasesApi';
 import { hasPermission } from '@/lib/permissions';
 import { Supplier } from '@/types';
 import {
@@ -46,11 +52,39 @@ const supplierSchema = z.object({
 type SupplierFormData = z.infer<typeof supplierSchema>;
 
 function SuppliersDirectoryContent() {
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
-  const { data: suppliers = [], isLoading } = useGetSuppliersQuery();
-  const [createSupplierMutation, { isLoading: isCreating }] = useCreateSupplierMutation();
-  const [updateSupplierMutation, { isLoading: isUpdating }] = useUpdateSupplierMutation();
+
+  // Demo queries/mutations
+  const { data: demoSuppliers = [], isLoading: isDemoLoading } = useGetSuppliersQuery(undefined, {
+    skip: isBackendMode,
+  });
+  const [createSupplierMutation, { isLoading: isDemoCreating }] = useCreateSupplierMutation();
+  const [updateSupplierMutation, { isLoading: isDemoUpdating }] = useUpdateSupplierMutation();
   const [toggleStatusMutation] = useToggleSupplierStatusMutation();
+
+  // Backend queries/mutations
+  const { data: backendData, isLoading: isBackendLoading } = useGetBackendSuppliersQuery(undefined, {
+    skip: !isBackendMode,
+  });
+  const [createSupplierBackend, { isLoading: isBackendCreating }] = useCreateBackendSupplierMutation();
+  const [updateSupplierBackend, { isLoading: isBackendUpdating }] = useUpdateBackendSupplierMutation();
+  const [toggleStatusBackend] = useUpdateBackendSupplierStatusMutation();
+
+  const suppliers = useMemo(() => {
+    if (isBackendMode) {
+      return (backendData?.suppliers || []).map((s: any) => ({
+        ...s,
+        id: s.id || s._id,
+        currentOutstanding: s.currentOutstanding ?? s.balancePayable ?? 0,
+      })) as Supplier[];
+    }
+    return demoSuppliers;
+  }, [isBackendMode, backendData, demoSuppliers]);
+
+  const isLoading = isBackendMode ? isBackendLoading : isDemoLoading;
+  const isCreating = isBackendMode ? isBackendCreating : isDemoCreating;
+  const isUpdating = isBackendMode ? isBackendUpdating : isDemoUpdating;
 
   const canCreate = hasPermission(currentUser, 'suppliers.create');
   const canEdit = hasPermission(currentUser, 'suppliers.edit');
@@ -132,7 +166,13 @@ function SuppliersDirectoryContent() {
 
   const handleToggleStatus = async (id: string) => {
     try {
-      await toggleStatusMutation(id).unwrap();
+      if (isBackendMode) {
+        const target = suppliers.find((s) => s.id === id);
+        const nextStatus = target?.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+        await toggleStatusBackend({ id, status: nextStatus }).unwrap();
+      } else {
+        await toggleStatusMutation(id).unwrap();
+      }
     } catch (err: unknown) {
       alert((err as { data?: string })?.data || 'Failed to update supplier status.');
     }
@@ -142,34 +182,58 @@ function SuppliersDirectoryContent() {
     setModalError(null);
     try {
       if (editingSupplier) {
-        await updateSupplierMutation({
-          id: editingSupplier.id,
-          data: {
+        if (isBackendMode) {
+          await updateSupplierBackend({
+            id: editingSupplier.id,
+            ...data,
+          }).unwrap();
+        } else {
+          await updateSupplierMutation({
+            id: editingSupplier.id,
+            data: {
+              ...data,
+              email: data.email || undefined,
+              address: data.address || undefined,
+              city: data.city || undefined,
+              taxNumber: data.taxNumber || undefined,
+              bankName: data.bankName || undefined,
+              bankAccountNumber: data.bankAccountNumber || undefined,
+              notes: data.notes || undefined,
+            },
+          }).unwrap();
+        }
+      } else {
+        if (isBackendMode) {
+          await createSupplierBackend({
+            name: data.name,
+            contactPerson: data.contactPerson,
+            phone: data.phone,
+            email: data.email || undefined,
+            address: data.address || '',
+            city: data.city || 'Karachi',
+            paymentTerms: data.paymentTerms,
+            creditLimit: data.creditLimit,
+            defaultCreditDays: data.defaultDueDays,
+            bankName: data.bankName || undefined,
+            bankAccountNumber: data.bankAccountNumber || undefined,
+            notes: data.notes || undefined,
+          }).unwrap();
+        } else {
+          await createSupplierMutation({
             ...data,
             email: data.email || undefined,
-            address: data.address || undefined,
-            city: data.city || undefined,
+            address: data.address || 'Address not registered',
+            city: data.city || 'Lahore',
             taxNumber: data.taxNumber || undefined,
             bankName: data.bankName || undefined,
             bankAccountNumber: data.bankAccountNumber || undefined,
             notes: data.notes || undefined,
-          },
-        }).unwrap();
-      } else {
-        await createSupplierMutation({
-          ...data,
-          email: data.email || undefined,
-          address: data.address || 'Address not registered',
-          city: data.city || 'Lahore',
-          taxNumber: data.taxNumber || undefined,
-          bankName: data.bankName || undefined,
-          bankAccountNumber: data.bankAccountNumber || undefined,
-          notes: data.notes || undefined,
-        }).unwrap();
+          }).unwrap();
+        }
       }
       setIsModalOpen(false);
     } catch (err: unknown) {
-      setModalError((err as { data?: string })?.data || 'Failed to save supplier.');
+      setModalError((err as { data?: string; message?: string })?.data || (err as any)?.data?.error?.message || 'Failed to save supplier.');
     }
   };
 
@@ -210,7 +274,7 @@ function SuppliersDirectoryContent() {
           {canCreate && (
             <button
               onClick={handleOpenCreate}
-              className="inline-flex items-center gap-2 bg-brand-burgundy hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors self-start sm:self-auto"
+              className="inline-flex items-center gap-2 bg-rose-700 hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors self-start sm:self-auto"
             >
               <Plus className="w-4 h-4" />
               <span>Register New Supplier</span>
@@ -249,7 +313,7 @@ function SuppliersDirectoryContent() {
             </div>
             <Link
               href="/payments/suppliers"
-              className="px-3.5 py-2 bg-brand-burgundy text-white rounded-lg text-xs font-semibold hover:bg-rose-900 transition-colors shrink-0"
+              className="px-3.5 py-2 bg-rose-700 text-white rounded-lg text-xs font-semibold hover:bg-rose-900 transition-colors shrink-0"
             >
               Make Payment
             </Link>
@@ -337,9 +401,8 @@ function SuppliersDirectoryContent() {
 
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <span
-                          className={`font-bold text-sm ${
-                            s.currentOutstanding > 0 ? 'text-rose-700' : 'text-slate-400'
-                          }`}
+                          className={`font-bold text-sm ${s.currentOutstanding > 0 ? 'text-rose-700' : 'text-slate-400'
+                            }`}
                         >
                           Rs. {s.currentOutstanding.toLocaleString()}
                         </span>
@@ -347,11 +410,10 @@ function SuppliersDirectoryContent() {
 
                       <td className="py-3.5 px-4 text-center">
                         <span
-                          className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
-                            s.status === 'ACTIVE'
+                          className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full border ${s.status === 'ACTIVE'
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : 'bg-slate-100 text-slate-600 border-slate-200'
-                          }`}
+                            }`}
                         >
                           {s.status}
                         </span>
@@ -387,11 +449,10 @@ function SuppliersDirectoryContent() {
 
                               <button
                                 onClick={() => handleToggleStatus(s.id)}
-                                className={`p-1.5 rounded-md transition-colors ${
-                                  s.status === 'ACTIVE'
+                                className={`p-1.5 rounded-md transition-colors ${s.status === 'ACTIVE'
                                     ? 'text-rose-500 hover:bg-rose-50 hover:text-rose-700'
                                     : 'text-emerald-600 hover:bg-emerald-50 hover:text-emerald-800'
-                                }`}
+                                  }`}
                                 title={s.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
                               >
                                 <Power className="w-4 h-4" />
@@ -611,7 +672,7 @@ function SuppliersDirectoryContent() {
                 <button
                   type="submit"
                   disabled={isCreating || isUpdating}
-                  className="px-5 py-2 text-xs font-semibold text-white bg-brand-burgundy hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-rose-700 hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
                 >
                   {isCreating || isUpdating ? 'Saving...' : editingSupplier ? 'Update Supplier' : 'Register Supplier'}
                 </button>

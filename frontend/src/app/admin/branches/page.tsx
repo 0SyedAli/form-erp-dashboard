@@ -16,7 +16,6 @@ import {
 import AddBranchModal from '@/components/branches/AddBranchModal';
 import EditBranchModal from '@/components/branches/EditBranchModal';
 import BranchStatusModal from '@/components/branches/BranchStatusModal';
-import ResetDemoModal from '@/components/branches/ResetDemoModal';
 import Toast, { ToastMessage } from '@/components/common/Toast';
 import {
   Plus,
@@ -49,8 +48,19 @@ export default function BranchesManagementPage() {
     status: statusFilter,
   });
 
-  const { data: counts = { total: 5, retail: 4, warehouse: 1, active: 5, inactive: 0 } } =
-    useGetBranchCountsQuery();
+  const counts = useMemo(() => ({
+    total: branches.length,
+    retail: branches.filter((b) => {
+      const t = (b.type as string) || '';
+      return t === 'RETAIL_STORE' || t === 'MAIN' || t === 'SHOWROOM' || t === 'STUDIO' || t === 'EXPRESS';
+    }).length,
+    warehouse: branches.filter((b) => {
+      const t = (b.type as string) || '';
+      return t === 'WAREHOUSE' || t === 'WHOLESALE_DEPOT' || t === 'DEPOT';
+    }).length,
+    active: branches.filter((b) => b.isActive).length,
+    inactive: branches.filter((b) => !b.isActive).length,
+  }), [branches]);
 
   const [updateSettings, { isLoading: isSavingSettings }] = useUpdateBranchSettingsMutation();
   const [updatePermissions, { isLoading: isSavingPermissions }] = useUpdateBranchPermissionsMutation();
@@ -244,16 +254,6 @@ export default function BranchesManagementPage() {
         </div>
 
         <div className="flex items-center gap-2.5">
-          {/* Reset Demo Data Button */}
-          <button
-            onClick={() => setIsResetOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2 bg-white border border-gray-200 text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-lg text-sm font-medium shadow-2xs transition-colors cursor-pointer"
-            title="Reset demo branches to baseline"
-          >
-            <RotateCcw className="w-4 h-4 text-gray-500" />
-            <span className="hidden sm:inline">Reset Demo Data</span>
-          </button>
-
           {/* Add Branch Button (Restricted for Super Admin) */}
           {isSuperAdmin ? (
             <button
@@ -944,19 +944,6 @@ export default function BranchesManagementPage() {
             'info',
             updated.isActive ? 'Branch Activated' : 'Branch Deactivated',
             `${updated.name} operational status updated. Historical sales preserved.`
-          );
-        }}
-      />
-
-      {/* Reset Demo Data Modal */}
-      <ResetDemoModal
-        isOpen={isResetOpen}
-        onClose={() => setIsResetOpen(false)}
-        onSuccess={() => {
-          showToast(
-            'info',
-            'Demo Database Reset',
-            'Baseline 5 market cluster shops successfully restored.'
           );
         }}
       />

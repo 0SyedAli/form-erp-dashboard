@@ -12,7 +12,9 @@ export class AuthService {
   public static async login(input: LoginInput, ipAddress?: string, userAgent?: string) {
     const loginIdNormalized = input.loginId.trim().toLowerCase();
 
-    const account = await Account.findOne({ loginId: loginIdNormalized });
+    const account = await Account.findOne({
+      $or: [{ loginId: loginIdNormalized }, { email: loginIdNormalized }],
+    });
     if (!account) {
       // Audit login failure without recording passwords
       await AuditLog.create({

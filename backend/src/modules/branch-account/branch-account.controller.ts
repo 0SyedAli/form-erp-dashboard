@@ -91,4 +91,18 @@ export class BranchAccountController {
       sendError(res, 'Failed to deactivate branch account.', 500, 'INTERNAL_ERROR');
     }
   }
+
+  public static async createBranch(req: Request, res: Response): Promise<void> {
+    try {
+      const adminId = req.account?._id.toString();
+      const result = await BranchAccountService.createBranch(req.body, adminId);
+      sendSuccess(res, result, 'Branch and account created successfully.', 201);
+    } catch (error) {
+      if ((error as any).statusCode) {
+        sendError(res, (error as any).message, (error as any).statusCode, (error as any).code);
+        return;
+      }
+      sendError(res, 'Failed to create branch.', 500, 'INTERNAL_ERROR');
+    }
+  }
 }

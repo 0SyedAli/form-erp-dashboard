@@ -1,17 +1,22 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetPurchasingDashboardKPIsQuery,
-  useGetBranchesQuery,
   useGetPurchaseOrdersQuery,
   useGetSupplierBillsQuery,
-  useGetSuppliersQuery,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
+import {
+  useGetPurchasingSummaryQuery as useGetBackendPurchasingSummaryQuery,
+  useGetPurchaseOrdersQuery as useGetBackendPurchaseOrdersQuery,
+  useGetSupplierBillsQuery as useGetBackendSupplierBillsQuery,
+  useGetSuppliersQuery as useGetBackendSuppliersQuery,
+} from '@/store/services/purchasesApi';
 import { getUserAuthorizedBranches } from '@/lib/permissions';
 import {
   ShoppingCart,
@@ -41,6 +46,7 @@ import {
 const PIE_COLORS = ['#881337', '#1e293b', '#0284c7', '#16a34a', '#d97706', '#9333ea'];
 
 function PurchasesOverviewContent() {
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
   const { data: allBranches = [] } = useGetBranchesQuery();
   const authorizedBranches = getUserAuthorizedBranches(currentUser, allBranches);
@@ -50,39 +56,121 @@ function PurchasesOverviewContent() {
   const [selectedBranchId, setSelectedBranchId] = useState<string>(defaultBranchId);
 
   const branchArg = selectedBranchId === 'all' ? undefined : selectedBranchId;
-  const { data: kpis } = useGetPurchasingDashboardKPIsQuery(branchArg ? { branchId: branchArg } : undefined);
-  const { data: purchaseOrders = [] } = useGetPurchaseOrdersQuery(branchArg ? { branchId: branchArg } : undefined);
-  const { data: supplierBills = [] } = useGetSupplierBillsQuery(branchArg ? { branchId: branchArg } : undefined);
-  const { data: suppliers = [] } = useGetSuppliersQuery();
+
+  // Demo Queries
+  const { data: demoKPIs } = useGetPurchasingDashboardKPIsQuery(branchArg ? { branchId: branchArg } : undefined, {
+    skip: isBackendMode,
+  });
+  const { data: demoPurchaseOrders = [] } = useGetPurchaseOrdersQuery(branchArg ? { branchId: branchArg } : undefined, {
+    skip: isBackendMode,
+  });
+  const { data: demoSupplierBills = [] } = useGetSupplierBillsQuery(branchArg ? { branchId: branchArg } : undefined, {
+    skip: isBackendMode,
+  });
+  const demoSuppliers: any[] = [];
+
+  // Backend Queries
+  const { data: backendSummary } = useGetBackendPurchasingSummaryQuery(undefined, {
+    skip: !isBackendMode,
+  });
+  const { data: backendPOsData } = useGetBackendPurchaseOrdersQuery(
+    branchArg ? { branchId: branchArg } : undefined,
+    { skip: !isBackendMode }
+  );
+  const { data: backendBillsData } = useGetBackendSupplierBillsQuery(
+    branchArg ? { branchId: branchArg } : undefined,
+    { skip: !isBackendMode }
+  );
+  const { data: backendSuppliersData } = useGetBackendSuppliersQuery(undefined, {
+    skip: !isBackendMode,
+  });
+
+  const kpis = useMemo(() => {
+    if (isBackendMode && backendSummary) {
+      return {
+        totalPurchasesValue: backendSummary.totalBilledAmount,
+        totalSupplierPayables: backendSummary.totalBalanceDue,
+        overdueBillsCount: backendSummary.overdueBillsCount,
+        overdueBillsAmount: backendSummary.totalOverdueAmount,
+        pendingPurchaseOrdersCount: backendSummary.pendingApprovalOrders,
+        totalPurchaseOrdersCount: backendSummary.totalOrders,
+        pendingGoodsReceiptsCount: backendSummary.totalGoodsReceipts,
+        openPurchaseOrders: backendSummary.totalOrders,
+        pendingApprovals: backendSummary.pendingApprovalOrders,
+        pendingReceiving: backendSummary.totalGoodsReceipts,
+        totalPayables: backendSummary.totalBalanceDue,
+        overduePayables: backendSummary.totalOverdueAmount,
+        activeSuppliersCount: backendSummary.activeSuppliersCount,
+      };
+    }
+    return demoKPIs;
+  }, [isBackendMode, backendSummary, demoKPIs]);
+
+  const purchaseOrders = useMemo(() => {
+    if (isBackendMode) {
+      return (backendPOsData?.orders || []).map((po: any) => ({
+        ...po,
+        id: po._id || po.id,
+        poNumber: po.orderNumber || po.poNumber,
+        supplierName: po.supplierId?.name || 'Unknown Supplier',
+        totalCost: po.totalAmount || 0,
+      }));
+    }
+    return demoPurchaseOrders;
+  }, [isBackendMode, backendPOsData, demoPurchaseOrders]);
+
+  const supplierBills = useMemo(() => {
+    if (isBackendMode) {
+      return (backendBillsData?.bills || []).map((b: any) => ({
+        ...b,
+        id: b._id || b.id,
+        billNumber: b.billNumber,
+        amountDue: b.balanceDue || 0,
+        supplierName: b.supplierId?.name || 'Unknown Supplier',
+      }));
+    }
+    return demoSupplierBills;
+  }, [isBackendMode, backendBillsData, demoSupplierBills]);
+
+  const suppliers = useMemo(() => {
+    if (isBackendMode) {
+      return (backendSuppliersData?.suppliers || []).map((s: any) => ({
+        ...s,
+        id: s._id || s.id,
+        currentOutstanding: s.currentOutstanding ?? s.balancePayable ?? 0,
+      }));
+    }
+    return demoSuppliers;
+  }, [isBackendMode, backendSuppliersData, demoSuppliers]);
 
   // Pending action items
   const actionablePOs = purchaseOrders
-    .filter((po) => po.status === 'PENDING_APPROVAL' || po.status === 'APPROVED' || po.status === 'PARTIALLY_RECEIVED')
+    .filter((po: any) => po.status === 'PENDING_APPROVAL' || po.status === 'APPROVED' || po.status === 'PARTIALLY_RECEIVED')
     .slice(0, 5);
 
   const overdueOrUnpaidBills = supplierBills
-    .filter((b) => b.amountDue > 0)
-    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+    .filter((b: any) => (b.amountDue || 0) > 0)
+    .sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
     .slice(0, 5);
 
   // Supplier payables breakdown for chart
   const supplierPayableData = suppliers
-    .filter((s) => s.currentOutstanding > 0)
-    .map((s) => ({
+    .filter((s: any) => (s.currentOutstanding || 0) > 0)
+    .map((s: any) => ({
       name: s.name.length > 15 ? s.name.slice(0, 14) + '...' : s.name,
       fullName: s.name,
       outstanding: s.currentOutstanding,
     }))
-    .sort((a, b) => b.outstanding - a.outstanding)
+    .sort((a: any, b: any) => b.outstanding - a.outstanding)
     .slice(0, 5);
 
   // Status breakdown for POs
   const poStatusBreakdown = [
-    { name: 'Pending Approval', count: purchaseOrders.filter((p) => p.status === 'PENDING_APPROVAL').length },
-    { name: 'Approved', count: purchaseOrders.filter((p) => p.status === 'APPROVED').length },
-    { name: 'Partially Received', count: purchaseOrders.filter((p) => p.status === 'PARTIALLY_RECEIVED').length },
-    { name: 'Fully Received', count: purchaseOrders.filter((p) => p.status === 'FULLY_RECEIVED').length },
-  ].filter((item) => item.count > 0);
+    { name: 'Pending Approval', count: purchaseOrders.filter((p: any) => p.status === 'PENDING_APPROVAL').length },
+    { name: 'Approved', count: purchaseOrders.filter((p: any) => p.status === 'APPROVED').length },
+    { name: 'Partially Received', count: purchaseOrders.filter((p: any) => p.status === 'PARTIALLY_RECEIVED').length },
+    { name: 'Fully Received', count: purchaseOrders.filter((p: any) => p.status === 'FULLY_RECEIVED').length },
+  ].filter((item: any) => item.count > 0);
 
   return (
     <AppLayout>
@@ -119,7 +207,7 @@ function PurchasesOverviewContent() {
 
             <Link
               href="/purchases/orders/new"
-              className="inline-flex items-center gap-2 bg-brand-burgundy hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors"
+              className="inline-flex items-center gap-2 bg-rose-700 hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors"
             >
               <Plus className="w-4 h-4" />
               <span>New Purchase Order</span>
@@ -378,19 +466,18 @@ function PurchasesOverviewContent() {
 
             <div className="divide-y divide-slate-100">
               {actionablePOs.length > 0 ? (
-                actionablePOs.map((po) => (
+                actionablePOs.map((po: any) => (
                   <div key={po.id} className="p-3.5 flex items-center justify-between hover:bg-slate-50/60 transition-colors">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-xs text-brand-burgundy">{po.poNumber}</span>
                         <span
-                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                            po.status === 'PENDING_APPROVAL'
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${po.status === 'PENDING_APPROVAL'
                               ? 'bg-amber-50 text-amber-700 border-amber-200'
                               : po.status === 'APPROVED'
-                              ? 'bg-blue-50 text-blue-700 border-blue-200'
-                              : 'bg-purple-50 text-purple-700 border-purple-200'
-                          }`}
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-purple-50 text-purple-700 border-purple-200'
+                            }`}
                         >
                           {po.status.replace('_', ' ')}
                         </span>
@@ -399,13 +486,13 @@ function PurchasesOverviewContent() {
                       <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
                         <span>{po.destinationBranchName}</span>
                         <span>•</span>
-                        <span>{po.items.length} SKUs</span>
+                        <span>{(po.items?.length || 0)} SKUs</span>
                       </div>
                     </div>
 
                     <div className="text-right">
                       <span className="text-xs font-bold text-slate-900 block">
-                        Rs. {po.grandTotal.toLocaleString()}
+                        Rs. {(po.grandTotal ?? po.totalCost ?? 0).toLocaleString()}
                       </span>
                       <Link
                         href={`/purchases/orders/${po.id}`}
@@ -443,7 +530,7 @@ function PurchasesOverviewContent() {
 
             <div className="divide-y divide-slate-100">
               {overdueOrUnpaidBills.length > 0 ? (
-                overdueOrUnpaidBills.map((bill) => {
+                overdueOrUnpaidBills.map((bill: any) => {
                   const isOverdue =
                     bill.amountDue > 0 && bill.dueDate < new Date().toISOString().slice(0, 10);
 
@@ -456,13 +543,12 @@ function PurchasesOverviewContent() {
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-xs text-slate-800">{bill.billNumber}</span>
                           <span
-                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                              isOverdue
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${isOverdue
                                 ? 'bg-rose-50 text-rose-700 border-rose-200'
                                 : bill.paymentStatus === 'PARTIALLY_PAID'
-                                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                : 'bg-slate-50 text-slate-700 border-slate-200'
-                            }`}
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200'
+                              }`}
                           >
                             {isOverdue ? 'OVERDUE' : bill.paymentStatus}
                           </span>

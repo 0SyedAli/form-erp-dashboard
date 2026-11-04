@@ -11,22 +11,18 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { formatPKR } from '@/utils/formatters';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, BarChart3 } from 'lucide-react';
 
-interface RevenueTrendChartProps {
-  isLoading?: boolean;
+export interface TrendDataPoint {
+  date: string;
+  retail: number;
+  wholesale: number;
 }
 
-// Deterministic data points matching screenshot graph
-const TREND_DATA = [
-  { date: 'Oct 1', retail: 120000, wholesale: 60000 },
-  { date: 'Oct 5', retail: 190000, wholesale: 110000 },
-  { date: 'Oct 10', retail: 175000, wholesale: 140000 },
-  { date: 'Oct 15', retail: 260000, wholesale: 160000 },
-  { date: 'Oct 20', retail: 310000, wholesale: 180000 },
-  { date: 'Oct 25', retail: 280000, wholesale: 240000 },
-  { date: 'Oct 31', retail: 380000, wholesale: 310000 },
-];
+interface RevenueTrendChartProps {
+  data?: TrendDataPoint[];
+  isLoading?: boolean;
+}
 
 interface TrendPayloadItem {
   name: string;
@@ -65,16 +61,18 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   return null;
 }
 
-export default function RevenueTrendChart({ isLoading = false }: RevenueTrendChartProps) {
+export default function RevenueTrendChart({ data = [], isLoading = false }: RevenueTrendChartProps) {
   if (isLoading) {
     return (
       <div className="bg-white rounded-xl border border-gray-200/80 p-5 shadow-2xs h-80 animate-pulse" />
     );
   }
 
+  const hasData = data && data.length > 0 && data.some((d) => d.retail > 0 || d.wholesale > 0);
+
   return (
     <div className="bg-white rounded-xl border border-gray-200/80 p-5 shadow-2xs">
-      {/* Header matching screenshot */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
         <div>
           <h3 className="font-bold text-gray-900 text-sm sm:text-base">
@@ -95,7 +93,7 @@ export default function RevenueTrendChart({ isLoading = false }: RevenueTrendCha
             </span>
           </div>
 
-          {/* Timeframe Dropdown */}
+          {/* Timeframe Indicator */}
           <div className="flex items-center gap-1 text-xs text-gray-600 bg-gray-50 border border-gray-200 px-2 py-1 rounded-md">
             <span>This Month</span>
             <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
@@ -103,58 +101,66 @@ export default function RevenueTrendChart({ isLoading = false }: RevenueTrendCha
         </div>
       </div>
 
-      {/* Chart */}
+      {/* Chart or Clean Empty State */}
       <div className="h-64 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={TREND_DATA} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
-            <defs>
-              <linearGradient id="colorRetailLine" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#2563EB" stopOpacity={0.15} />
-                <stop offset="95%" stopColor="#2563EB" stopOpacity={0.0} />
-              </linearGradient>
-              <linearGradient id="colorWholesaleLine" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#F43F5E" stopOpacity={0.15} />
-                <stop offset="95%" stopColor="#F43F5E" stopOpacity={0.0} />
-              </linearGradient>
-            </defs>
+        {!hasData ? (
+          <div className="h-full w-full flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
+            <BarChart3 className="w-8 h-8 text-gray-300 mb-2" />
+            <p className="text-sm font-semibold text-gray-700">No revenue data for this timeframe</p>
+            <p className="text-xs text-gray-400 mt-0.5">Sales trends will chart automatically when transactions are recorded.</p>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+              <defs>
+                <linearGradient id="colorRetailLine" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#2563EB" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#2563EB" stopOpacity={0.0} />
+                </linearGradient>
+                <linearGradient id="colorWholesaleLine" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#F43F5E" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#F43F5E" stopOpacity={0.0} />
+                </linearGradient>
+              </defs>
 
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-            <XAxis
-              dataKey="date"
-              stroke="#94A3B8"
-              fontSize={11}
-              tickLine={false}
-              axisLine={{ stroke: '#E2E8F0' }}
-            />
-            <YAxis
-              stroke="#94A3B8"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(v) => `${v / 1000}K`}
-            />
-            <Tooltip content={<CustomTooltip />} />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+              <XAxis
+                dataKey="date"
+                stroke="#94A3B8"
+                fontSize={11}
+                tickLine={false}
+                axisLine={{ stroke: '#E2E8F0' }}
+              />
+              <YAxis
+                stroke="#94A3B8"
+                fontSize={11}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v) => `${v / 1000}K`}
+              />
+              <Tooltip content={<CustomTooltip />} />
 
-            <Area
-              type="monotone"
-              dataKey="retail"
-              name="Retail"
-              stroke="#2563EB"
-              strokeWidth={2.5}
-              fillOpacity={1}
-              fill="url(#colorRetailLine)"
-            />
-            <Area
-              type="monotone"
-              dataKey="wholesale"
-              name="Wholesale"
-              stroke="#F43F5E"
-              strokeWidth={2.5}
-              fillOpacity={1}
-              fill="url(#colorWholesaleLine)"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+              <Area
+                type="monotone"
+                dataKey="retail"
+                name="Retail"
+                stroke="#2563EB"
+                strokeWidth={2.5}
+                fillOpacity={1}
+                fill="url(#colorRetailLine)"
+              />
+              <Area
+                type="monotone"
+                dataKey="wholesale"
+                name="Wholesale"
+                stroke="#F43F5E"
+                strokeWidth={2.5}
+                fillOpacity={1}
+                fill="url(#colorWholesaleLine)"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { BranchAccountController } from './branch-account.controller.js';
 import { authenticate, requireSuperAdmin } from '../../middleware/auth.middleware.js';
 import { validateRequest } from '../../middleware/validateRequest.middleware.js';
 import {
+  createBranchSchema,
   createBranchAccountSchema,
   updateBranchAccountSchema,
   resetPasswordSchema,
@@ -14,6 +15,12 @@ export const branchAccountRoutes = Router();
 
 // Apply Super Admin authentication guard to all branch account management routes
 branchAccountRoutes.use(authenticate, requireSuperAdmin);
+
+branchAccountRoutes.post(
+  '/branches',
+  validateRequest(createBranchSchema),
+  BranchAccountController.createBranch
+);
 
 branchAccountRoutes.get(
   '/branches/:id/account',

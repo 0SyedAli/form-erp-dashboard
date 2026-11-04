@@ -8,10 +8,10 @@ import { useAppSelector, RootState } from '@/store';
 import {
   useGetInventoryBalancesQuery,
   useGetStockLocationsQuery,
-  useGetBranchesQuery,
   useGetBrandsQuery,
   useSetReorderLevelMutation,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
 import { getUserAuthorizedBranches } from '@/lib/permissions';
 import { InventoryBalance, StockStatus } from '@/types';
 import Toast, { ToastMessage } from '@/components/common/Toast';

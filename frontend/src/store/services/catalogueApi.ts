@@ -1,18 +1,6 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
-
-export interface Branch {
-  _id?: string;
-  id: string;
-  name: string;
-  code: string;
-  shopNumber?: string;
-  type?: string;
-  city?: string;
-  address?: string;
-  phone?: string;
-  loginId?: string;
-  isActive?: boolean;
-}
+import { Branch } from '@/types';
+export type { Branch };
 
 export interface Brand {
   _id?: string;
@@ -128,7 +116,9 @@ export interface CreateProductRequest {
   distributorPrice?: number;
   initialStock?: number;
   minimumStock?: number;
+  stock?: number;
   targetBranchId?: string;
+  destinationBranchId?: string;
 }
 
 export interface UpdatePricesRequest {
@@ -146,7 +136,7 @@ export interface UpdatePricesRequest {
 }
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
+  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
 
 export const catalogueApi = createApi({
   reducerPath: 'catalogueApi',
@@ -164,6 +154,34 @@ export const catalogueApi = createApi({
           id: b.id || b._id || '',
         })),
       providesTags: ['Branch'],
+    }),
+
+    createBranch: builder.mutation<
+      Branch,
+      {
+        name: string;
+        code: string;
+        shopNumber: string;
+        type?: string;
+        city?: string;
+        address: string;
+        phone: string;
+        loginId: string;
+        password?: string;
+        email?: string;
+        managerId?: string;
+        targetMonthlySales?: number;
+        imageUrl?: string;
+        settings?: Record<string, boolean>;
+      }
+    >({
+      query: (body) => ({
+        url: '/admin/branches',
+        method: 'POST',
+        body,
+      }),
+      transformResponse: (response: ApiResponse<Branch>) => response.data,
+      invalidatesTags: ['Branch'],
     }),
 
     getBrands: builder.query<Brand[], void>({
@@ -193,9 +211,12 @@ export const catalogueApi = createApi({
         return `/categories${queryStr ? `?${queryStr}` : ''}`;
       },
       transformResponse: (response: ApiResponse<Category[]>) =>
-        (response.data || []).map((c) => ({
+        (response.data || []).map((c: any) => ({
           ...c,
           id: c.id || c._id || '',
+          brandId: typeof c.brandId === 'object' && c.brandId !== null
+            ? (c.brandId._id || c.brandId.id || '').toString()
+            : (c.brandId || '').toString(),
         })),
       providesTags: ['Category'],
     }),
@@ -270,13 +291,29 @@ export const catalogueApi = createApi({
         const queryStr = queryParams.toString();
         return `/products${queryStr ? `?${queryStr}` : ''}`;
       },
-      transformResponse: (response: PaginatedResponse<Product>) => ({
-        ...response,
-        data: (response.data || []).map((p) => ({
-          ...p,
-          id: p.id || p._id || '',
-        })),
-      }),
+      transformResponse: (response: any) => {
+        const rawList = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.data?.items)
+          ? response.data.items
+          : Array.isArray(response?.items)
+          ? response.items
+          : [];
+        const pagination = response?.data?.pagination || response?.pagination || {
+          total: rawList.length,
+          page: 1,
+          limit: rawList.length || 20,
+          totalPages: 1,
+        };
+        return {
+          success: true,
+          data: rawList.map((p: any) => ({
+            ...p,
+            id: p.id || p._id || '',
+          })),
+          pagination,
+        };
+      },
       providesTags: ['Product'],
     }),
 
@@ -305,13 +342,29 @@ export const catalogueApi = createApi({
         const queryStr = queryParams.toString();
         return `/skus${queryStr ? `?${queryStr}` : ''}`;
       },
-      transformResponse: (response: PaginatedResponse<ProductVariant>) => ({
-        ...response,
-        data: (response.data || []).map((v) => ({
-          ...v,
-          id: v.id || v._id || '',
-        })),
-      }),
+      transformResponse: (response: any) => {
+        const rawList = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.data?.items)
+          ? response.data.items
+          : Array.isArray(response?.items)
+          ? response.items
+          : [];
+        const pagination = response?.data?.pagination || response?.pagination || {
+          total: rawList.length,
+          page: 1,
+          limit: rawList.length || 100,
+          totalPages: 1,
+        };
+        return {
+          success: true,
+          data: rawList.map((v: any) => ({
+            ...v,
+            id: v.id || v._id || '',
+          })),
+          pagination,
+        };
+      },
       providesTags: ['Variant'],
     }),
 
@@ -336,6 +389,7 @@ export const catalogueApi = createApi({
 
 export const {
   useGetBranchesQuery,
+  useCreateBranchMutation,
   useGetBrandsQuery,
   useCreateBrandMutation,
   useGetCategoriesQuery,

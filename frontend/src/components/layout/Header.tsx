@@ -54,7 +54,7 @@ export default function Header({
         {/* Open Unified POS Quick Button */}
         <a
           href="/pos"
-          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-burgundy/10 text-brand-burgundy hover:bg-brand-burgundy hover:text-white text-xs font-semibold transition-colors"
+          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-700/10 text-brand-burgundy hover:bg-rose-700 hover:text-white text-xs font-semibold transition-colors"
           title="Open Full-Screen POS"
         >
           <span>Open POS</span>

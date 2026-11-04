@@ -410,11 +410,26 @@ export class CatalogueService {
     callerBranchId?: string
   ) {
     // 1. Resolve master entities
+    const resolveEntity = async (model: any, idOrCode: string) => {
+      if (!idOrCode) return null;
+      if (mongoose.Types.ObjectId.isValid(idOrCode)) {
+        const doc = await model.findById(idOrCode);
+        if (doc) return doc;
+      }
+      return await model.findOne({
+        $or: [
+          { code: idOrCode },
+          { name: idOrCode },
+          { displayLabel: idOrCode },
+        ],
+      });
+    };
+
     const [brand, category, size, thickness] = await Promise.all([
-      Brand.findById(input.brandId),
-      Category.findById(input.categoryId),
-      Size.findById(input.sizeId),
-      Thickness.findById(input.thicknessId),
+      resolveEntity(Brand, input.brandId),
+      resolveEntity(Category, input.categoryId),
+      resolveEntity(Size, input.sizeId),
+      resolveEntity(Thickness, input.thicknessId),
     ]);
 
     if (!brand || brand.status !== 'ACTIVE') {
@@ -665,7 +680,7 @@ export class CatalogueService {
 
       if (floorLocation) {
         const stockQty = Math.max(0, input.stock || 0);
-        const minStockQty = Math.max(0, input.minimumStock ?? 5);
+        const minStockQty = input.minimumStock !== undefined ? Math.max(0, input.minimumStock) : undefined;
 
         await StockBalance.create({
           branchId: branchObjectId,
@@ -674,7 +689,7 @@ export class CatalogueService {
           variantId: variant._id,
           onHand: stockQty,
           reserved: 0,
-          reorderLevel: minStockQty,
+          ...(minStockQty !== undefined ? { reorderLevel: minStockQty } : {}),
         });
 
         if (stockQty > 0) {

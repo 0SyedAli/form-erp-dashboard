@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { CatalogueController } from './catalogue.controller.js';
+import { BranchAccountController } from '../branch-account/branch-account.controller.js';
+import { createBranchSchema } from '../branch-account/branch-account.schema.js';
 import { authenticate, requireSuperAdmin } from '../../middleware/auth.middleware.js';
 import { requireBranchPermission } from '../../middleware/branchPermission.middleware.js';
 import { validateRequest } from '../../middleware/validateRequest.middleware.js';
@@ -258,6 +260,14 @@ catalogueRoutes.get(
   '/branches',
   authenticate,
   CatalogueController.getBranches
+);
+
+catalogueRoutes.post(
+  '/branches',
+  authenticate,
+  requireSuperAdmin,
+  validateRequest(createBranchSchema),
+  BranchAccountController.createBranch
 );
 
 

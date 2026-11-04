@@ -49,7 +49,7 @@ npm test        # Run frontend unit & integration tests
 ```bash
 cd backend
 npm install
-npm run dev     # Starts Express API on http://localhost:5000
+npm run dev     # Starts Express API on http://localhost:5001
 npm run build   # Compile TypeScript to dist/
 npm test        # Run backend test suite
 ```
@@ -61,5 +61,5 @@ npm test        # Run backend test suite
 - **Cross-Branch Security Enforcement**: Branch logins strictly access only their designated store inventory and sales.
 - **Three-Tier Pricing**: Walk-in retail, Wholesale, and Distributor pricing.
 - **Decimal-Safe Financials**: Integer Paisa arithmetic guaranteeing precision in POS and ledgers.
-- **Real-Time API Docs**: Interactive Swagger documentation accessible at `http://localhost:5000/api/v1/docs`.
+- **Real-Time API Docs**: Interactive Swagger documentation accessible at `http://localhost:5001/api/v1/docs`.
 

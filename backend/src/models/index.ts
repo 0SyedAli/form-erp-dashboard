@@ -29,4 +29,5 @@ export * from './idempotencyKey.model.js';
 export * from './counter.model.js';
 export * from './heldSale.model.js';
 export * from './paymentCollection.model.js';
+export * from './purchaseReturn.model.js';
 

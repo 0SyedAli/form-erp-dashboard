@@ -8,9 +8,13 @@ import { useAppSelector, RootState } from '@/store';
 import {
   useGetGoodsReceiptsQuery,
   useGetPurchaseOrdersQuery,
-  useGetStockLocationsQuery,
   useReceiveGoodsMutation,
 } from '@/store/services/apiSlice';
+import { useGetStockLocationsQuery } from '@/store/services/inventoryApi';
+import {
+  useGetPurchaseOrdersQuery as useGetBackendPurchaseOrdersQuery,
+  useReceivePurchaseOrderMutation as useReceiveBackendPOMutation,
+} from '@/store/services/purchasesApi';
 import { hasPermission } from '@/lib/permissions';
 import { GoodsReceiptNote } from '@/types';
 import {
@@ -28,11 +32,35 @@ function GoodsReceivingContent() {
   const searchParams = useSearchParams();
   const preselectedPoId = searchParams?.get('poId');
 
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
-  const { data: grns = [], isLoading: isGRNsLoading } = useGetGoodsReceiptsQuery();
-  const { data: purchaseOrders = [] } = useGetPurchaseOrdersQuery();
+
+  // Demo Queries
+  const { data: demoGRNs = [], isLoading: isDemoLoading } = useGetGoodsReceiptsQuery(undefined, { skip: isBackendMode });
+  const { data: demoPurchaseOrders = [] } = useGetPurchaseOrdersQuery(undefined, { skip: isBackendMode });
   const { data: stockLocations = [] } = useGetStockLocationsQuery();
-  const [receiveGoodsMutation, { isLoading: isReceiving }] = useReceiveGoodsMutation();
+  const [receiveGoodsMutation, { isLoading: isDemoReceiving }] = useReceiveGoodsMutation();
+
+  // Backend Queries
+  const { data: backendPOsData } = useGetBackendPurchaseOrdersQuery(undefined, { skip: !isBackendMode });
+  const [receivePOBackend, { isLoading: isBackendReceiving }] = useReceiveBackendPOMutation();
+
+  const purchaseOrders = useMemo(() => {
+    if (isBackendMode) {
+      return (backendPOsData?.orders || []).map((po: any) => ({
+        ...po,
+        id: po._id || po.id,
+        poNumber: po.orderNumber || po.poNumber,
+        supplierName: po.supplierId?.name || 'Unknown Supplier',
+        items: po.items || [],
+      }));
+    }
+    return demoPurchaseOrders;
+  }, [isBackendMode, backendPOsData, demoPurchaseOrders]);
+
+  const grns = demoGRNs;
+  const isGRNsLoading = isBackendMode ? false : isDemoLoading;
+  const isReceiving = isBackendMode ? isBackendReceiving : isDemoReceiving;
 
   const canReceive = hasPermission(currentUser, 'purchases.receive');
 
@@ -75,7 +103,7 @@ function GoodsReceivingContent() {
     if (target) {
       setDestinationLocationId(target.destinationLocationId);
       const initial: Record<string, { received: number; damaged: number; batch?: string }> = {};
-      target.items.forEach((item) => {
+      (target.items || []).forEach((item: any) => {
         const remaining = Math.max(0, item.orderedQuantity - item.receivedQuantity);
         initial[item.sku] = { received: remaining, damaged: 0, batch: '' };
       });
@@ -123,8 +151,8 @@ function GoodsReceivingContent() {
       return;
     }
 
-    const itemsToSubmit = activePO.items
-      .map((item) => {
+    const itemsToSubmit = (activePO.items || [])
+      .map((item: any) => {
         const entry = receivingQuantities[item.sku] || { received: 0, damaged: 0 };
         return {
           sku: item.sku,
@@ -133,7 +161,7 @@ function GoodsReceivingContent() {
           batchNumber: entry.batch?.trim() || undefined,
         };
       })
-      .filter((i) => i.receivedQuantity > 0 || i.damagedQuantity > 0);
+      .filter((i: any) => i.receivedQuantity > 0 || i.damagedQuantity > 0);
 
     if (itemsToSubmit.length === 0) {
       setErrorMessage('Please enter at least one item with received quantity > 0.');
@@ -153,24 +181,41 @@ function GoodsReceivingContent() {
     }
 
     try {
-      const res = await receiveGoodsMutation({
-        poId: activePO.id,
-        deliveryReference: deliveryReference.trim(),
-        destinationLocationId: destinationLocationId || activePO.destinationLocationId,
-        receivedDate,
-        receivedBy: currentUser?.name || 'Warehouse Staff',
-        notes: notes.trim() || undefined,
-        items: itemsToSubmit,
-      }).unwrap();
+      if (isBackendMode) {
+        const res = await receivePOBackend({
+          id: activePO.id,
+          deliveryReference: deliveryReference.trim(),
+          stockLocationId: destinationLocationId || undefined,
+          notes: notes.trim() || undefined,
+          items: itemsToSubmit.map((i: any) => ({
+            sku: i.sku,
+            quantityReceived: i.receivedQuantity,
+            damagedQuantity: i.damagedQuantity,
+          })),
+        }).unwrap();
 
-      setSuccessGRN(res.grn);
+        setSuccessGRN(res.grn);
+      } else {
+        const res = await receiveGoodsMutation({
+          poId: activePO.id,
+          deliveryReference: deliveryReference.trim(),
+          destinationLocationId: destinationLocationId || activePO.destinationLocationId,
+          receivedDate,
+          receivedBy: currentUser?.name || 'Warehouse Staff',
+          notes: notes.trim() || undefined,
+          items: itemsToSubmit,
+        }).unwrap();
+
+        setSuccessGRN(res.grn);
+      }
+
       setIsModalOpen(false);
       // Reset
       setSelectedPOId('');
       setDeliveryReference('');
       setNotes('');
     } catch (err: unknown) {
-      setErrorMessage((err as { data?: string })?.data || 'Failed to process goods receipt.');
+      setErrorMessage((err as { data?: string })?.data || (err as any)?.data?.error?.message || 'Failed to process goods receipt.');
     }
   };
 
@@ -195,7 +240,7 @@ function GoodsReceivingContent() {
                 setErrorMessage(null);
                 setIsModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 bg-brand-burgundy hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors self-start sm:self-auto"
+              className="inline-flex items-center gap-2 bg-rose-700 hover:bg-rose-900 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-xs transition-colors self-start sm:self-auto"
             >
               <Plus className="w-4 h-4" />
               <span>Receive New Shipment</span>
@@ -465,12 +510,12 @@ function GoodsReceivingContent() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {activePO.items.map((item) => {
+                      {(activePO.items || []).map((item: any) => {
                         const remaining = Math.max(0, item.orderedQuantity - item.receivedQuantity);
                         const current = receivingQuantities[item.sku] || { received: 0, damaged: 0 };
 
                         return (
-                          <tr key={item.id} className="hover:bg-slate-50/50">
+                          <tr key={item.id || item.sku} className="hover:bg-slate-50/50">
                             <td className="py-2 px-3">
                               <span className="font-semibold text-slate-800 block">{item.sku}</span>
                               <span className="text-[11px] text-slate-500">{item.productName}</span>
@@ -545,7 +590,7 @@ function GoodsReceivingContent() {
                 <button
                   type="submit"
                   disabled={isReceiving || !activePO}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-semibold text-white bg-brand-burgundy hover:bg-rose-900 rounded-lg shadow-xs transition-colors disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-semibold text-white bg-rose-700 hover:bg-rose-900 rounded-lg shadow-xs transition-colors disabled:opacity-50"
                 >
                   <ArrowDownToLine className="w-4 h-4" />
                   <span>{isReceiving ? 'Receiving...' : 'Post Goods Receipt'}</span>

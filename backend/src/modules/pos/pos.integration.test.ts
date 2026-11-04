@@ -439,7 +439,7 @@ describe('Unified POS, Sales Invoices, Customer Credit & Collections Integration
       expect(res.body.error.code).toBe('CREDIT_LIMIT_EXCEEDED');
     });
 
-    it('permits checkout when explicit supervisor credit override is granted', async () => {
+    it('rejects credit override when requested by branch account without authorization (403)', async () => {
       const res = await request(app)
         .post('/api/v1/pos/checkout')
         .set('Cookie', [branch1Cookie])
@@ -449,15 +449,104 @@ describe('Unified POS, Sales Invoices, Customer Credit & Collections Integration
           customerId,
           items: [{ sku: testSku1, quantity: 1 }],
           creditOverride: true,
-          creditApprovedBy: 'Store Manager Tariq',
+          creditApprovedBy: 'Self-Claimed Supervisor',
+          overrideReason: 'Unauthorized branch bypass attempt',
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe('UNAUTHORIZED_CREDIT_OVERRIDE');
+    });
+
+    it('permits checkout when authorized Super Admin approves credit override with server verification', async () => {
+      const res = await request(app)
+        .post('/api/v1/pos/checkout')
+        .set('Cookie', [adminCookie])
+        .send({
+          branchId: branch1Id,
+          saleType: SALE_TYPES.WHOLESALE,
+          paymentArrangement: PAYMENT_ARRANGEMENTS.CREDIT,
+          customerId,
+          items: [{ sku: testSku1, quantity: 1 }],
+          creditOverride: true,
           overrideReason: 'Approved regular seasonal distributor buffer',
         });
 
       expect(res.status).toBe(201);
       const inv = res.body.data.invoice;
       expect(inv.creditOverride).toBe(true);
-      expect(inv.creditApprovedBy).toBe('Store Manager Tariq');
+      expect(inv.creditApprovedBy).toContain('Super Admin');
       expect(inv.balanceDue).toBe(18000);
+
+      // Verify AuditLog entry was recorded
+      const audit = await mongoose.model('AuditLog').findOne({
+        action: 'CREDIT_LIMIT_OVERRIDE',
+        entityId: inv.invoiceNumber,
+      });
+      expect(audit).toBeDefined();
+      expect(audit?.details?.approvedBy).toContain('Super Admin');
+    });
+
+    it('protects reserved inventory: prevents checkout from selling stock reserved for transfer', async () => {
+      // Setup stock with onHand = 10, reserved = 8 -> available = 2
+      const reservedSku = `RES-TEST-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const prod = await Product.findOne();
+      const uniqueLength = 100 + Math.floor(Math.random() * 100);
+      const uniqueWidth = 100 + Math.floor(Math.random() * 100);
+      const sz = await Size.create({
+        name: `Reserved King ${uniqueLength}`,
+        length: uniqueLength,
+        width: uniqueWidth,
+        unit: 'in',
+        displayLabel: `${uniqueLength} × ${uniqueWidth}`,
+      });
+      const th = await Thickness.findOne();
+
+      await Variant.create({
+        productId: prod!._id,
+        sku: reservedSku,
+        sizeId: sz._id,
+        thicknessId: th!._id,
+        listPrice: 2000000,
+        purchasePrice: 1000000,
+        retailPrice: 2000000,
+        wholesalePrice: 1800000,
+        distributorPrice: 1600000,
+      });
+
+      await StockBalance.create({
+        branchId: branch1Id,
+        stockLocationId: location1Id,
+        sku: reservedSku,
+        onHand: 10,
+        reserved: 8,
+      });
+
+      // Attempting to sell 5 units should fail (available is 2, requested 5)
+      const res = await request(app)
+        .post('/api/v1/pos/checkout')
+        .set('Cookie', [branch1Cookie])
+        .send({
+          saleType: SALE_TYPES.WALK_IN,
+          paymentArrangement: PAYMENT_ARRANGEMENTS.FULL,
+          paymentMethod: 'CASH',
+          items: [{ sku: reservedSku, quantity: 5 }],
+          amountReceived: 100000,
+          cashReceived: 100000,
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('INSUFFICIENT_STOCK');
+      expect(res.body.error.details.available).toBe(2);
+      expect(res.body.error.details.requested).toBe(5);
+
+      // Verify onHand and reserved were not modified
+      const balAfter = await StockBalance.findOne({
+        branchId: branch1Id,
+        stockLocationId: location1Id,
+        sku: reservedSku,
+      });
+      expect(balAfter?.onHand).toBe(10);
+      expect(balAfter?.reserved).toBe(8);
     });
   });
 

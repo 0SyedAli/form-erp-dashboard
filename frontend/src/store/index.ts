@@ -8,6 +8,8 @@ import { authApi } from './services/authApi';
 import { catalogueApi } from './services/catalogueApi';
 import { inventoryApi } from './services/inventoryApi';
 import { posApi } from './services/posApi';
+import { purchasesApi } from './services/purchasesApi';
+import { reportsApi } from './services/reportsApi';
 
 export const store = configureStore({
   reducer: {
@@ -19,14 +21,21 @@ export const store = configureStore({
     [catalogueApi.reducerPath]: catalogueApi.reducer,
     [inventoryApi.reducerPath]: inventoryApi.reducer,
     [posApi.reducerPath]: posApi.reducer,
+    [purchasesApi.reducerPath]: purchasesApi.reducer,
+    [reportsApi.reducerPath]: reportsApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().concat(
+    getDefaultMiddleware({
+      immutableCheck: false,
+      serializableCheck: false,
+    }).concat(
       erpApi.middleware,
       authApi.middleware,
       catalogueApi.middleware,
       inventoryApi.middleware,
-      posApi.middleware
+      posApi.middleware,
+      purchasesApi.middleware,
+      reportsApi.middleware
     ),
 });
 

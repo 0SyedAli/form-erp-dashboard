@@ -1,5 +1,22 @@
 import { z } from 'zod';
 
+export const createBranchSchema = z.object({
+  body: z.object({
+    name: z.string({ required_error: 'Branch name is required' }).trim().min(2),
+    code: z.string({ required_error: 'Branch code is required' }).trim().min(2).toUpperCase(),
+    shopNumber: z.string({ required_error: 'Shop number is required' }).trim().min(1),
+    type: z.string().optional().default('RETAIL_STORE'),
+    city: z.string().optional().default('Karachi'),
+    address: z.string({ required_error: 'Address is required' }).trim().min(3),
+    phone: z.string({ required_error: 'Phone number is required' }).trim().min(5),
+    loginId: z.string({ required_error: 'Login ID is required' }).trim().min(3).toLowerCase(),
+    password: z.string().optional(),
+    email: z.string().email().optional(),
+    targetMonthlySales: z.number().optional().default(0),
+    settings: z.record(z.boolean()).optional(),
+  }),
+});
+
 export const createBranchAccountSchema = z.object({
   params: z.object({
     id: z.string({ required_error: 'Branch ID or Code is required' }),
@@ -56,6 +73,7 @@ export const branchParamSchema = z.object({
   }),
 });
 
+export type CreateBranchInput = z.infer<typeof createBranchSchema>['body'];
 export type CreateBranchAccountInput = z.infer<typeof createBranchAccountSchema>['body'];
 export type UpdateBranchAccountInput = z.infer<typeof updateBranchAccountSchema>['body'];
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>['body'];

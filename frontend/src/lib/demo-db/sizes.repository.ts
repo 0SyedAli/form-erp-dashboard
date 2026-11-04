@@ -16,6 +16,26 @@ class SizesRepository {
       demoStorage.setItem(STORAGE_KEYS.SIZES, [...SEED_SIZES]);
       return [...SEED_SIZES];
     }
+    // Auto-repair any items with missing or empty displayLabel in client localStorage
+    let needsUpdate = false;
+    const sanitized = list.map((s, idx) => {
+      if (!s.displayLabel || !s.displayLabel.trim()) {
+        needsUpdate = true;
+        const seedMatch = SEED_SIZES[idx] || SEED_SIZES.find((seed) => seed.id === s.id);
+        const fallbackLabel =
+          seedMatch?.displayLabel ||
+          (s.length && s.width ? `${s.length} × ${s.width}` : '78 × 72');
+        return {
+          ...s,
+          displayLabel: fallbackLabel,
+        };
+      }
+      return s;
+    });
+    if (needsUpdate) {
+      demoStorage.setItem(STORAGE_KEYS.SIZES, sanitized);
+      return sanitized;
+    }
     return list;
   }
 

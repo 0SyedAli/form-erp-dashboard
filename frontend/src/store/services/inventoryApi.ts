@@ -196,7 +196,7 @@ export interface InventorySummaryData {
 }
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
+  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
 
 export const inventoryApi = createApi({
   reducerPath: 'inventoryApi',
@@ -235,9 +235,9 @@ export const inventoryApi = createApi({
       providesTags: (result) =>
         result
           ? [
-              ...result.map(({ _id, sku }) => ({ type: 'StockBalance' as const, id: _id || sku })),
-              { type: 'StockBalance', id: 'LIST' },
-            ]
+            ...result.map(({ _id, sku }) => ({ type: 'StockBalance' as const, id: _id || sku })),
+            { type: 'StockBalance', id: 'LIST' },
+          ]
           : [{ type: 'StockBalance', id: 'LIST' }],
     }),
 

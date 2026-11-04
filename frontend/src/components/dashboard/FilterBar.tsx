@@ -9,7 +9,7 @@ import {
   setSearchQueryFilter,
   resetFilters,
 } from '@/store/slices/filterSlice';
-import { DEMO_BRANCHES } from '@/data/mockData';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
 import { DateRangePreset } from '@/types';
 import {
   Building2,
@@ -54,6 +54,8 @@ export default function FilterBar({ showBranchSelector = true }: FilterBarProps)
     dispatch(setCustomDateRange({ startDate: start, endDate: end }));
   };
 
+  const { data: branches = [] } = useGetBranchesQuery();
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-2xs p-3.5 sm:p-4 mb-6">
       <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3.5">
@@ -75,9 +77,9 @@ export default function FilterBar({ showBranchSelector = true }: FilterBarProps)
                 title={!isSuperAdmin ? 'Branch Manager access is isolated to assigned branch' : 'Filter by branch'}
               >
                 {isSuperAdmin && (
-                  <option value="all">Consolidated (All 5 Branches)</option>
+                  <option value="all">Consolidated (All Branches)</option>
                 )}
-                {DEMO_BRANCHES.map((branch) => (
+                {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>
                     {branch.code} — {branch.name}
                   </option>

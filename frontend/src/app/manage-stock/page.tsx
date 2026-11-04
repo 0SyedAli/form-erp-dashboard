@@ -5,11 +5,9 @@ import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAppSelector } from '@/store';
 import {
-  useGetBranchesQuery,
   useGetStockLocationsQuery as useGetStockLocationsDemoQuery,
   useGetInventoryBalancesQuery as useGetInventoryBalancesDemoQuery,
   useGetVariantsQuery,
-  useGetSuppliersQuery,
 } from '@/store/services/apiSlice';
 import {
   useGetStockLocationsQuery,
@@ -17,7 +15,8 @@ import {
   useCreateAdjustmentsMutation,
   useUpdateMinimumStockMutation,
 } from '@/store/services/inventoryApi';
-import { useGetSkusQuery } from '@/store/services/catalogueApi';
+import { useGetBranchesQuery, useGetSkusQuery } from '@/store/services/catalogueApi';
+import { useGetSuppliersQuery } from '@/store/services/purchasesApi';
 import {
   inventoryRepository,
 } from '@/lib/demo-db';
@@ -54,11 +53,12 @@ function ManageStockContent() {
   const currentUser = useAppSelector((state) => state.auth.currentUser);
   const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
 
-  // Demo Queries
+  // Queries
   const { data: branches = [] } = useGetBranchesQuery();
   const { data: demoStockLocations = [] } = useGetStockLocationsDemoQuery(undefined, { skip: isBackendMode });
   const { data: demoVariants = [] } = useGetVariantsQuery(undefined, { skip: isBackendMode });
-  const { data: suppliers = [] } = useGetSuppliersQuery();
+  const { data: backendSuppliersData } = useGetSuppliersQuery(undefined, { skip: !isBackendMode });
+  const suppliers = (isBackendMode ? backendSuppliersData?.suppliers : []) || [];
 
   // Branch Selection (Fixed for branch logins, selectable for Super Admin)
   const [selectedBranchIdOverride, setSelectedBranchId] = useState<string>('');
@@ -155,7 +155,7 @@ function ManageStockContent() {
 
   // Form State
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
-  const [deliveryDate, setDeliveryDate] = useState<string>('2025-10-23');
+  const [deliveryDate, setDeliveryDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [searchFilter, setSearchFilter] = useState<string>('');
 
   // Table items state
@@ -167,8 +167,8 @@ function ManageStockContent() {
 
     return variants.slice(0, 8).map((v) => {
       const bal = balanceMap.get(v.sku.toUpperCase());
-      const onHand = bal ? bal.onHand : 15;
-      const reorder = bal ? bal.reorderLevel : 5;
+      const onHand = bal ? bal.onHand : 0;
+      const reorder = bal?.reorderLevel ?? 0;
       const skuParts = v.sku.split('-');
       const thickNum = skuParts.length > 3 ? skuParts[3] : '5';
 
@@ -349,7 +349,7 @@ function ManageStockContent() {
 
     const bal = balances.find((b) => b.sku.toUpperCase() === v.sku.toUpperCase());
     const onHand = bal ? bal.onHand : 0;
-    const reorder = bal ? bal.reorderLevel : 5;
+    const reorder = bal?.reorderLevel ?? 0;
     const skuParts = v.sku.split('-');
     const thickNum = skuParts.length > 3 ? skuParts[3] : '5';
 
@@ -401,7 +401,9 @@ function ManageStockContent() {
               <Calendar className="w-3.5 h-3.5 text-brand-blue" />
               <span>Today</span>
               <span className="text-gray-400">|</span>
-              <span className="text-gray-800">Oct 23, 2025</span>
+              <span className="text-gray-800">
+                {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
               <span className="text-gray-400 text-[10px]">▼</span>
             </div>
           </div>
@@ -413,7 +415,7 @@ function ManageStockContent() {
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>
-                <strong>Backend Connection Error:</strong> Unable to load inventory balances from Express MongoDB API. Verify that the backend server is running on port 5000.
+                <strong>Backend Connection Error:</strong> Unable to load inventory balances from Express MongoDB API. Verify that the backend server is running on port 5001.
               </span>
             </div>
             <button

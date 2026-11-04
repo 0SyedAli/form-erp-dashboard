@@ -5,13 +5,13 @@ import AppLayout from '@/components/layout/AppLayout';
 import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import {
-  useGetBranchesQuery,
   useGetStockLocationsQuery,
   useGetProductVariantsQuery,
   useReceiveStockMutation,
   useCreateOpeningStockMutation,
   useGetStockMovementsQuery,
 } from '@/store/services/apiSlice';
+import { useGetBranchesQuery } from '@/store/services/catalogueApi';
 import { getUserAuthorizedBranches, hasPermission } from '@/lib/permissions';
 import Toast, { ToastMessage } from '@/components/common/Toast';
 import {

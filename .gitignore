@@ -43,6 +43,12 @@ next-env.d.ts
 .mongodb-dev/
 */.mongodb-dev/
 
+# Database Backups & Dumps
+.backups/
+*/.backups/
+*.dump
+*.json.gz
+
 # OS files
 .DS_Store
 Thumbs.db

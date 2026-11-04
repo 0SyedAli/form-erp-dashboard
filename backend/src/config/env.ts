@@ -2,15 +2,19 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { z } from 'zod';
 
-// Load environment variables from .env
+const currentDir = typeof __dirname !== 'undefined' ? __dirname : path.resolve(process.cwd(), 'src/config');
+const backendDir = path.resolve(currentDir, '../..');
+
+// Load environment variables from backend/.env or cwd/.env
+dotenv.config({ path: path.resolve(backendDir, '.env') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const envSchema = z.object({
-  PORT: z.coerce.number().default(5000),
+  PORT: z.coerce.number().default(5001),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   MONGODB_URI: z
     .string()
-    .default('mongodb://127.0.0.1:27017/moltyformerp?directConnection=true'),
+    .default('mongodb://127.0.0.1:27018/moltyformerp?replicaSet=rs0'),
   FRONTEND_URL: z.string().default('http://localhost:3000'),
   CORS_ORIGINS: z
     .string()

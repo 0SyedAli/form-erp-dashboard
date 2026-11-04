@@ -14,7 +14,7 @@ export default function RootIndexPage() {
     } else if (currentUser.role === 'SUPER_ADMIN') {
       router.replace('/admin/dashboard');
     } else {
-      router.replace('/branch/dashboard');
+      router.replace('/pos');
     }
   }, [currentUser, isAuthenticated, router]);
 

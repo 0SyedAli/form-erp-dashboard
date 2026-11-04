@@ -13,20 +13,44 @@ import {
   useGetSupplierPaymentsQuery,
 } from '@/store/services/apiSlice';
 import {
+  useGetSupplierByIdQuery as useGetBackendSupplierByIdQuery,
+  useGetSupplierLedgerQuery as useGetBackendLedgerQuery,
+  useGetPurchaseOrdersQuery as useGetBackendPurchaseOrdersQuery,
+  useGetSupplierBillsQuery as useGetBackendBillsQuery,
+  useGetSupplierPaymentsQuery as useGetBackendPaymentsQuery,
+} from '@/store/services/purchasesApi';
+import {
   ArrowLeft,
   CreditCard,
   FileText,
 } from 'lucide-react';
 
 function SupplierProfileContent() {
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
   const params = useParams();
   const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string);
 
-  const { data: supplier, isLoading } = useGetSupplierByIdQuery(id);
-  const { data: ledgerSummary } = useGetSupplierLedgerSummaryQuery(id);
-  const { data: purchaseOrders = [] } = useGetPurchaseOrdersQuery({ supplierId: id });
-  const { data: bills = [] } = useGetSupplierBillsQuery({ supplierId: id });
-  const { data: payments = [] } = useGetSupplierPaymentsQuery({ supplierId: id });
+  // Demo queries
+  const { data: demoSupplier, isLoading: isDemoSupLoading } = useGetSupplierByIdQuery(id, { skip: isBackendMode });
+  const { data: demoLedgerSummary } = useGetSupplierLedgerSummaryQuery(id, { skip: isBackendMode });
+  const { data: demoPOs = [] } = useGetPurchaseOrdersQuery({ supplierId: id }, { skip: isBackendMode });
+  const { data: demoBills = [] } = useGetSupplierBillsQuery({ supplierId: id }, { skip: isBackendMode });
+  const { data: demoPayments = [] } = useGetSupplierPaymentsQuery({ supplierId: id }, { skip: isBackendMode });
+
+  // Backend queries
+  const { data: backendSupplier, isLoading: isBackendSupLoading } = useGetBackendSupplierByIdQuery(id, { skip: !isBackendMode });
+  const { data: backendLedgerData } = useGetBackendLedgerQuery({ id }, { skip: !isBackendMode });
+  const { data: backendPOsData } = useGetBackendPurchaseOrdersQuery({ supplierId: id }, { skip: !isBackendMode });
+  const { data: backendBillsData } = useGetBackendBillsQuery({ supplierId: id }, { skip: !isBackendMode });
+  const { data: backendPaymentsData } = useGetBackendPaymentsQuery({ supplierId: id }, { skip: !isBackendMode });
+
+  const supplier = isBackendMode ? backendSupplier : demoSupplier;
+  const ledgerSummary = isBackendMode ? backendLedgerData?.summary : demoLedgerSummary;
+  const purchaseOrders = isBackendMode ? (backendPOsData?.orders || []) : demoPOs;
+  const bills = isBackendMode ? (backendBillsData?.bills || []) : demoBills;
+  const payments = isBackendMode ? (backendPaymentsData?.payments || []) : demoPayments;
+
+  const isLoading = isBackendMode ? isBackendSupLoading : isDemoSupLoading;
 
   if (isLoading) {
     return (
@@ -71,11 +95,10 @@ function SupplierProfileContent() {
               <div className="flex items-center gap-3">
                 <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{supplier.name}</h1>
                 <span
-                  className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${
-                    supplier.status === 'ACTIVE'
+                  className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${supplier.status === 'ACTIVE'
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       : 'bg-slate-100 text-slate-600 border-slate-200'
-                  }`}
+                    }`}
                 >
                   {supplier.status}
                 </span>
@@ -95,7 +118,7 @@ function SupplierProfileContent() {
 
             <Link
               href={`/payments/suppliers?supplierId=${supplier.id}`}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-brand-burgundy hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-rose-700 hover:bg-rose-900 rounded-lg shadow-xs transition-colors"
             >
               <CreditCard className="w-3.5 h-3.5" />
               <span>Make Payment</span>
@@ -110,9 +133,8 @@ function SupplierProfileContent() {
               Outstanding Balance (Payable)
             </span>
             <span
-              className={`text-2xl font-bold mt-1 block ${
-                currentBalance > 0 ? 'text-rose-700' : 'text-slate-900'
-              }`}
+              className={`text-2xl font-bold mt-1 block ${currentBalance > 0 ? 'text-rose-700' : 'text-slate-900'
+                }`}
             >
               Rs. {currentBalance.toLocaleString()}
             </span>
@@ -191,10 +213,10 @@ function SupplierProfileContent() {
                 <span className="font-semibold text-brand-burgundy">{supplier.paymentTerms || 'Net 30'}</span>
               </div>
 
-              {supplier.taxNumber && (
+              {((supplier as any).taxNumber || (supplier as any).ntn) && (
                 <div>
                   <span className="text-slate-400 block">NTN / STRN:</span>
-                  <span className="font-mono">{supplier.taxNumber}</span>
+                  <span className="font-mono">{(supplier as any).taxNumber || (supplier as any).ntn}</span>
                 </div>
               )}
 
@@ -229,26 +251,26 @@ function SupplierProfileContent() {
 
               <div className="divide-y divide-slate-100 text-xs">
                 {purchaseOrders.length > 0 ? (
-                  purchaseOrders.slice(0, 4).map((po) => (
-                    <div key={po.id} className="p-3 flex items-center justify-between hover:bg-slate-50/50">
+                  purchaseOrders.slice(0, 4).map((po: any) => (
+                    <div key={po.id || po._id} className="p-3 flex items-center justify-between hover:bg-slate-50/50">
                       <div>
                         <div className="flex items-center gap-2">
                           <Link
-                            href={`/purchases/orders/${po.id}`}
+                            href={`/purchases/orders/${po.id || po._id}`}
                             className="font-bold text-brand-burgundy hover:underline"
                           >
-                            {po.poNumber}
+                            {po.poNumber || po.orderNumber}
                           </Link>
                           <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
                             {po.status}
                           </span>
                         </div>
                         <span className="text-slate-400 mt-0.5 block">
-                          {po.orderDate} • {po.destinationBranchName}
+                          {po.orderDate} • {po.destinationBranchName || 'Main Branch'}
                         </span>
                       </div>
                       <span className="font-bold text-slate-900">
-                        Rs. {po.grandTotal.toLocaleString()}
+                        Rs. {(po.grandTotal ?? po.totalAmount ?? 0).toLocaleString()}
                       </span>
                     </div>
                   ))
@@ -275,19 +297,18 @@ function SupplierProfileContent() {
 
               <div className="divide-y divide-slate-100 text-xs">
                 {bills.length > 0 ? (
-                  bills.slice(0, 4).map((b) => (
-                    <div key={b.id} className="p-3 flex items-center justify-between hover:bg-slate-50/50">
+                  bills.slice(0, 4).map((b: any) => (
+                    <div key={b.id || b._id} className="p-3 flex items-center justify-between hover:bg-slate-50/50">
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-slate-800">{b.billNumber}</span>
                           <span
-                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                              b.paymentStatus === 'PAID'
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${b.paymentStatus === 'PAID'
                                 ? 'bg-emerald-50 text-emerald-700'
                                 : b.paymentStatus === 'PARTIALLY_PAID'
-                                ? 'bg-amber-50 text-amber-700'
-                                : 'bg-rose-50 text-rose-700'
-                            }`}
+                                  ? 'bg-amber-50 text-amber-700'
+                                  : 'bg-rose-50 text-rose-700'
+                              }`}
                           >
                             {b.paymentStatus}
                           </span>
@@ -298,11 +319,11 @@ function SupplierProfileContent() {
                       </div>
                       <div className="text-right">
                         <span className="font-bold text-slate-900 block">
-                          Rs. {b.grandTotal.toLocaleString()}
+                          Rs. {(b.grandTotal ?? b.totalAmount ?? 0).toLocaleString()}
                         </span>
-                        {b.amountDue > 0 && (
+                        {(b.amountDue ?? b.balanceDue ?? 0) > 0 && (
                           <span className="text-[11px] text-rose-600 block">
-                            Due: Rs. {b.amountDue.toLocaleString()}
+                            Due: Rs. {(b.amountDue ?? b.balanceDue ?? 0).toLocaleString()}
                           </span>
                         )}
                       </div>

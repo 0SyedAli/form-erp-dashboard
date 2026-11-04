@@ -19,6 +19,9 @@ import { posRoutes } from './modules/pos/pos.routes.js';
 import { salesRoutes } from './modules/sales/sales.routes.js';
 import { customerRoutes } from './modules/customer/customer.routes.js';
 import { collectionRoutes } from './modules/collection/collection.routes.js';
+import { supplierRoutes } from './modules/supplier/supplier.routes.js';
+import { purchasingRoutes } from './modules/purchasing/purchasing.routes.js';
+import { reportingRoutes } from './modules/reporting/reporting.routes.js';
 
 export function createApp(): Express {
   const app = express();
@@ -34,16 +37,20 @@ export function createApp(): Express {
   app.use(
     cors({
       origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, curl, automated test suites)
         if (!origin) return callback(null, true);
-        if (env.CORS_ORIGINS.includes(origin) || env.NODE_ENV === 'development') {
+        if (
+          env.NODE_ENV === 'development' ||
+          origin.startsWith('http://localhost:') ||
+          origin.startsWith('http://127.0.0.1:') ||
+          env.CORS_ORIGINS.includes(origin)
+        ) {
           return callback(null, true);
         }
-        return callback(new Error(`CORS blocked for origin: ${origin}`));
+        return callback(null, false);
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'Accept'],
     })
   );
 
@@ -78,6 +85,9 @@ export function createApp(): Express {
   apiV1.use('/sales', salesRoutes);
   apiV1.use('/customers', customerRoutes);
   apiV1.use('/collections', collectionRoutes);
+  apiV1.use('/suppliers', supplierRoutes);
+  apiV1.use('/purchases', purchasingRoutes);
+  apiV1.use('/reports', reportingRoutes);
 
   app.use('/api/v1', apiV1);
 
