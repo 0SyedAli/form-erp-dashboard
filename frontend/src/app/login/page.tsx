@@ -18,6 +18,7 @@ import {
   Loader2,
   ArrowRight,
 } from 'lucide-react';
+import Image from 'next/image';
 
 const loginSchema = z.object({
   identifier: z.string().min(2, 'Username or Email is required'),
@@ -107,14 +108,18 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-slate-50/70 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md flex flex-col items-center text-center">
         {/* Molty Brand Icon */}
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 via-red-600 to-red-700 text-white text-2xl font-bold shadow-lg shadow-red-950/20 mb-3 border border-amber-300/40">
+        {/* <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 via-red-600 to-red-700 text-white text-2xl font-bold shadow-lg shadow-red-950/20 mb-3 border border-amber-300/40">
           <span className="text-amber-200">M</span>
         </div>
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
           MASTER MOLTY FOAM
         </h1>
+        <p className="text-xs uppercase tracking-wider font-semibold text-brand-burgundy mt-1">
+          Retail & Wholesale ERP System
+        </p> */}
+        <Image src="/assets/brands/brand-logo.png" alt="Molty Logo" width={180} height={100} className="w-40 h-30 object-contain" />
         <p className="text-xs uppercase tracking-wider font-semibold text-brand-burgundy mt-1">
           Retail & Wholesale ERP System
         </p>

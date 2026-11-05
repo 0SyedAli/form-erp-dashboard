@@ -33,9 +33,15 @@ export function validateCsrf(req: Request, res: Response, next: NextFunction): v
     'http://127.0.0.1:3000',
   ].map((o) => o.replace(/\/$/, ''));
 
+  const isOriginAllowed = (urlStr: string) => {
+    const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(urlStr);
+    const isPredemo = /^https?:\/\/([a-z0-9-]+\.)*predemo\.site(:\d+)?$/i.test(urlStr);
+    return isLocalhost || isPredemo || trustedOrigins.includes(urlStr) || env.NODE_ENV === 'development';
+  };
+
   if (origin) {
     const normalizedOrigin = origin.replace(/\/$/, '');
-    if (trustedOrigins.includes(normalizedOrigin) || env.NODE_ENV === 'development') {
+    if (isOriginAllowed(normalizedOrigin)) {
       return next();
     }
     sendError(res, 'CSRF verification failed: Untrusted Origin.', 403, 'CSRF_VALIDATION_FAILED');
@@ -45,7 +51,7 @@ export function validateCsrf(req: Request, res: Response, next: NextFunction): v
   if (referer) {
     try {
       const refererOrigin = new URL(referer).origin.replace(/\/$/, '');
-      if (trustedOrigins.includes(refererOrigin) || env.NODE_ENV === 'development') {
+      if (isOriginAllowed(refererOrigin)) {
         return next();
       }
     } catch {

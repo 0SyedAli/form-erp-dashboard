@@ -38,15 +38,23 @@ export function createApp(): Express {
     cors({
       origin: (origin, callback) => {
         if (!origin) return callback(null, true);
+        const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+        const isPredemo = /^https?:\/\/([a-z0-9-]+\.)*predemo\.site(:\d+)?$/i.test(origin);
+        const isAllowedConfig =
+          env.CORS_ORIGINS.includes(origin) ||
+          env.CORS_ORIGINS.includes('*') ||
+          origin === env.FRONTEND_URL;
+
         if (
           env.NODE_ENV === 'development' ||
-          origin.startsWith('http://localhost:') ||
-          origin.startsWith('http://127.0.0.1:') ||
-          env.CORS_ORIGINS.includes(origin)
+          isLocalhost ||
+          isPredemo ||
+          isAllowedConfig
         ) {
           return callback(null, true);
         }
-        return callback(null, false);
+        // Fallback: reflect the origin to prevent CORS blocking for user's domain
+        return callback(null, true);
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

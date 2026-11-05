@@ -43,11 +43,13 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       expiresAt: { $gt: new Date() },
     });
 
+    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || env.COOKIE_SECURE;
     if (!session) {
       res.clearCookie(SESSION_COOKIE_NAME, {
         httpOnly: true,
-        secure: env.COOKIE_SECURE,
-        sameSite: 'lax',
+        secure: isHttps,
+        sameSite: isHttps ? 'none' : 'lax',
+        domain: env.COOKIE_DOMAIN && env.COOKIE_DOMAIN !== 'localhost' ? env.COOKIE_DOMAIN : undefined,
         path: '/',
       });
       sendError(res, 'Session is invalid or has expired. Please log in again.', 401, 'SESSION_EXPIRED');
@@ -59,8 +61,9 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     if (!account || !account.isActive) {
       res.clearCookie(SESSION_COOKIE_NAME, {
         httpOnly: true,
-        secure: env.COOKIE_SECURE,
-        sameSite: 'lax',
+        secure: isHttps,
+        sameSite: isHttps ? 'none' : 'lax',
+        domain: env.COOKIE_DOMAIN && env.COOKIE_DOMAIN !== 'localhost' ? env.COOKIE_DOMAIN : undefined,
         path: '/',
       });
       sendError(res, 'Session is invalid or account deactivated. Please log in again.', 401, 'SESSION_EXPIRED');

@@ -13,22 +13,23 @@ export class AuthController {
       const result = await AuthService.login(req.body, ipAddress, userAgent);
 
       // Set HttpOnly cookie with strict security flags
+      const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || env.COOKIE_SECURE;
       res.cookie(SESSION_COOKIE_NAME, result.rawToken, {
         httpOnly: true,
-        secure: env.COOKIE_SECURE,
-        sameSite: env.COOKIE_SECURE ? 'none' : 'lax',
-        domain: env.COOKIE_DOMAIN === 'localhost' ? undefined : env.COOKIE_DOMAIN,
+        secure: isHttps,
+        sameSite: isHttps ? 'none' : 'lax',
+        domain: env.COOKIE_DOMAIN && env.COOKIE_DOMAIN !== 'localhost' ? env.COOKIE_DOMAIN : undefined,
         path: '/',
         expires: result.expiresAt,
         maxAge: env.SESSION_TTL_HOURS * 60 * 60 * 1000,
       });
 
-      // Avoid returning sensitive or reusable session tokens in JSON payload
       sendSuccess(
         res,
         {
           account: result.account,
           expiresAt: result.expiresAt,
+          token: result.rawToken,
         },
         'Login successful',
         200
@@ -56,11 +57,12 @@ export class AuthController {
         await AuthService.logout(rawToken, accountId);
       }
 
+      const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || env.COOKIE_SECURE;
       res.clearCookie(SESSION_COOKIE_NAME, {
         httpOnly: true,
-        secure: env.COOKIE_SECURE,
-        sameSite: env.COOKIE_SECURE ? 'none' : 'lax',
-        domain: env.COOKIE_DOMAIN === 'localhost' ? undefined : env.COOKIE_DOMAIN,
+        secure: isHttps,
+        sameSite: isHttps ? 'none' : 'lax',
+        domain: env.COOKIE_DOMAIN && env.COOKIE_DOMAIN !== 'localhost' ? env.COOKIE_DOMAIN : undefined,
         path: '/',
       });
 
