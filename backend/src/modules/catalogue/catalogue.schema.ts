@@ -6,6 +6,7 @@ export const brandSchema = z.object({
     name: z.string().trim().min(2).max(100),
     description: z.string().trim().optional(),
     logoUrl: z.string().trim().optional().or(z.literal('')),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
 
@@ -16,6 +17,7 @@ export const updateBrandSchema = z.object({
     name: z.string().trim().min(2).max(100).optional(),
     description: z.string().trim().optional(),
     logoUrl: z.string().trim().optional().or(z.literal('')),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
 
@@ -25,6 +27,7 @@ export const categorySchema = z.object({
     code: z.string().trim().min(2).max(10).toUpperCase(),
     name: z.string().trim().min(2).max(100),
     description: z.string().trim().optional(),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
 
@@ -35,6 +38,7 @@ export const updateCategorySchema = z.object({
     code: z.string().trim().min(2).max(10).toUpperCase().optional(),
     name: z.string().trim().min(2).max(100).optional(),
     description: z.string().trim().optional(),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
 
@@ -97,9 +101,13 @@ export const createProductWithVariantSchema = z.object({
   }),
 });
 
-export const updatePricesSchema = z.object({
+export const updateSkuSchema = z.object({
   params: z.object({ id: z.string() }),
   body: z.object({
+    brandId: z.string().optional(),
+    categoryId: z.string().optional(),
+    sizeId: z.string().optional(),
+    thicknessId: z.string().optional(),
     listPrice: z.coerce.number().min(0).optional(),
     purchasePercent: z.coerce.number().min(0).max(100).optional(),
     purchasePrice: z.coerce.number().min(0).optional(),
@@ -111,14 +119,19 @@ export const updatePricesSchema = z.object({
     distributorPrice: z.coerce.number().min(0).optional(),
     stock: z.coerce.number().min(0).optional(),
     minimumStock: z.coerce.number().min(0).optional(),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
     reason: z.string().trim().optional(),
   }),
 });
 
+export const updatePricesSchema = updateSkuSchema;
+
 export const statusToggleSchema = z.object({
   params: z.object({ id: z.string() }),
   body: z.object({
-    status: z.enum(['ACTIVE', 'INACTIVE']),
+    status: z
+      .enum(['ACTIVE', 'INACTIVE', 'active', 'inactive'])
+      .transform((val) => val.toUpperCase() as 'ACTIVE' | 'INACTIVE'),
   }),
 });
 
@@ -143,4 +156,5 @@ export type SizeInput = z.infer<typeof sizeSchema>['body'];
 export type ThicknessInput = z.infer<typeof thicknessSchema>['body'];
 export type CreateProductWithVariantInput = z.infer<typeof createProductWithVariantSchema>['body'];
 export type UpdatePricesInput = z.infer<typeof updatePricesSchema>['body'];
+export type UpdateSkuInput = z.infer<typeof updateSkuSchema>['body'];
 

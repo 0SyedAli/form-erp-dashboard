@@ -14,6 +14,7 @@ import {
 } from '@/store/services/posApi';
 import { useAppSelector } from '@/store';
 import { Invoice } from '@/types';
+import AppLayout from '@/components/layout/AppLayout';
 import {
   ArrowLeft,
   Search,
@@ -34,7 +35,9 @@ import InvoiceReceiptModal from '@/components/pos/InvoiceReceiptModal';
 function SalesHistoryContent() {
   const currentUser = useAppSelector((state) => state.auth.currentUser);
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
-  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
+  const isBackendMode =
+    process.env.NEXT_PUBLIC_DATA_MODE === 'backend' ||
+    process.env.NEXT_PUBLIC_USE_BACKEND !== 'false';
 
   const [mounted, setMounted] = useState(false);
   React.useEffect(() => {
@@ -49,8 +52,8 @@ function SalesHistoryContent() {
   const { data: demoCustomers = [] } = useGetCustomersQuery(undefined, { skip: !mounted || isBackendMode });
 
   const { data: backendInvoices = [], isLoading: isBackendLoading } = useGetBackendInvoicesQuery(
-    undefined,
-    { skip: !mounted || !isBackendMode }
+    { limit: 100 },
+    { skip: !mounted || !isBackendMode, refetchOnMountOrArgChange: true }
   );
   const { data: backendBranches = [] } = useGetBackendBranchesQuery(undefined, {
     skip: !mounted || !isBackendMode,
@@ -59,24 +62,85 @@ function SalesHistoryContent() {
     skip: !mounted || !isBackendMode,
   });
 
+  const rawBranches = isBackendMode
+    ? (Array.isArray(backendBranches) ? backendBranches : (backendBranches as any)?.data || [])
+    : demoBranches;
+  const branches: any[] = (Array.isArray(rawBranches) ? rawBranches : []).map((b: any) => ({
+    ...b,
+    id: String(b.id || b._id || ''),
+  }));
+
+  const rawCustomers = isBackendMode
+    ? (Array.isArray(backendCustomers) ? backendCustomers : (backendCustomers as any)?.data || [])
+    : demoCustomers;
+  const customers: any[] = (Array.isArray(rawCustomers) ? rawCustomers : []).map((c: any) => ({
+    ...c,
+    id: String(c.id || c._id || ''),
+  }));
+
   const invoices = useMemo(() => {
     if (isBackendMode) {
-      return (backendInvoices || []).map((inv: any) => ({
-        ...inv,
-        id: inv.id || inv._id,
-        subtotal: inv.subtotal ?? inv.grossAmount ?? 0,
-        grossAmount: inv.grossAmount ?? inv.subtotal ?? 0,
-        grandTotal: inv.grandTotal ?? inv.netAmount ?? 0,
-        netAmount: inv.netAmount ?? inv.grandTotal ?? 0,
-        date: inv.date || inv.createdAt,
-        salesPerson: inv.salesPerson || inv.cashierName || 'Cashier',
-      })) as Invoice[];
+      return (backendInvoices || []).map((inv: any) => {
+        const net = Number(inv.total ?? inv.netAmount ?? inv.grandTotal ?? 0);
+        const gross = Number(inv.subtotal ?? inv.grossAmount ?? net);
+        const discount = Number(inv.discount ?? inv.discountAmount ?? 0);
+        const paid = Number(inv.paidAmount ?? inv.amountPaid ?? inv.amountReceived ?? 0);
+        const due = Number(inv.balanceDue ?? inv.amountDue ?? 0);
+
+        // Branch resolution
+        const branchObj = typeof inv.branchId === 'object' && inv.branchId ? inv.branchId : null;
+        const bId = branchObj ? String(branchObj._id || branchObj.id || '') : String(inv.branchId || '');
+        const bName = branchObj ? branchObj.name : (inv.branchName || 'Branch');
+
+        // Customer resolution
+        const custObj = typeof inv.customerId === 'object' && inv.customerId ? inv.customerId : null;
+        const cId = custObj ? String(custObj._id || custObj.id || '') : (inv.customerId ? String(inv.customerId) : '');
+        const cName = inv.customerName || (custObj ? custObj.name : 'Walk-in Customer');
+        const cPhone = inv.customerPhone || (custObj ? custObj.phone : '');
+
+        return {
+          ...inv,
+          id: String(inv.id || inv._id || ''),
+          invoiceNumber: inv.invoiceNumber,
+          branchId: bId,
+          branchName: bName,
+          customerId: cId,
+          customerName: cName,
+          customerPhone: cPhone,
+          customerType: inv.customerType || 'WALK_IN',
+          saleType: inv.saleType || 'WALK_IN',
+          grossAmount: gross,
+          subtotal: gross,
+          discountAmount: discount,
+          netAmount: net,
+          grandTotal: net,
+          amountPaid: paid,
+          amountReceived: paid,
+          amountDue: due,
+          paymentStatus: inv.paymentStatus || 'PAID',
+          paymentMethod: inv.paymentArrangement || inv.paymentMethod || 'CASH',
+          status: inv.status || 'COMPLETED',
+          date: inv.date || inv.createdAt,
+          createdAt: inv.createdAt || inv.date,
+          salesPerson: inv.cashierName || inv.salesPerson || 'Cashier',
+          items: (inv.items || []).map((it: any) => ({
+            productId: it.variantId || it.productId || it.sku,
+            productName: it.productName || it.sku,
+            sku: it.sku,
+            quantity: it.quantity || 1,
+            unitPrice: it.unitPrice || 0,
+            discount: it.discount || 0,
+            total: it.lineTotal ?? it.total ?? ((it.unitPrice || 0) * (it.quantity || 1)),
+            lineTotal: it.lineTotal ?? it.total ?? ((it.unitPrice || 0) * (it.quantity || 1)),
+            sizeLabel: it.sizeLabel || '',
+            thicknessLabel: it.thicknessLabel || '',
+          })),
+        };
+      }) as Invoice[];
     }
     return demoInvoices;
   }, [isBackendMode, backendInvoices, demoInvoices]);
 
-  const branches: any[] = isBackendMode ? (backendBranches as any) : demoBranches;
-  const customers: any[] = isBackendMode ? (backendCustomers as any) : demoCustomers;
   const isLoading = isBackendMode ? isBackendLoading : isDemoLoading;
 
   // Filters
@@ -164,41 +228,63 @@ function SalesHistoryContent() {
     return filteredInvoices.reduce((sum, inv) => sum + (inv.amountDue ?? 0), 0);
   }, [filteredInvoices]);
 
-  const activeBranch = branches.find((b: any) => b.id === selectedInvoice?.branchId) || null;
+  const activeBranch = useMemo(() => {
+    if (!selectedInvoice) return null;
+    const found = branches.find((b: any) => b.id === selectedInvoice.branchId);
+    if (found) return found;
+    return {
+      id: selectedInvoice.branchId,
+      name: selectedInvoice.branchName || 'Main Branch',
+      code: 'MAIN',
+      shopNumber: 'Shop #12-14',
+      address: 'Main Showroom',
+      city: 'Karachi',
+      phone: '021-3456789',
+    };
+  }, [branches, selectedInvoice]);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      {/* Top Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-2xs">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/pos"
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 px-3 py-2 rounded-xl transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back to POS</span>
-          </Link>
-          <div>
-            <h1 className="text-xl font-extrabold text-slate-800 tracking-tight font-sans">
-              POS Sales History & Invoices
-            </h1>
-            <p className="text-xs text-slate-500 font-sans">
-              Browse Walk-in, Wholesale, and Distributor counter sales, credit invoices, and receipts
-            </p>
+    <AppLayout>
+      <div className="space-y-6">
+        {/* Top Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/pos"
+              className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 bg-white border border-slate-200 hover:bg-blue-50 px-3 py-2 rounded-xl transition-colors shadow-2xs"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to POS</span>
+            </Link>
+            <div>
+              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight font-sans">
+                POS Sales History &amp; Invoices
+              </h1>
+              <p className="text-xs text-slate-500 font-sans">
+                Browse Walk-in, Wholesale, and Distributor counter sales, credit invoices, and receipts
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Link
+              href="/pos"
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>Open POS Terminal</span>
+            </Link>
+            <Link
+              href="/payments/collections"
+              className="px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <CreditCard className="w-4 h-4 text-slate-500" />
+              <span>Collections</span>
+            </Link>
           </div>
         </div>
 
-        <Link
-          href="/payments/collections"
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-        >
-          <CreditCard className="w-4 h-4" />
-          <span>Payment Recovery / Collections</span>
-        </Link>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
+        {/* Main Content Area */}
+        <div className="space-y-6">
         {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
@@ -380,7 +466,9 @@ function SalesHistoryContent() {
                     }).format(new Date(inv.date || inv.createdAt || inv.issueDate || '2024-10-25'));
 
                     const branchName =
-                      branches.find((b: any) => b.id === inv.branchId)?.name || 'Branch';
+                      inv.branchName ||
+                      branches.find((b: any) => b.id === inv.branchId)?.name ||
+                      'Branch';
                     const sType = inv.saleType || (inv.customerType === 'WHOLESALE' ? 'WHOLESALE' : 'WALK_IN');
                     const isOverdue =
                       inv.isOverdue ||
@@ -488,7 +576,7 @@ function SalesHistoryContent() {
             </table>
           </div>
         </div>
-      </main>
+      </div>
 
       {/* Invoice Receipt Modal */}
       <InvoiceReceiptModal
@@ -500,6 +588,7 @@ function SalesHistoryContent() {
         onStartNewSale={() => setIsReceiptModalOpen(false)}
       />
     </div>
+  </AppLayout>
   );
 }
 

@@ -18,6 +18,7 @@ import {
   useGetCategoriesQuery as useGetBackendCategoriesQuery,
   useGetSizesQuery as useGetBackendSizesQuery,
   useGetThicknessesQuery as useGetBackendThicknessesQuery,
+  useToggleSkuStatusMutation,
 } from '@/store/services/catalogueApi';
 import {
   Search,
@@ -40,7 +41,7 @@ export default function ProductsTab({
   onToast,
 }: ProductsTabProps) {
   const { data: demoVariants = [], isLoading: isDemoLoading } = useGetVariantsQuery();
-  const { data: backendSkusResponse, isLoading: isBackendLoading } = useGetBackendSkusQuery();
+  const { data: backendSkusResponse, isLoading: isBackendLoading } = useGetBackendSkusQuery({ status: 'ALL' });
   const { data: backendBrands = [] } = useGetBackendBrandsQuery();
   const { data: demoBrands = [] } = useGetDemoBrandsQuery();
   const { data: backendCategories = [] } = useGetBackendCategoriesQuery();
@@ -51,6 +52,7 @@ export default function ProductsTab({
   const { data: demoThicknesses = [] } = useGetDemoThicknessQuery();
   const { data: balances = [] } = useGetInventoryBalancesQuery();
   const [toggleStatus] = useToggleVariantStatusMutation();
+  const [toggleBackendSkuStatus] = useToggleSkuStatusMutation();
 
   const isLoading = isBackendLoading && isDemoLoading;
 
@@ -170,12 +172,24 @@ export default function ProductsTab({
 
   const handleToggleStatus = async (item: ProductVariant) => {
     const isCurrentlyActive = item.status === 'active' || item.status === 'ACTIVE';
-    const nextStatus = isCurrentlyActive ? 'INACTIVE' : 'ACTIVE';
+    const nextStatus: 'ACTIVE' | 'INACTIVE' = isCurrentlyActive ? 'INACTIVE' : 'ACTIVE';
+    const skuId = item.id || (item as any)._id || item.sku;
     try {
-      await toggleStatus({ id: item.id, status: nextStatus }).unwrap();
+      await toggleBackendSkuStatus({ id: skuId, status: nextStatus }).unwrap();
+      try {
+        await toggleStatus({ id: item.id, status: nextStatus });
+      } catch {
+        // Ignore demo cache error
+      }
       onToast(`Product ${item.sku} is now ${nextStatus.toLowerCase()}.`, 'success');
     } catch {
-      onToast('Could not update status.', 'error');
+      // Fallback for demo repository if offline
+      try {
+        await toggleStatus({ id: item.id, status: nextStatus }).unwrap();
+        onToast(`Product ${item.sku} is now ${nextStatus.toLowerCase()}.`, 'success');
+      } catch {
+        onToast('Could not update status.', 'error');
+      }
     }
   };
 

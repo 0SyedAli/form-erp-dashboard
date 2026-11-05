@@ -54,6 +54,11 @@ export class ReportingService {
         },
       ];
     }
+    if (query.branchId && query.branchId !== 'all' && query.branchId !== 'ALL') {
+      if (mongoose.Types.ObjectId.isValid(query.branchId)) {
+        invoiceDateFilter.branchId = new mongoose.Types.ObjectId(query.branchId);
+      }
+    }
 
     // 1. SALES METRICS PIPELINE
     const [salesAgg] = await SalesInvoice.aggregate([
@@ -467,6 +472,18 @@ export class ReportingService {
           },
           grossSales: { $sum: { $ifNull: ['$subtotal', '$grossAmount'] } },
           netSales: { $sum: { $ifNull: ['$total', '$netAmount'] } },
+          retail: {
+            $sum: { $cond: [{ $eq: ['$saleType', 'WALK_IN'] }, { $ifNull: ['$total', '$netAmount'] }, 0] },
+          },
+          wholesale: {
+            $sum: {
+              $cond: [
+                { $in: ['$saleType', ['WHOLESALE', 'DISTRIBUTOR']] },
+                { $ifNull: ['$total', '$netAmount'] },
+                0,
+              ],
+            },
+          },
           invoicesCount: { $sum: 1 },
         },
       },
@@ -476,6 +493,8 @@ export class ReportingService {
           date: '$_id',
           grossSales: 1,
           netSales: 1,
+          retail: 1,
+          wholesale: 1,
           invoicesCount: 1,
           _id: 0,
         },
@@ -498,7 +517,7 @@ export class ReportingService {
           sizeLabel: { $first: '$items.sizeLabel' },
           thicknessLabel: { $first: '$items.thicknessLabel' },
           unitsSold: { $sum: '$items.quantity' },
-          revenue: { $sum: '$items.total' },
+          revenue: { $sum: { $ifNull: ['$items.lineTotal', '$items.total'] } },
         },
       },
       { $sort: { revenue: -1 } },
@@ -603,6 +622,108 @@ export class ReportingService {
           invoicesCount: { $sum: 1 },
           collections: { $sum: { $ifNull: ['$paidAmount', '$amountPaid'] } },
           creditSales: { $sum: { $ifNull: ['$balanceDue', '$amountDue'] } },
+          walkInSales: {
+            $sum: { $cond: [{ $eq: ['$saleType', 'WALK_IN'] }, { $ifNull: ['$total', '$netAmount'] }, 0] },
+          },
+          wholesaleSales: {
+            $sum: { $cond: [{ $eq: ['$saleType', 'WHOLESALE'] }, { $ifNull: ['$total', '$netAmount'] }, 0] },
+          },
+          distributorSales: {
+            $sum: { $cond: [{ $eq: ['$saleType', 'DISTRIBUTOR'] }, { $ifNull: ['$total', '$netAmount'] }, 0] },
+          },
+        },
+      },
+    ]);
+
+    // Branch Daily Sales Trends
+    const branchSalesTrends = await SalesInvoice.aggregate([
+      {
+        $match: {
+          branchId: branchObjId,
+          status: { $nin: ['VOID', 'CANCELLED'] },
+          ...(customRange.start || customRange.end
+            ? {
+                $or: [
+                  {
+                    createdAt: {
+                      ...(customRange.start ? { $gte: customRange.start } : {}),
+                      ...(customRange.end ? { $lt: customRange.end } : {}),
+                    },
+                  },
+                  {
+                    date: {
+                      ...(customRange.start ? { $gte: customRange.start } : {}),
+                      ...(customRange.end ? { $lt: customRange.end } : {}),
+                    },
+                  },
+                ],
+              }
+            : {}),
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: { $ifNull: ['$date', '$createdAt'] },
+              timezone: '+05:00',
+            },
+          },
+          sales: { $sum: { $ifNull: ['$total', '$netAmount'] } },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          date: '$_id',
+          sales: 1,
+          _id: 0,
+        },
+      },
+    ]);
+
+    // Branch Top Selling Products
+    const branchTopProducts = await SalesInvoice.aggregate([
+      {
+        $match: {
+          branchId: branchObjId,
+          status: { $nin: ['VOID', 'CANCELLED'] },
+          ...(customRange.start || customRange.end
+            ? {
+                $or: [
+                  {
+                    createdAt: {
+                      ...(customRange.start ? { $gte: customRange.start } : {}),
+                      ...(customRange.end ? { $lt: customRange.end } : {}),
+                    },
+                  },
+                  {
+                    date: {
+                      ...(customRange.start ? { $gte: customRange.start } : {}),
+                      ...(customRange.end ? { $lt: customRange.end } : {}),
+                    },
+                  },
+                ],
+              }
+            : {}),
+        },
+      },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.sku',
+          name: { $first: '$items.productName' },
+          sold: { $sum: '$items.quantity' },
+        },
+      },
+      { $sort: { sold: -1 } },
+      { $limit: 10 },
+      {
+        $project: {
+          name: 1,
+          sold: 1,
+          _id: 0,
         },
       },
     ]);
@@ -699,6 +820,13 @@ export class ReportingService {
         collections: periodSales?.collections || 0,
         creditSales: periodSales?.creditSales || 0,
       },
+      salesBreakdown: {
+        walkIn: periodSales?.walkInSales || 0,
+        wholesale: periodSales?.wholesaleSales || 0,
+        distributor: periodSales?.distributorSales || 0,
+      },
+      salesTrends: branchSalesTrends || [],
+      topProducts: branchTopProducts || [],
       inventory: {
         onHand: totalOnHand,
         reserved: totalReserved,

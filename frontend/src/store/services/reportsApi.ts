@@ -87,6 +87,9 @@ export interface AdminDashboardData {
   salesTrends: Array<{
     date: string;
     netSales: number;
+    grossSales?: number;
+    retail?: number;
+    wholesale?: number;
     invoicesCount: number;
   }>;
   topProducts: Array<{
@@ -124,6 +127,19 @@ export interface BranchDashboardData {
     collections: number;
     creditSales: number;
   };
+  salesBreakdown?: {
+    walkIn: number;
+    wholesale: number;
+    distributor: number;
+  };
+  salesTrends?: Array<{
+    date: string;
+    sales: number;
+  }>;
+  topProducts?: Array<{
+    name: string;
+    sold: number;
+  }>;
   inventory: {
     onHand: number;
     reserved: number;

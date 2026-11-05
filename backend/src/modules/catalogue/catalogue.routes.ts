@@ -15,6 +15,7 @@ import {
   thicknessSchema,
   updateThicknessSchema,
   createProductWithVariantSchema,
+  updateSkuSchema,
   updatePricesSchema,
   statusToggleSchema,
   idParamSchema,
@@ -44,7 +45,7 @@ catalogueRoutes.get(
 catalogueRoutes.post(
   '/brands',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(brandSchema),
   CatalogueController.createBrand
 );
@@ -52,7 +53,7 @@ catalogueRoutes.post(
 catalogueRoutes.patch(
   '/brands/:id',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(updateBrandSchema),
   CatalogueController.updateBrand
 );
@@ -60,9 +61,17 @@ catalogueRoutes.patch(
 catalogueRoutes.patch(
   '/brands/:id/status',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(statusToggleSchema),
   CatalogueController.toggleBrandStatus
+);
+
+catalogueRoutes.delete(
+  '/brands/:id',
+  authenticate,
+  requireBranchPermission('addEditProducts'),
+  validateRequest(idParamSchema),
+  CatalogueController.deleteBrand
 );
 
 // ==========================================
@@ -86,7 +95,7 @@ catalogueRoutes.get(
 catalogueRoutes.post(
   '/categories',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(categorySchema),
   CatalogueController.createCategory
 );
@@ -94,7 +103,7 @@ catalogueRoutes.post(
 catalogueRoutes.patch(
   '/categories/:id',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(updateCategorySchema),
   CatalogueController.updateCategory
 );
@@ -102,9 +111,17 @@ catalogueRoutes.patch(
 catalogueRoutes.patch(
   '/categories/:id/status',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(statusToggleSchema),
   CatalogueController.toggleCategoryStatus
+);
+
+catalogueRoutes.delete(
+  '/categories/:id',
+  authenticate,
+  requireBranchPermission('addEditProducts'),
+  validateRequest(idParamSchema),
+  CatalogueController.deleteCategory
 );
 
 // ==========================================
@@ -120,7 +137,7 @@ catalogueRoutes.get(
 catalogueRoutes.post(
   '/sizes',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(sizeSchema),
   CatalogueController.createSize
 );
@@ -128,7 +145,7 @@ catalogueRoutes.post(
 catalogueRoutes.patch(
   '/sizes/:id',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(updateSizeSchema),
   CatalogueController.updateSize
 );
@@ -136,9 +153,17 @@ catalogueRoutes.patch(
 catalogueRoutes.patch(
   '/sizes/:id/status',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(statusToggleSchema),
   CatalogueController.toggleSizeStatus
+);
+
+catalogueRoutes.delete(
+  '/sizes/:id',
+  authenticate,
+  requireBranchPermission('addEditProducts'),
+  validateRequest(idParamSchema),
+  CatalogueController.deleteSize
 );
 
 // ==========================================
@@ -154,7 +179,7 @@ catalogueRoutes.get(
 catalogueRoutes.post(
   '/thicknesses',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(thicknessSchema),
   CatalogueController.createThickness
 );
@@ -162,7 +187,7 @@ catalogueRoutes.post(
 catalogueRoutes.patch(
   '/thicknesses/:id',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(updateThicknessSchema),
   CatalogueController.updateThickness
 );
@@ -170,9 +195,17 @@ catalogueRoutes.patch(
 catalogueRoutes.patch(
   '/thicknesses/:id/status',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(statusToggleSchema),
   CatalogueController.toggleThicknessStatus
+);
+
+catalogueRoutes.delete(
+  '/thicknesses/:id',
+  authenticate,
+  requireBranchPermission('addEditProducts'),
+  validateRequest(idParamSchema),
+  CatalogueController.deleteThickness
 );
 
 // ==========================================
@@ -230,9 +263,17 @@ catalogueRoutes.get(
 );
 
 catalogueRoutes.patch(
+  '/skus/:id',
+  authenticate,
+  requireBranchPermission('addEditProducts'),
+  validateRequest(updateSkuSchema),
+  CatalogueController.updateSku
+);
+
+catalogueRoutes.patch(
   '/skus/:id/status',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(statusToggleSchema),
   CatalogueController.toggleSkuStatus
 );

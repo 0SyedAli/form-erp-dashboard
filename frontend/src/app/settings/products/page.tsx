@@ -5,11 +5,17 @@ import AppLayout from '@/components/layout/AppLayout';
 import { useAppSelector, RootState } from '@/store';
 import { hasPermission } from '@/lib/permissions';
 import {
-  useGetBrandsQuery,
-  useGetCategoriesQuery,
-  useGetSizesQuery,
-  useGetThicknessQuery,
+  useGetBrandsQuery as useGetDemoBrandsQuery,
+  useGetCategoriesQuery as useGetDemoCategoriesQuery,
+  useGetSizesQuery as useGetDemoSizesQuery,
+  useGetThicknessQuery as useGetDemoThicknessQuery,
 } from '@/store/services/apiSlice';
+import {
+  useGetBrandsQuery as useGetBackendBrandsQuery,
+  useGetCategoriesQuery as useGetBackendCategoriesQuery,
+  useGetSizesQuery as useGetBackendSizesQuery,
+  useGetThicknessesQuery as useGetBackendThicknessesQuery,
+} from '@/store/services/catalogueApi';
 import Toast, { ToastMessage } from '@/components/common/Toast';
 import BrandsTab from '@/components/products/BrandsTab';
 import CategoriesTab from '@/components/products/CategoriesTab';
@@ -36,11 +42,23 @@ function ProductSettingsContent() {
   const [activeTab, setActiveTab] = useState<MasterDataTab>('brands');
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
-  // Queries for live counts
-  const { data: brands = [] } = useGetBrandsQuery();
-  const { data: categories = [] } = useGetCategoriesQuery();
-  const { data: sizes = [] } = useGetSizesQuery();
-  const { data: thicknesses = [] } = useGetThicknessQuery();
+  // Queries for live counts (Backend primary with Demo fallback)
+  const isBackendMode = process.env.NEXT_PUBLIC_USE_BACKEND !== 'false';
+  const { data: backendBrands = [] } = useGetBackendBrandsQuery(undefined, { skip: !isBackendMode });
+  const { data: demoBrands = [] } = useGetDemoBrandsQuery(undefined, { skip: isBackendMode });
+  const brands = isBackendMode ? (Array.isArray(backendBrands) ? backendBrands : (backendBrands as any)?.data || []) : demoBrands;
+
+  const { data: backendCategories = [] } = useGetBackendCategoriesQuery(undefined, { skip: !isBackendMode });
+  const { data: demoCategories = [] } = useGetDemoCategoriesQuery(undefined, { skip: isBackendMode });
+  const categories = isBackendMode ? (Array.isArray(backendCategories) ? backendCategories : (backendCategories as any)?.data || []) : demoCategories;
+
+  const { data: backendSizes = [] } = useGetBackendSizesQuery(undefined, { skip: !isBackendMode });
+  const { data: demoSizes = [] } = useGetDemoSizesQuery(undefined, { skip: isBackendMode });
+  const sizes = isBackendMode ? (Array.isArray(backendSizes) ? backendSizes : (backendSizes as any)?.data || []) : demoSizes;
+
+  const { data: backendThicknesses = [] } = useGetBackendThicknessesQuery(undefined, { skip: !isBackendMode });
+  const { data: demoThicknesses = [] } = useGetDemoThicknessQuery(undefined, { skip: isBackendMode });
+  const thicknesses = isBackendMode ? (Array.isArray(backendThicknesses) ? backendThicknesses : (backendThicknesses as any)?.data || []) : demoThicknesses;
 
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({

@@ -3,17 +3,25 @@
 import React, { useState, useMemo } from 'react';
 import { Category } from '@/types';
 import {
-  useGetCategoriesQuery,
-  useGetBrandsQuery,
-  useGetProductsQuery,
+  useGetCategoriesQuery as useGetDemoCategoriesQuery,
+  useGetBrandsQuery as useGetDemoBrandsQuery,
+  useGetProductsQuery as useGetDemoProductsQuery,
 } from '@/store/services/apiSlice';
+import {
+  useGetCategoriesQuery as useGetBackendCategoriesQuery,
+  useGetBrandsQuery as useGetBackendBrandsQuery,
+  useGetProductsQuery as useGetBackendProductsQuery,
+  useDeleteCategoryMutation,
+} from '@/store/services/catalogueApi';
 import CategoryModal from './CategoryModal';
 import CategoryStatusModal from './CategoryStatusModal';
+import DeleteConfirmModal from './DeleteConfirmModal';
 import {
   Search,
   Plus,
   Edit2,
   Power,
+  Trash2,
   RotateCcw,
   Layers,
   Package,
@@ -25,9 +33,44 @@ interface CategoriesTabProps {
 }
 
 export default function CategoriesTab({ canManage, onToast }: CategoriesTabProps) {
-  const { data: categories = [], isLoading } = useGetCategoriesQuery();
-  const { data: brands = [] } = useGetBrandsQuery();
-  const { data: products = [] } = useGetProductsQuery();
+  const isBackendMode = process.env.NEXT_PUBLIC_USE_BACKEND !== 'false';
+  const { data: demoCategories = [], isLoading: isDemoLoading } = useGetDemoCategoriesQuery(undefined, { skip: isBackendMode });
+  const { data: backendCategories = [], isLoading: isBackendLoading } = useGetBackendCategoriesQuery(undefined, { skip: !isBackendMode });
+  const { data: demoBrands = [] } = useGetDemoBrandsQuery(undefined, { skip: isBackendMode });
+  const { data: backendBrands = [] } = useGetBackendBrandsQuery(undefined, { skip: !isBackendMode });
+  const { data: demoProducts = [] } = useGetDemoProductsQuery(undefined, { skip: isBackendMode });
+  const { data: backendProducts = [] } = useGetBackendProductsQuery(undefined, { skip: !isBackendMode });
+
+  const rawCategories = isBackendMode
+    ? (Array.isArray(backendCategories) ? backendCategories : (backendCategories as any)?.data || [])
+    : demoCategories;
+  const categories: Category[] = (Array.isArray(rawCategories) ? rawCategories : []).map((c: any) => ({
+    ...c,
+    id: String(c.id || c._id || ''),
+    brandId: String(c.brandId?._id || c.brandId || c.brand?._id || c.brand?.id || ''),
+    status: c.status || 'ACTIVE',
+  })) as Category[];
+
+  const rawBrands = isBackendMode
+    ? (Array.isArray(backendBrands) ? backendBrands : (backendBrands as any)?.data || [])
+    : demoBrands;
+  const brands = (Array.isArray(rawBrands) ? rawBrands : []).map((b: any) => ({
+    ...b,
+    id: String(b.id || b._id || ''),
+  }));
+
+  const rawProducts = isBackendMode
+    ? (Array.isArray(backendProducts)
+      ? backendProducts
+      : (backendProducts as any)?.data || (backendProducts as any)?.items || [])
+    : demoProducts;
+  const products = (Array.isArray(rawProducts) ? rawProducts : []).map((p: any) => ({
+    ...p,
+    id: String(p.id || p._id || ''),
+    categoryId: String(p.categoryId?._id || p.categoryId || p.category?._id || p.category?.id || ''),
+  }));
+
+  const isLoading = isBackendMode ? isBackendLoading : isDemoLoading;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [brandFilter, setBrandFilter] = useState<string>('all');
@@ -35,6 +78,20 @@ export default function CategoriesTab({ canManage, onToast }: CategoriesTabProps
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [statusModalCategory, setStatusModalCategory] = useState<Category | null>(null);
+  const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
+
+  const [deleteCategoryMutation, { isLoading: isDeleting }] = useDeleteCategoryMutation();
+
+  const handleDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+    try {
+      await deleteCategoryMutation(categoryToDelete.id).unwrap();
+      onToast(`Category "${categoryToDelete.name}" deleted successfully`, 'success');
+      setCategoryToDelete(null);
+    } catch (err: any) {
+      onToast(err?.data?.message || err?.message || 'Failed to delete category', 'error');
+    }
+  };
 
   // Map brands for fast lookup
   const brandMap = useMemo(() => {
@@ -244,6 +301,13 @@ export default function CategoriesTab({ canManage, onToast }: CategoriesTabProps
                               >
                                 <Power className="w-3.5 h-3.5" />
                               </button>
+                              <button
+                                onClick={() => setCategoryToDelete(cat)}
+                                className="p-1.5 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                                title="Delete Category"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </>
                           )}
                         </div>
@@ -291,9 +355,20 @@ export default function CategoriesTab({ canManage, onToast }: CategoriesTabProps
         onSuccess={(updated) => {
           onToast(
             `Category "${updated.name}" is now ${updated.status}`,
-            updated.status === 'active' ? 'success' : 'info'
+            updated.status.toLowerCase() === 'active' ? 'success' : 'info'
           );
         }}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={!!categoryToDelete}
+        title="Delete Category"
+        entityName={categoryToDelete ? `${categoryToDelete.name} (${categoryToDelete.code})` : ''}
+        warningText="Deleting this category will remove associated products and configurations from the catalogue."
+        isLoading={isDeleting}
+        onConfirm={handleDeleteCategory}
+        onClose={() => setCategoryToDelete(null)}
       />
     </div>
   );

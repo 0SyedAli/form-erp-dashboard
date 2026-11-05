@@ -2,14 +2,24 @@
 
 import React, { useState, useMemo } from 'react';
 import { MattressThickness } from '@/types';
-import { useGetThicknessQuery, useGetVariantsQuery } from '@/store/services/apiSlice';
+import {
+  useGetThicknessQuery as useGetDemoThicknessQuery,
+  useGetVariantsQuery as useGetDemoVariantsQuery,
+} from '@/store/services/apiSlice';
+import {
+  useGetThicknessesQuery as useGetBackendThicknessesQuery,
+  useGetSkusQuery as useGetBackendSkusQuery,
+  useDeleteThicknessMutation,
+} from '@/store/services/catalogueApi';
 import ThicknessModal from './ThicknessModal';
 import ThicknessStatusModal from './ThicknessStatusModal';
+import DeleteConfirmModal from './DeleteConfirmModal';
 import {
   Search,
   Plus,
   Edit2,
   Power,
+  Trash2,
   RotateCcw,
   Sliders,
   Boxes,
@@ -21,14 +31,50 @@ interface ThicknessTabProps {
 }
 
 export default function ThicknessTab({ canManage, onToast }: ThicknessTabProps) {
-  const { data: thicknessList = [], isLoading } = useGetThicknessQuery();
-  const { data: variants = [] } = useGetVariantsQuery();
+  const isBackendMode = process.env.NEXT_PUBLIC_USE_BACKEND !== 'false';
+  const { data: demoThicknessList = [], isLoading: isDemoLoading } = useGetDemoThicknessQuery(undefined, { skip: isBackendMode });
+  const { data: backendThicknessList = [], isLoading: isBackendLoading } = useGetBackendThicknessesQuery(undefined, { skip: !isBackendMode });
+  const { data: demoVariants = [] } = useGetDemoVariantsQuery(undefined, { skip: isBackendMode });
+  const { data: backendSkusResponse } = useGetBackendSkusQuery(undefined, { skip: !isBackendMode });
+
+  const rawThicknessList = isBackendMode
+    ? (Array.isArray(backendThicknessList) ? backendThicknessList : (backendThicknessList as any)?.data || [])
+    : demoThicknessList;
+  const thicknessList: MattressThickness[] = (Array.isArray(rawThicknessList) ? rawThicknessList : []).map((t: any) => ({
+    ...t,
+    id: String(t.id || t._id || ''),
+    status: t.status || 'ACTIVE',
+  })) as MattressThickness[];
+
+  const rawVariants = isBackendMode
+    ? (Array.isArray(backendSkusResponse?.data) ? backendSkusResponse.data : [])
+    : demoVariants;
+  const variants = (Array.isArray(rawVariants) ? rawVariants : []).map((v: any) => ({
+    ...v,
+    thicknessId: String(v.thicknessId || v.thickness?._id || v.thickness?.id || ''),
+  }));
+
+  const isLoading = isBackendMode ? isBackendLoading : isDemoLoading;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedThickness, setSelectedThickness] = useState<MattressThickness | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [statusModalThickness, setStatusModalThickness] = useState<MattressThickness | null>(null);
+  const [thicknessToDelete, setThicknessToDelete] = useState<MattressThickness | null>(null);
+
+  const [deleteThicknessMutation, { isLoading: isDeleting }] = useDeleteThicknessMutation();
+
+  const handleDeleteThickness = async () => {
+    if (!thicknessToDelete) return;
+    try {
+      await deleteThicknessMutation(thicknessToDelete.id).unwrap();
+      onToast(`Thickness "${thicknessToDelete.displayLabel}" deleted successfully`, 'success');
+      setThicknessToDelete(null);
+    } catch (err: any) {
+      onToast(err?.data?.message || err?.message || 'Failed to delete thickness', 'error');
+    }
+  };
 
   const filteredThickness = useMemo(() => {
     return thicknessList.filter((t) => {
@@ -211,6 +257,13 @@ export default function ThicknessTab({ canManage, onToast }: ThicknessTabProps) 
                               >
                                 <Power className="w-3.5 h-3.5" />
                               </button>
+                              <button
+                                onClick={() => setThicknessToDelete(t)}
+                                className="p-1.5 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                                title="Delete Thickness"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </>
                           )}
                         </div>
@@ -257,9 +310,20 @@ export default function ThicknessTab({ canManage, onToast }: ThicknessTabProps) 
         onSuccess={(updated) => {
           onToast(
             `Thickness "${updated.displayLabel}" is now ${updated.status}`,
-            updated.status === 'active' ? 'success' : 'info'
+            updated.status.toLowerCase() === 'active' ? 'success' : 'info'
           );
         }}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={!!thicknessToDelete}
+        title="Delete Thickness"
+        entityName={thicknessToDelete ? thicknessToDelete.displayLabel : ''}
+        warningText="Deleting this thickness will remove associated mattress variants and configurations from the catalogue."
+        isLoading={isDeleting}
+        onConfirm={handleDeleteThickness}
+        onClose={() => setThicknessToDelete(null)}
       />
     </div>
   );

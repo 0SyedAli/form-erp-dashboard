@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 50">
+  <circle cx="25" cy="25" r="16" fill="#fbbc04" stroke="#ea4335" stroke-width="2"/>
+  <text x="25" y="32" fill="#1a73e8" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="900" text-anchor="middle">M</text>
+  <text x="50" y="33" fill="#ea4335" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="900" letter-spacing="-0.5">MoltyFoam</text>
+</svg>

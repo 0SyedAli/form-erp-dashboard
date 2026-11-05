@@ -11,14 +11,17 @@ import {
   useGetBrandsQuery as useGetBackendBrandsQuery,
   useGetCategoriesQuery as useGetBackendCategoriesQuery,
   useGetProductsQuery as useGetBackendProductsQuery,
+  useDeleteBrandMutation,
 } from '@/store/services/catalogueApi';
 import BrandModal from './BrandModal';
 import BrandStatusModal from './BrandStatusModal';
+import DeleteConfirmModal from './DeleteConfirmModal';
 import {
   Search,
   Plus,
   Edit2,
   Power,
+  Trash2,
   RotateCcw,
   Award,
   Layers,
@@ -76,6 +79,20 @@ export default function BrandsTab({ canManage, onToast }: BrandsTabProps) {
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [statusModalBrand, setStatusModalBrand] = useState<Brand | null>(null);
+  const [brandToDelete, setBrandToDelete] = useState<Brand | null>(null);
+
+  const [deleteBrandMutation, { isLoading: isDeleting }] = useDeleteBrandMutation();
+
+  const handleDeleteBrand = async () => {
+    if (!brandToDelete) return;
+    try {
+      await deleteBrandMutation(brandToDelete.id).unwrap();
+      onToast(`Brand "${brandToDelete.name}" deleted successfully`, 'success');
+      setBrandToDelete(null);
+    } catch (err: any) {
+      onToast(err?.data?.message || err?.message || 'Failed to delete brand', 'error');
+    }
+  };
 
   // Filtered brands
   const filteredBrands = useMemo(() => {
@@ -273,6 +290,13 @@ export default function BrandsTab({ canManage, onToast }: BrandsTabProps) {
                               >
                                 <Power className="w-3.5 h-3.5" />
                               </button>
+                              <button
+                                onClick={() => setBrandToDelete(brand)}
+                                className="p-1.5 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                                title="Delete Brand"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </>
                           )}
                         </div>
@@ -319,9 +343,20 @@ export default function BrandsTab({ canManage, onToast }: BrandsTabProps) {
         onSuccess={(updated) => {
           onToast(
             `Brand "${updated.name}" is now ${updated.status}`,
-            updated.status === 'active' ? 'success' : 'info'
+            updated.status.toLowerCase() === 'active' ? 'success' : 'info'
           );
         }}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={!!brandToDelete}
+        title="Delete Brand"
+        entityName={brandToDelete ? `${brandToDelete.name} (${brandToDelete.code})` : ''}
+        warningText="Deleting this brand will remove all associated categories and products from the catalogue."
+        isLoading={isDeleting}
+        onConfirm={handleDeleteBrand}
+        onClose={() => setBrandToDelete(null)}
       />
     </div>
   );

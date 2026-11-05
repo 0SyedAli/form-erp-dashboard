@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
+import { ShoppingCart } from 'lucide-react';
 import { useAppSelector } from '@/store';
 import {
   useGetBranchesQuery,
@@ -301,25 +302,21 @@ function POSContent() {
   }, [inventoryBalances, activeBranch]);
 
   // Selected Brand and Category States
+  // Selected Brand and Category States (Only Created Real Data)
   const [chosenBrandId, setChosenBrandId] = useState<string | null>(null);
   const selectedBrandId = useMemo(() => {
     if (chosenBrandId && brands.some((b) => b.id === chosenBrandId)) {
       return chosenBrandId;
     }
-    // If a brand has active products, prefer that brand as initial default
+    // Prefer first brand that has active products
     const brandWithProducts = brands.find((b) =>
       products.some((p) => p.brandId === b.id && p.status === 'ACTIVE')
     );
-    if (brandWithProducts) {
-      return brandWithProducts.id;
-    }
-    const dura = brands.find((b) => b.code === 'DURA');
-    return dura ? dura.id : brands[0]?.id || 'BRAND-DURA';
+    if (brandWithProducts) return brandWithProducts.id;
+    return brands[0]?.id || '';
   }, [chosenBrandId, brands, products]);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
-  const [selectedSizeId, setSelectedSizeId] = useState<string>('ALL');
-  const [selectedThicknessId, setSelectedThicknessId] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Flow 07 Unified POS Multi-Tier & Credit States
@@ -350,13 +347,14 @@ function POSContent() {
   const [isHeldSalesModalOpen, setIsHeldSalesModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isNewSaleConfirmOpen, setIsNewSaleConfirmOpen] = useState(false);
+  const [isTabletCartOpen, setIsTabletCartOpen] = useState(false);
 
   // Active brand object
   const currentBrand = useMemo(() => {
-    return brands.find((b) => b.id === selectedBrandId) || brands[0];
+    return brands.find((b) => b.id === selectedBrandId) || brands[0] || null;
   }, [brands, selectedBrandId]);
 
-  // Filter categories by selected brand
+  // Filter categories strictly by selected brand
   const brandCategories = useMemo(() => {
     return categories.filter(
       (c) => String(c.brandId) === String(selectedBrandId) && c.status === 'ACTIVE'
@@ -376,6 +374,42 @@ function POSContent() {
     return counts;
   }, [products]);
 
+  // Variant Stock Map
+  const variantStockMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    variants.forEach((v) => {
+      const balance = branchBalances.find((b) => b.variantId === v.id);
+      const stock = balance?.available ?? v.stock ?? (v as any).onHand ?? 0;
+      map[v.id] = Math.max(0, stock);
+    });
+    return map;
+  }, [variants, branchBalances]);
+
+  // Brand Stock Map (sum of variant stock for each brand)
+  const brandStockMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    products.forEach((p) => {
+      if (p.status !== 'ACTIVE' || !p.brandId) return;
+      const pVariants = variants.filter((v) => v.productId === p.id && v.status === 'ACTIVE');
+      const pStock = pVariants.reduce((sum, v) => sum + (variantStockMap[v.id] || 0), 0);
+      map[p.brandId] = (map[p.brandId] || 0) + pStock;
+    });
+    return map;
+  }, [products, variants, variantStockMap]);
+
+  // Category Stock Map (sum of variant stock for each category within active brand)
+  const categoryStockMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    products.forEach((p) => {
+      if (p.status !== 'ACTIVE' || !p.categoryId) return;
+      if (p.brandId !== selectedBrandId) return;
+      const pVariants = variants.filter((v) => v.productId === p.id && v.status === 'ACTIVE');
+      const pStock = pVariants.reduce((sum, v) => sum + (variantStockMap[v.id] || 0), 0);
+      map[p.categoryId] = (map[p.categoryId] || 0) + pStock;
+    });
+    return map;
+  }, [products, variants, variantStockMap, selectedBrandId]);
+
   // Category products count helper
   const categoryProductCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -389,53 +423,13 @@ function POSContent() {
     return counts;
   }, [products, selectedBrandId]);
 
-  // Size & Thickness products count helper
-  const { sizeProductCounts, thicknessProductCounts } = useMemo(() => {
-    const sizeCounts: Record<string, number> = {};
-    const thickCounts: Record<string, number> = {};
-
-    const relevantProducts = products.filter((p) => {
-      if (p.status !== 'ACTIVE') return false;
-      if (p.brandId !== selectedBrandId) return false;
-      if (selectedCategoryId !== 'ALL' && p.categoryId !== selectedCategoryId) return false;
-      return true;
-    });
-
-    const relevantProductIds = new Set(relevantProducts.map((p) => p.id));
-
-    variants.forEach((v) => {
-      if (v.status === 'ACTIVE' && relevantProductIds.has(v.productId)) {
-        if (v.sizeId) sizeCounts[v.sizeId] = (sizeCounts[v.sizeId] || 0) + 1;
-        if (v.thicknessId) thickCounts[v.thicknessId] = (thickCounts[v.thicknessId] || 0) + 1;
-      }
-    });
-
-    return { sizeProductCounts: sizeCounts, thicknessProductCounts: thickCounts };
-  }, [products, variants, selectedBrandId, selectedCategoryId]);
-
-  // Filter products by Brand, Category, Size, Thickness, and Search
+  // Filter products strictly by Brand, Category, and Search
   const filteredProducts = useMemo(() => {
     if (!Array.isArray(products)) return [];
     return products.filter((p) => {
       if (p.status !== 'ACTIVE') return false;
       if (p.brandId !== selectedBrandId) return false;
       if (selectedCategoryId !== 'ALL' && p.categoryId !== selectedCategoryId) return false;
-
-      // Filter by size if selected
-      if (selectedSizeId !== 'ALL') {
-        const hasSize = variants.some(
-          (v) => v.productId === p.id && v.sizeId === selectedSizeId && v.status === 'ACTIVE'
-        );
-        if (!hasSize) return false;
-      }
-
-      // Filter by thickness if selected
-      if (selectedThicknessId !== 'ALL') {
-        const hasThick = variants.some(
-          (v) => v.productId === p.id && v.thicknessId === selectedThicknessId && v.status === 'ACTIVE'
-        );
-        if (!hasThick) return false;
-      }
 
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
@@ -446,7 +440,7 @@ function POSContent() {
       }
       return true;
     });
-  }, [products, variants, selectedBrandId, selectedCategoryId, selectedSizeId, selectedThicknessId, searchQuery]);
+  }, [products, selectedBrandId, selectedCategoryId, searchQuery]);
 
   // Cart Calculations
   const subtotal = useMemo(() => {
@@ -657,7 +651,44 @@ function POSContent() {
           notes: `${saleType} Sale - ${paymentArrangement} Arrangement`,
         }).unwrap();
 
-        setCompletedInvoice(result.invoice as unknown as Invoice);
+        const inv: any = result.invoice;
+        const normalizedInvoice: Invoice = {
+          ...inv,
+          id: String(inv.id || inv._id || ''),
+          invoiceNumber: inv.invoiceNumber,
+          branchId: String(activeBranch?.id || inv.branchId || ''),
+          branchName: activeBranch?.name || inv.branchName || 'Main Branch',
+          customerName: inv.customerName,
+          customerPhone: inv.customerPhone,
+          grossAmount: inv.subtotal ?? inv.grossAmount ?? inv.total ?? 0,
+          subtotal: inv.subtotal ?? inv.grossAmount ?? inv.total ?? 0,
+          discountAmount: inv.discount ?? inv.discountAmount ?? 0,
+          netAmount: inv.total ?? inv.netAmount ?? inv.grandTotal ?? 0,
+          grandTotal: inv.total ?? inv.grandTotal ?? inv.netAmount ?? 0,
+          amountPaid: inv.paidAmount ?? inv.amountPaid ?? inv.amountReceived ?? 0,
+          amountReceived: inv.paidAmount ?? inv.amountReceived ?? 0,
+          amountDue: inv.balanceDue ?? inv.amountDue ?? 0,
+          changeAmount: inv.changeReturned ?? inv.changeAmount ?? 0,
+          paymentStatus: inv.paymentStatus || 'PAID',
+          paymentMethod: inv.paymentArrangement || inv.paymentMethod || 'CASH',
+          status: inv.status || 'COMPLETED',
+          date: inv.createdAt || inv.date || new Date().toISOString(),
+          salesPerson: inv.cashierName || currentUser?.name || 'Cashier',
+          items: (inv.items || []).map((it: any) => ({
+            productId: it.variantId || it.productId || it.sku,
+            productName: it.productName || it.sku,
+            sku: it.sku,
+            quantity: it.quantity || 1,
+            unitPrice: it.unitPrice || 0,
+            discount: it.discount || 0,
+            total: it.lineTotal ?? it.total ?? ((it.unitPrice || 0) * (it.quantity || 1)),
+            lineTotal: it.lineTotal ?? it.total ?? ((it.unitPrice || 0) * (it.quantity || 1)),
+            sizeLabel: it.sizeLabel || '',
+            thicknessLabel: it.thicknessLabel || '',
+          })),
+        };
+
+        setCompletedInvoice(normalizedInvoice);
         setIsReceiptModalOpen(true);
         handleClearCart();
 
@@ -932,7 +963,7 @@ function POSContent() {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen w-full bg-slate-100 overflow-hidden font-sans">
+    <div className="flex flex-col h-screen w-full bg-[#f4f6fa] overflow-hidden font-sans select-none">
       {/* 1. Top Header */}
       <POSHeader
         searchQuery={searchQuery}
@@ -953,54 +984,39 @@ function POSContent() {
         onBranchChange={(newBranchId) => {
           updateSettings({ selectedBranchId: newBranchId, branchId: newBranchId });
         }}
-      />
-
-      {/* 2. Flow 07 Sale Type Selector (Walk-in | Wholesale | Distributor) */}
-      <SaleTypeSelector
         saleType={saleType}
         onChangeSaleType={handleRequestSaleTypeChange}
       />
 
-      {/* 3. Main Body: Split into Left Selection Area (68-70%) & Right Cart (30-32%) */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Section: Brand Carousel + (Category Sidebar + Product Grid) */}
-        <section className="flex-1 flex flex-col overflow-hidden min-w-0">
-          {/* Horizontal Brand Selector Cards */}
+      {/* 3. Main Workspace Area: Left Area (Brands + Categories + Products) and Right Cart (Full Height aligned with Brands top) */}
+      <div className="flex-1 flex overflow-hidden px-3.5 pb-3 pt-2.5 gap-3.5 min-h-0 relative">
+        {/* Left Column: Brand Selector at top + [Category Sidebar | Products Grid] below */}
+        <div className="flex-1 flex flex-col min-w-0 gap-3 overflow-hidden h-full">
+          {/* Horizontal Brand Carousel */}
           <BrandSelector
             brands={brands}
             selectedBrandId={selectedBrandId}
             onSelectBrand={(id) => {
               setChosenBrandId(id);
               setSelectedCategoryId('ALL');
-              setSelectedSizeId('ALL');
-              setSelectedThicknessId('ALL');
             }}
             brandProductCounts={brandProductCounts}
+            brandStockMap={brandStockMap}
           />
 
-          {/* Quick Size & Thickness Filter Bar */}
-          <SizeThicknessSelector
-            sizes={sizes}
-            thicknesses={thicknesses}
-            selectedSizeId={selectedSizeId}
-            selectedThicknessId={selectedThicknessId}
-            onSelectSize={setSelectedSizeId}
-            onSelectThickness={setSelectedThicknessId}
-            sizeProductCounts={sizeProductCounts}
-            thicknessProductCounts={thicknessProductCounts}
-            totalProductsCount={products.filter((p) => p.brandId === selectedBrandId && p.status === 'ACTIVE').length}
-          />
-
-          {/* Categories Sidebar + Product Cards Grid */}
-          <div className="flex-1 flex overflow-hidden">
+          {/* Categories Sidebar + Products Grid Row */}
+          <div className="flex-1 flex overflow-hidden gap-3.5 min-h-0">
+            {/* Left: Category Sidebar Card */}
             <CategorySidebar
               categories={brandCategories}
               selectedCategoryId={selectedCategoryId}
               onSelectCategory={setSelectedCategoryId}
               categoryProductCounts={categoryProductCounts}
-              totalAllCount={products.filter((p) => p.brandId === selectedBrandId).length}
+              categoryStockMap={categoryStockMap}
+              totalAllCount={products.filter((p) => p.brandId === selectedBrandId && p.status === 'ACTIVE').length}
             />
 
+            {/* Center: Products Grid Card */}
             <ProductGrid
               brandName={currentBrand?.name || 'Products'}
               products={filteredProducts}
@@ -1009,47 +1025,66 @@ function POSContent() {
               onSelectProduct={(product) => setConfigModalProduct(product)}
               selectedProductId={configModalProduct?.id}
               saleType={saleType}
-              selectedSizeId={selectedSizeId}
-              selectedThicknessId={selectedThicknessId}
               sizes={sizes}
               thicknesses={thicknesses}
             />
           </div>
-        </section>
+        </div>
 
-        {/* Right Section: Shopping Cart & Checkout Calculations */}
-        <POSCart
-          items={cartItems}
-          onUpdateQuantity={handleUpdateQuantity}
-          onRemoveItem={handleRemoveItem}
-          onClearCart={handleClearCart}
-          discountAmount={discountAmount}
-          onDiscountChange={setDiscountAmount}
-          amountReceived={amountReceived}
-          onAmountReceivedChange={setEnteredAmountReceived}
-          paymentMethod={paymentMethod}
-          onPaymentMethodChange={setPaymentMethod}
-          onCompleteSale={handleCompleteSale}
-          onHoldSale={handleHoldSale}
-          onPrintInvoice={() => {
-            if (completedInvoice) {
-              setIsReceiptModalOpen(true);
-            } else if (cartItems.length > 0) {
-              window.print();
-            }
-          }}
-          isProcessing={isCheckingOut}
-          isRetailAllowed={isRetailAllowed}
-          saleType={saleType}
-          selectedCustomer={selectedCustomer}
-          onOpenCustomerModal={() => setIsCustomerModalOpen(true)}
-          paymentArrangement={paymentArrangement}
-          onPaymentArrangementChange={setPaymentArrangement}
-          dueDate={dueDate}
-          onDueDateChange={setDueDate}
-          creditOverride={creditOverride}
-          onCreditOverrideChange={setCreditOverride}
-        />
+        {/* Right: Cart Card (Aligned with the top of BrandSelector! Full Height!) */}
+        <div
+          className={`fixed inset-y-0 right-0 z-40 lg:static lg:z-auto transition-transform duration-200 ${
+            isTabletCartOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
+          } flex shrink-0 shadow-2xl lg:shadow-none bg-slate-900/30 lg:bg-transparent h-full`}
+        >
+          <POSCart
+            items={cartItems}
+            onUpdateQuantity={handleUpdateQuantity}
+            onRemoveItem={handleRemoveItem}
+            onClearCart={handleClearCart}
+            discountAmount={discountAmount}
+            onDiscountChange={setDiscountAmount}
+            amountReceived={amountReceived}
+            onAmountReceivedChange={setEnteredAmountReceived}
+            paymentMethod={paymentMethod}
+            onPaymentMethodChange={setPaymentMethod}
+            onCompleteSale={handleCompleteSale}
+            onHoldSale={handleHoldSale}
+            onPrintInvoice={() => {
+              if (completedInvoice) {
+                setIsReceiptModalOpen(true);
+              } else if (cartItems.length > 0) {
+                window.print();
+              }
+            }}
+            isProcessing={isCheckingOut}
+            isRetailAllowed={isRetailAllowed}
+            saleType={saleType}
+            selectedCustomer={selectedCustomer}
+            onOpenCustomerModal={() => setIsCustomerModalOpen(true)}
+            paymentArrangement={paymentArrangement}
+            onPaymentArrangementChange={setPaymentArrangement}
+            dueDate={dueDate}
+            onDueDateChange={setDueDate}
+            creditOverride={creditOverride}
+            onCreditOverrideChange={setCreditOverride}
+          />
+        </div>
+
+        {/* Floating Cart Button for Tablet/Mobile View (< lg screens) */}
+        <button
+          type="button"
+          onClick={() => setIsTabletCartOpen(!isTabletCartOpen)}
+          className="lg:hidden fixed bottom-14 right-4 z-50 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full p-3.5 shadow-xl flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
+          aria-label="Toggle Cart"
+        >
+          <ShoppingCart className="w-6 h-6" />
+          {cartItems.length > 0 && (
+            <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-xs">
+              {cartItems.reduce((s, it) => s + it.quantity, 0)}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* 4. Bottom Footer */}
@@ -1081,6 +1116,7 @@ function POSContent() {
             : 0
         }
         saleType={saleType}
+        variantStockMap={variantStockMap}
       />
 
       {/* 6. Flow 07 Reprice Confirmation Modal */}

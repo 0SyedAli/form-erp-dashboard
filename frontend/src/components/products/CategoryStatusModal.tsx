@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { Category } from '@/types';
-import { useToggleCategoryStatusMutation } from '@/store/services/apiSlice';
+import { useToggleCategoryStatusMutation as useToggleBackendCategoryStatusMutation } from '@/store/services/catalogueApi';
+import { useToggleCategoryStatusMutation as useToggleDemoCategoryStatusMutation } from '@/store/services/apiSlice';
 import { AlertTriangle, Power, CheckCircle2, X } from 'lucide-react';
 
 interface CategoryStatusModalProps {
@@ -18,20 +19,30 @@ export default function CategoryStatusModal({
   onClose,
   onSuccess,
 }: CategoryStatusModalProps) {
-  const [toggleStatus, { isLoading }] = useToggleCategoryStatusMutation();
+  const [toggleBackendStatus, { isLoading }] = useToggleBackendCategoryStatusMutation();
+  const [toggleDemoStatus] = useToggleDemoCategoryStatusMutation();
 
   if (!isOpen || !category) return null;
 
   const willDeactivate = category.status === 'active' || category.status === 'ACTIVE';
 
   const handleConfirm = async () => {
+    const nextStatus: 'ACTIVE' | 'INACTIVE' = willDeactivate ? 'INACTIVE' : 'ACTIVE';
     try {
-      const result = await toggleStatus(category.id).unwrap();
-
-      onSuccess(result);
+      const res = await toggleBackendStatus({ id: category.id, status: nextStatus }).unwrap();
+      try {
+        await toggleDemoStatus(category.id);
+      } catch {}
+      onSuccess(res as unknown as Category);
       onClose();
-    } catch (err: unknown) {
-      console.error('Failed to toggle category status', err);
+    } catch {
+      try {
+        const result = await toggleDemoStatus(category.id).unwrap();
+        onSuccess(result);
+        onClose();
+      } catch (err: unknown) {
+        console.error('Failed to toggle category status', err);
+      }
     }
   };
 

@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { MattressSize } from '@/types';
-import { useToggleSizeStatusMutation } from '@/store/services/apiSlice';
+import { useToggleSizeStatusMutation as useToggleBackendSizeStatusMutation } from '@/store/services/catalogueApi';
+import { useToggleSizeStatusMutation as useToggleDemoSizeStatusMutation } from '@/store/services/apiSlice';
 import { AlertTriangle, Power, CheckCircle2, X } from 'lucide-react';
 
 interface SizeStatusModalProps {
@@ -18,20 +19,30 @@ export default function SizeStatusModal({
   onClose,
   onSuccess,
 }: SizeStatusModalProps) {
-  const [toggleStatus, { isLoading }] = useToggleSizeStatusMutation();
+  const [toggleBackendStatus, { isLoading }] = useToggleBackendSizeStatusMutation();
+  const [toggleDemoStatus] = useToggleDemoSizeStatusMutation();
 
   if (!isOpen || !size) return null;
 
   const willDeactivate = size.status === 'active' || size.status === 'ACTIVE';
 
   const handleConfirm = async () => {
+    const nextStatus: 'ACTIVE' | 'INACTIVE' = willDeactivate ? 'INACTIVE' : 'ACTIVE';
     try {
-      const result = await toggleStatus(size.id).unwrap();
-
-      onSuccess(result);
+      const res = await toggleBackendStatus({ id: size.id, status: nextStatus }).unwrap();
+      try {
+        await toggleDemoStatus(size.id);
+      } catch {}
+      onSuccess(res as unknown as MattressSize);
       onClose();
-    } catch (err: unknown) {
-      console.error('Failed to toggle size status', err);
+    } catch {
+      try {
+        const result = await toggleDemoStatus(size.id).unwrap();
+        onSuccess(result);
+        onClose();
+      } catch (err: unknown) {
+        console.error('Failed to toggle size status', err);
+      }
     }
   };
 

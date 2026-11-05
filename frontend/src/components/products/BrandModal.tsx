@@ -38,9 +38,11 @@ interface BrandModalProps {
 }
 
 const BRAND_LOGO_PRESETS = [
-  { name: 'Molty Logo', url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=300&q=80' },
-  { name: 'Dura Logo', url: 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=300&q=80' },
-  { name: 'Master Logo', url: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=300&q=80' },
+  { name: 'MoltyFoam', url: '/assets/brands/molty.svg' },
+  { name: 'DuraFoam', url: '/assets/brands/dura.svg' },
+  { name: 'Master Foam', url: '/assets/brands/master.svg' },
+  { name: 'Diamond Foam', url: '/assets/brands/diamond.svg' },
+  { name: 'Supreme Foam', url: '/assets/brands/supreme.svg' },
 ];
 
 export default function BrandModal({
@@ -115,8 +117,9 @@ export default function BrandModal({
 
       if (isBackendMode) {
         if (isEdit && brand) {
+          const targetId = (brand as any)._id || brand.id;
           savedBrand = (await updateBrandBackend({
-            id: brand.id,
+            id: targetId,
             name: data.name.trim(),
             code: data.code.trim().toUpperCase(),
             description: data.description?.trim(),
@@ -129,6 +132,7 @@ export default function BrandModal({
             code: data.code.trim().toUpperCase(),
             description: data.description?.trim(),
             logoUrl: data.logo,
+            status: data.status.toUpperCase(),
           }).unwrap()) as unknown as Brand;
         }
 

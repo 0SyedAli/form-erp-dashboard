@@ -17,6 +17,7 @@ import {
 } from '@/store/services/posApi';
 import { useAppSelector } from '@/store';
 import { PaymentCollection, PaymentMethod } from '@/types';
+import AppLayout from '@/components/layout/AppLayout';
 import {
   Receipt,
   CheckCircle2,
@@ -267,38 +268,38 @@ function CollectionsContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      {/* Top Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-2xs">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/customers"
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 px-3 py-2 rounded-xl transition-colors cursor-pointer"
-          >
-            <ArrowRight className="w-4 h-4 rotate-180" />
-            <span>Customers Registry</span>
-          </Link>
-          <div>
-            <h1 className="text-xl font-extrabold text-slate-800 tracking-tight font-sans flex items-center gap-2">
-              <Receipt className="w-5 h-5 text-emerald-600" />
-              <span>Customer Payment Recovery &amp; Collections</span>
-            </h1>
-            <p className="text-xs text-slate-500 font-sans">
-              Collect outstanding customer receivables, allocate payments across open invoices, or record customer advances
-            </p>
+    <AppLayout>
+      <div className="space-y-6 font-sans">
+        {/* Top Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/customers"
+              className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 bg-white border border-slate-200 hover:bg-blue-50 px-3 py-2 rounded-xl transition-colors shadow-2xs cursor-pointer"
+            >
+              <ArrowRight className="w-4 h-4 rotate-180" />
+              <span>Customers Registry</span>
+            </Link>
+            <div>
+              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight font-sans flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-emerald-600" />
+                <span>Customer Payment Recovery &amp; Collections</span>
+              </h1>
+              <p className="text-xs text-slate-500 font-sans">
+                Collect outstanding customer receivables, allocate payments across open invoices, or record customer advances
+              </p>
+            </div>
           </div>
+
+          <Link
+            href="/pos"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            <span>Open POS Counter</span>
+          </Link>
         </div>
 
-        <Link
-          href="/pos"
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-        >
-          <span>Open POS Counter</span>
-        </Link>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
+        {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column (Customer & Open Invoices) */}
           <div className="lg:col-span-7 space-y-6">
@@ -701,7 +702,7 @@ function CollectionsContent() {
             </table>
           </div>
         </div>
-      </main>
+      </div>
 
       {/* Payment Receipt / Voucher Modal */}
       {completedCollection && (
@@ -807,7 +808,7 @@ function CollectionsContent() {
           </div>
         </div>
       )}
-    </div>
+    </AppLayout>
   );
 }
 

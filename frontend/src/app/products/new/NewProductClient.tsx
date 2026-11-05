@@ -18,6 +18,7 @@ import {
   useCreateProductWithVariantMutation,
   useGetSkuByIdQuery,
   useUpdateSkuPricesMutation,
+  useUpdateSkuMutation,
 } from '@/store/services/catalogueApi';
 import {
   productsRepository,
@@ -97,6 +98,7 @@ function NewProductContent() {
 
   const [createProductWithVariant] = useCreateProductWithVariantMutation();
   const [updateSkuPrices] = useUpdateSkuPricesMutation();
+  const [updateSku] = useUpdateSkuMutation();
 
   // If in edit mode, lookup existing entity (Production backend primary, demo fallback)
   const editingVariant = useMemo(() => {
@@ -334,8 +336,12 @@ function NewProductContent() {
         let isBackendSaved = false;
         try {
           const skuIdToUpdate = backendSku?.id || (backendSku as any)?._id || editSku;
-          const backendRes = await updateSkuPrices({
+          const backendRes = await updateSku({
             id: skuIdToUpdate,
+            brandId: selectedBrandId,
+            categoryId: selectedCategoryId,
+            sizeId: selectedSizeId,
+            thicknessId: selectedThicknessId,
             listPrice,
             purchasePercent: purchasePct,
             purchasePrice,
@@ -378,7 +384,16 @@ function NewProductContent() {
                 variantsRepository.update(demoVar.id, {
                   retailPrice,
                   wholesalePrice,
-                });
+                  sizeId: selectedSizeId,
+                  thicknessId: selectedThicknessId,
+                } as any);
+                if ((demoVar as any).productId) {
+                  productsRepository.update((demoVar as any).productId, {
+                    brandId: selectedBrandId,
+                    categoryId: selectedCategoryId,
+                    name: autoProductName,
+                  });
+                }
               }
             }
           } catch {
@@ -388,7 +403,7 @@ function NewProductContent() {
           showToast(
             'success',
             'Product Updated Successfully',
-            `Product ${editSku} prices and stock have been updated.`
+            `Product details, specifications, prices, and stock have been updated.`
           );
           setTimeout(() => {
             router.push('/products');
@@ -402,7 +417,16 @@ function NewProductContent() {
             variantsRepository.update(editingVariant.id, {
               retailPrice,
               wholesalePrice,
-            });
+              sizeId: selectedSizeId,
+              thicknessId: selectedThicknessId,
+            } as any);
+            if ((editingVariant as any).productId) {
+              productsRepository.update((editingVariant as any).productId, {
+                brandId: selectedBrandId,
+                categoryId: selectedCategoryId,
+                name: autoProductName,
+              });
+            }
           } catch {
             // Ignore
           }
@@ -411,7 +435,7 @@ function NewProductContent() {
         showToast(
           'success',
           'Product Updated Successfully',
-          `Product ${editSku} prices and stock have been updated.`
+          `Product details, specifications, prices, and stock have been updated.`
         );
         setTimeout(() => {
           router.push('/products');

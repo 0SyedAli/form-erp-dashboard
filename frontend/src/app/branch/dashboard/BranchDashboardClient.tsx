@@ -48,7 +48,7 @@ function BranchDashboardContent() {
 
   const { data: backendBranchDashboard } = useGetBranchDashboardQuery(
     effectiveBranchId ? { branchId: effectiveBranchId } : undefined,
-    { skip: !mounted || !isBackendMode || !effectiveBranchId }
+    { skip: !mounted || !isBackendMode || !effectiveBranchId, refetchOnMountOrArgChange: true }
   );
 
   const displayTodaySales = isBackendMode
@@ -66,6 +66,78 @@ function BranchDashboardContent() {
   const displayAvailableStock = isBackendMode
     ? `${backendBranchDashboard?.inventory?.available ?? 0} Units`
     : `${(kpis as any)?.availableUnits ?? 0} Units`;
+
+  const displayWalkIn = isBackendMode
+    ? backendBranchDashboard?.salesBreakdown?.walkIn ?? 0
+    : (kpis?.walkInRevenue ?? kpis?.retailRevenue ?? 0);
+
+  const displayWholesale = isBackendMode
+    ? backendBranchDashboard?.salesBreakdown?.wholesale ?? 0
+    : (kpis?.wholesaleRevenue ?? 0);
+
+  const displayDistributor = isBackendMode
+    ? backendBranchDashboard?.salesBreakdown?.distributor ?? 0
+    : (kpis?.distributorRevenue ?? 0);
+
+  const displayCredit = isBackendMode
+    ? backendBranchDashboard?.periodMetrics?.creditSales ?? 0
+    : (kpis?.totalOutstandingReceivables ?? 0);
+
+  // Live Chart & Card Data Mappings
+  const dailySalesTrend = React.useMemo(() => {
+    return backendBranchDashboard?.salesTrends || [];
+  }, [backendBranchDashboard?.salesTrends]);
+
+  const salesBreakdownDonut = React.useMemo(() => {
+    const walkIn = backendBranchDashboard?.salesBreakdown?.walkIn ?? 0;
+    const wholesale = backendBranchDashboard?.salesBreakdown?.wholesale ?? 0;
+    const distributor = backendBranchDashboard?.salesBreakdown?.distributor ?? 0;
+    const total = walkIn + wholesale + distributor || 1;
+    return [
+      {
+        name: 'Walk-in Retail',
+        value: walkIn,
+        formatted: `Rs. ${walkIn.toLocaleString()}`,
+        percent: Math.round((walkIn / total) * 100),
+        color: '#2563EB',
+      },
+      {
+        name: 'Wholesale',
+        value: wholesale,
+        formatted: `Rs. ${wholesale.toLocaleString()}`,
+        percent: Math.round((wholesale / total) * 100),
+        color: '#D97706',
+      },
+      {
+        name: 'Distributor',
+        value: distributor,
+        formatted: `Rs. ${distributor.toLocaleString()}`,
+        percent: Math.round((distributor / total) * 100),
+        color: '#7C3AED',
+      },
+    ];
+  }, [backendBranchDashboard?.salesBreakdown]);
+
+  const recentInvoicesRows = React.useMemo(() => {
+    return (backendBranchDashboard?.recentInvoices || []).map((inv: any) => ({
+      id: inv.invoiceNumber,
+      number: inv.invoiceNumber,
+      date: new Intl.DateTimeFormat('en-PK', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'Asia/Karachi',
+      }).format(new Date(inv.date || Date.now())),
+      customer: inv.customerName,
+      type: (inv.saleType === 'WHOLESALE' ? 'Wholesale' : 'Retail') as 'Retail' | 'Wholesale',
+      amount: `Rs. ${(inv.netAmount || 0).toLocaleString()}`,
+      status: (inv.paymentStatus === 'PAID' ? 'Paid' : 'Pending') as 'Paid' | 'Pending',
+    }));
+  }, [backendBranchDashboard?.recentInvoices]);
+
+  const topProductsRows = React.useMemo(() => {
+    return backendBranchDashboard?.topProducts || [];
+  }, [backendBranchDashboard?.topProducts]);
 
   const activeBranch = branches.find((b) => b.id === effectiveBranchId) || null;
 
@@ -127,7 +199,7 @@ function BranchDashboardContent() {
           <div>
             <span className="text-gray-500 font-medium block">Walk-in</span>
             <span className="text-xs font-bold text-gray-900 font-sans">
-              Rs. {(kpis?.walkInRevenue ?? kpis?.retailRevenue ?? 0).toLocaleString()}
+              Rs. {displayWalkIn.toLocaleString()}
             </span>
           </div>
         </div>
@@ -139,7 +211,7 @@ function BranchDashboardContent() {
           <div>
             <span className="text-gray-500 font-medium block">Wholesale</span>
             <span className="text-xs font-bold text-amber-800 font-sans">
-              Rs. {(kpis?.wholesaleRevenue || 0).toLocaleString()}
+              Rs. {displayWholesale.toLocaleString()}
             </span>
           </div>
         </div>
@@ -151,7 +223,7 @@ function BranchDashboardContent() {
           <div>
             <span className="text-gray-500 font-medium block">Distributor</span>
             <span className="text-xs font-bold text-purple-800 font-sans">
-              Rs. {(kpis?.distributorRevenue || 0).toLocaleString()}
+              Rs. {displayDistributor.toLocaleString()}
             </span>
           </div>
         </div>
@@ -163,7 +235,7 @@ function BranchDashboardContent() {
           <div>
             <span className="text-gray-500 font-medium block">Outstanding Credit</span>
             <span className="text-xs font-bold text-emerald-800 font-sans">
-              Rs. {(kpis?.totalOutstandingReceivables || 0).toLocaleString()}
+              Rs. {displayCredit.toLocaleString()}
             </span>
           </div>
         </div>
@@ -172,20 +244,20 @@ function BranchDashboardContent() {
       {/* Middle Row: Daily Sales Trend & Sales Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
         <div className="lg:col-span-7 xl:col-span-8">
-          <DailySalesTrendChart />
+          <DailySalesTrendChart data={dailySalesTrend} />
         </div>
         <div className="lg:col-span-5 xl:col-span-4">
-          <BranchSalesBreakdownDonut />
+          <BranchSalesBreakdownDonut data={salesBreakdownDonut} />
         </div>
       </div>
 
       {/* Bottom Row: Recent Invoices & Top Products */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
         <div className="lg:col-span-7 xl:col-span-8">
-          <BranchRecentInvoicesCard />
+          <BranchRecentInvoicesCard invoices={recentInvoicesRows} />
         </div>
         <div className="lg:col-span-5 xl:col-span-4">
-          <BranchTopProductsCard />
+          <BranchTopProductsCard products={topProductsRows} />
         </div>
       </div>
     </AppLayout>

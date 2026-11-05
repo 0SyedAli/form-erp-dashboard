@@ -14,6 +14,7 @@ import {
   useUpdateCustomerMutation as useUpdateBackendCustomerMutation,
 } from '@/store/services/posApi';
 import { Customer, CustomerStatus } from '@/types';
+import AppLayout from '@/components/layout/AppLayout';
 import {
   Users,
   Search,
@@ -299,53 +300,54 @@ function CustomersContent() {
   }, [customers]);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      {/* Toast Notification */}
-      {successToast && (
-        <div className="fixed top-5 right-5 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-xs font-bold animate-in fade-in slide-in-from-top-3">
-          <CheckCircle2 className="w-4 h-4" />
-          <span>{successToast}</span>
-        </div>
-      )}
-
-      {/* Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-2xs">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs">
-            <Users className="w-5 h-5" />
+    <AppLayout>
+      <div className="space-y-6 font-sans">
+        {/* Toast Notification */}
+        {successToast && (
+          <div className="fixed top-5 right-5 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-xs font-bold animate-in fade-in slide-in-from-top-3">
+            <CheckCircle2 className="w-4 h-4" />
+            <span>{successToast}</span>
           </div>
-          <div>
-            <h1 className="text-xl font-extrabold text-slate-800 tracking-tight font-sans">
-              Customer &amp; Dealer Accounts
-            </h1>
-            <p className="text-xs text-slate-500 font-sans">
-              Manage multi-tier accounts, credit limits, account ledgers &amp; payment terms
-            </p>
+        )}
+
+        {/* Top Header / Action Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight font-sans">
+                Customer &amp; Dealer Accounts
+              </h1>
+              <p className="text-xs text-slate-500 font-sans">
+                Manage multi-tier accounts, credit limits, account ledgers &amp; payment terms
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <Link
+              href="/payments/collections"
+              className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Receipt className="w-4 h-4 text-emerald-600" />
+              <span>Payment Collections</span>
+            </Link>
+            <button
+              type="button"
+              id="add-customer-btn"
+              onClick={handleOpenCreate}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Add Customer</span>
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <Link
-            href="/payments/collections"
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <Receipt className="w-4 h-4 text-emerald-600" />
-            <span>Payment Collections</span>
-          </Link>
-          <button
-            type="button"
-            id="add-customer-btn"
-            onClick={handleOpenCreate}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Add Customer</span>
-          </button>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
+        {/* Main Content Area */}
+        <div className="space-y-6">
         {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
@@ -599,7 +601,7 @@ function CustomersContent() {
             </table>
           </div>
         </div>
-      </main>
+      </div>
 
       {/* Customer Create/Edit Drawer Modal */}
       {isDrawerOpen && (
@@ -837,6 +839,7 @@ function CustomersContent() {
         </div>
       )}
     </div>
+  </AppLayout>
   );
 }
 

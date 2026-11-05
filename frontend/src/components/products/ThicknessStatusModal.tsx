@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { MattressThickness } from '@/types';
-import { useToggleThicknessStatusMutation } from '@/store/services/apiSlice';
+import { useToggleThicknessStatusMutation as useToggleBackendThicknessStatusMutation } from '@/store/services/catalogueApi';
+import { useToggleThicknessStatusMutation as useToggleDemoThicknessStatusMutation } from '@/store/services/apiSlice';
 import { AlertTriangle, Power, CheckCircle2, X } from 'lucide-react';
 
 interface ThicknessStatusModalProps {
@@ -18,20 +19,30 @@ export default function ThicknessStatusModal({
   onClose,
   onSuccess,
 }: ThicknessStatusModalProps) {
-  const [toggleStatus, { isLoading }] = useToggleThicknessStatusMutation();
+  const [toggleBackendStatus, { isLoading }] = useToggleBackendThicknessStatusMutation();
+  const [toggleDemoStatus] = useToggleDemoThicknessStatusMutation();
 
   if (!isOpen || !thickness) return null;
 
   const willDeactivate = thickness.status === 'active' || thickness.status === 'ACTIVE';
 
   const handleConfirm = async () => {
+    const nextStatus: 'ACTIVE' | 'INACTIVE' = willDeactivate ? 'INACTIVE' : 'ACTIVE';
     try {
-      const result = await toggleStatus(thickness.id).unwrap();
-
-      onSuccess(result);
+      const res = await toggleBackendStatus({ id: thickness.id, status: nextStatus }).unwrap();
+      try {
+        await toggleDemoStatus(thickness.id);
+      } catch {}
+      onSuccess(res as unknown as MattressThickness);
       onClose();
-    } catch (err: unknown) {
-      console.error('Failed to toggle thickness status', err);
+    } catch {
+      try {
+        const result = await toggleDemoStatus(thickness.id).unwrap();
+        onSuccess(result);
+        onClose();
+      } catch (err: unknown) {
+        console.error('Failed to toggle thickness status', err);
+      }
     }
   };
 

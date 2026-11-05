@@ -36,6 +36,7 @@ import {
   ThicknessInput,
   CreateProductWithVariantInput,
   UpdatePricesInput,
+  UpdateSkuInput,
 } from './catalogue.schema.js';
 
 export function generateSkuCode(
@@ -95,11 +96,12 @@ export class CatalogueService {
   public static async createBrand(input: BrandInput): Promise<IBrand> {
     const code = input.code.trim().toUpperCase();
     const existing = await Brand.findOne({ code });
+    const targetStatus = (input as any).status ? (input as any).status.toUpperCase() : 'ACTIVE';
     if (existing) {
       if (input.name) existing.name = input.name.trim();
       if (input.description !== undefined) existing.description = input.description?.trim();
       if (input.logoUrl !== undefined) existing.logoUrl = input.logoUrl;
-      existing.status = 'ACTIVE';
+      existing.status = targetStatus;
       return existing.save();
     }
     return Brand.create({
@@ -107,7 +109,7 @@ export class CatalogueService {
       name: input.name.trim(),
       description: input.description?.trim(),
       logoUrl: input.logoUrl,
-      status: 'ACTIVE',
+      status: targetStatus,
     });
   }
 
@@ -121,6 +123,7 @@ export class CatalogueService {
     if (input.name) brand.name = input.name.trim();
     if (input.description !== undefined) brand.description = input.description.trim();
     if (input.logoUrl !== undefined) brand.logoUrl = input.logoUrl;
+    if ((input as any).status) brand.status = (input as any).status.toUpperCase();
     return brand.save();
   }
 
@@ -128,6 +131,42 @@ export class CatalogueService {
     const brand = await this.getBrandById(id);
     brand.status = status;
     return brand.save();
+  }
+
+  public static async deleteBrand(id: string): Promise<{ deleted: boolean; message: string }> {
+    const brand = await this.getBrandById(id);
+    const brandId = brand._id;
+
+    // Find all categories for this brand
+    const categories = await Category.find({ brandId });
+    const categoryIds = categories.map((c) => c._id);
+
+    // Find all products for this brand
+    const products = await Product.find({ $or: [{ brandId }, { categoryId: { $in: categoryIds } }] });
+    const productIds = products.map((p) => p._id);
+
+    // Find all variants for these products
+    const variants = await Variant.find({ productId: { $in: productIds } });
+    const variantIds = variants.map((v) => v._id);
+    const skus = variants.map((v) => v.sku);
+
+    // Delete stock balances and price histories for these variants
+    await StockBalance.deleteMany({ $or: [{ variantId: { $in: variantIds } }, { sku: { $in: skus } }] });
+    await PriceHistory.deleteMany({ variantId: { $in: variantIds } });
+
+    // Delete variants
+    await Variant.deleteMany({ _id: { $in: variantIds } });
+
+    // Delete products
+    await Product.deleteMany({ _id: { $in: productIds } });
+
+    // Delete categories
+    await Category.deleteMany({ _id: { $in: categoryIds } });
+
+    // Delete brand
+    await Brand.findByIdAndDelete(brandId);
+
+    return { deleted: true, message: `Brand '${brand.name}' removed successfully.` };
   }
 
   // ==========================================
@@ -152,7 +191,21 @@ export class CatalogueService {
   }
 
   public static async getCategoryById(id: string): Promise<ICategory> {
-    const category = await Category.findById(id).populate('brandId', 'name code');
+    let category: any = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      category = await Category.findById(id).populate('brandId', 'name code');
+    }
+    if (!category) {
+      const cleanCode = id.replace(/^CAT-/i, '').replace(/-\d+$/, '').toUpperCase();
+      category = await Category.findOne({
+        $or: [
+          { code: id.toUpperCase() },
+          { code: cleanCode },
+          { code: { $regex: new RegExp(`^${cleanCode}`, 'i') } },
+          { name: id },
+        ],
+      }).populate('brandId', 'name code');
+    }
     if (!category) throw new AppError(`Category '${id}' not found.`, 404, 'CATEGORY_NOT_FOUND');
     return category;
   }
@@ -195,6 +248,7 @@ export class CatalogueService {
     }
     if (input.name) category.name = input.name.trim();
     if (input.description !== undefined) category.description = input.description.trim();
+    if ((input as any).status) category.status = (input as any).status.toUpperCase();
     return category.save();
   }
 
@@ -202,6 +256,27 @@ export class CatalogueService {
     const category = await this.getCategoryById(id);
     category.status = status;
     return category.save();
+  }
+
+  public static async deleteCategory(id: string): Promise<{ deleted: boolean; message: string }> {
+    const category = await this.getCategoryById(id);
+    const categoryId = category._id;
+
+    // Find products for this category
+    const products = await Product.find({ categoryId });
+    const productIds = products.map((p) => p._id);
+
+    const variants = await Variant.find({ productId: { $in: productIds } });
+    const variantIds = variants.map((v) => v._id);
+    const skus = variants.map((v) => v.sku);
+
+    await StockBalance.deleteMany({ $or: [{ variantId: { $in: variantIds } }, { sku: { $in: skus } }] });
+    await PriceHistory.deleteMany({ variantId: { $in: variantIds } });
+    await Variant.deleteMany({ _id: { $in: variantIds } });
+    await Product.deleteMany({ _id: { $in: productIds } });
+    await Category.findByIdAndDelete(categoryId);
+
+    return { deleted: true, message: `Category '${category.name}' removed successfully.` };
   }
 
   // ==========================================
@@ -238,9 +313,22 @@ export class CatalogueService {
     });
   }
 
-  public static async updateSize(id: string, input: Partial<SizeInput>): Promise<ISize> {
-    const size = await Size.findById(id);
+  public static async getSizeById(id: string): Promise<ISize> {
+    let size: any = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      size = await Size.findById(id);
+    }
+    if (!size) {
+      size = await Size.findOne({
+        $or: [{ displayLabel: id }, { displayLabel: { $regex: new RegExp(`^${id}`, 'i') } }],
+      });
+    }
     if (!size) throw new AppError(`Size '${id}' not found.`, 404, 'SIZE_NOT_FOUND');
+    return size;
+  }
+
+  public static async updateSize(id: string, input: Partial<SizeInput>): Promise<ISize> {
+    const size = await this.getSizeById(id);
     if (input.displayLabel) size.displayLabel = input.displayLabel.trim();
     if (input.length) size.length = input.length;
     if (input.width) size.width = input.width;
@@ -249,10 +337,25 @@ export class CatalogueService {
   }
 
   public static async toggleSizeStatus(id: string, status: 'ACTIVE' | 'INACTIVE'): Promise<ISize> {
-    const size = await Size.findById(id);
-    if (!size) throw new AppError(`Size '${id}' not found.`, 404, 'SIZE_NOT_FOUND');
+    const size = await this.getSizeById(id);
     size.status = status;
     return size.save();
+  }
+
+  public static async deleteSize(id: string): Promise<{ deleted: boolean; message: string }> {
+    const size = await this.getSizeById(id);
+    const sizeId = size._id;
+
+    const variants = await Variant.find({ sizeId });
+    const variantIds = variants.map((v) => v._id);
+    const skus = variants.map((v) => v.sku);
+
+    await StockBalance.deleteMany({ $or: [{ variantId: { $in: variantIds } }, { sku: { $in: skus } }] });
+    await PriceHistory.deleteMany({ variantId: { $in: variantIds } });
+    await Variant.deleteMany({ _id: { $in: variantIds } });
+    await Size.findByIdAndDelete(sizeId);
+
+    return { deleted: true, message: `Size '${size.displayLabel}' removed successfully.` };
   }
 
   // ==========================================
@@ -265,6 +368,20 @@ export class CatalogueService {
       filter.status = query.status;
     }
     return Thickness.find(filter).sort({ value: 1 });
+  }
+
+  public static async getThicknessById(id: string): Promise<IThickness> {
+    let thickness: any = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      thickness = await Thickness.findById(id);
+    }
+    if (!thickness) {
+      thickness = await Thickness.findOne({
+        $or: [{ displayLabel: id }, { value: isNaN(Number(id)) ? -1 : Number(id) }],
+      });
+    }
+    if (!thickness) throw new AppError(`Thickness '${id}' not found.`, 404, 'THICKNESS_NOT_FOUND');
+    return thickness;
   }
 
   public static async createThickness(input: ThicknessInput): Promise<IThickness> {
@@ -281,8 +398,7 @@ export class CatalogueService {
   }
 
   public static async updateThickness(id: string, input: Partial<ThicknessInput>): Promise<IThickness> {
-    const thickness = await Thickness.findById(id);
-    if (!thickness) throw new AppError(`Thickness '${id}' not found.`, 404, 'THICKNESS_NOT_FOUND');
+    const thickness = await this.getThicknessById(id);
     if (input.displayLabel) thickness.displayLabel = input.displayLabel.trim();
     if (input.value) thickness.value = input.value;
     if (input.unit) thickness.unit = input.unit;
@@ -290,10 +406,25 @@ export class CatalogueService {
   }
 
   public static async toggleThicknessStatus(id: string, status: 'ACTIVE' | 'INACTIVE'): Promise<IThickness> {
-    const thickness = await Thickness.findById(id);
-    if (!thickness) throw new AppError(`Thickness '${id}' not found.`, 404, 'THICKNESS_NOT_FOUND');
+    const thickness = await this.getThicknessById(id);
     thickness.status = status;
     return thickness.save();
+  }
+
+  public static async deleteThickness(id: string): Promise<{ deleted: boolean; message: string }> {
+    const thickness = await this.getThicknessById(id);
+    const thicknessId = thickness._id;
+
+    const variants = await Variant.find({ thicknessId });
+    const variantIds = variants.map((v) => v._id);
+    const skus = variants.map((v) => v.sku);
+
+    await StockBalance.deleteMany({ $or: [{ variantId: { $in: variantIds } }, { sku: { $in: skus } }] });
+    await PriceHistory.deleteMany({ variantId: { $in: variantIds } });
+    await Variant.deleteMany({ _id: { $in: variantIds } });
+    await Thickness.findByIdAndDelete(thicknessId);
+
+    return { deleted: true, message: `Thickness '${thickness.displayLabel}' removed successfully.` };
   }
 
   // ==========================================
@@ -907,12 +1038,128 @@ export class CatalogueService {
     return res;
   }
 
-  public static async updateSkuPrices(id: string, input: UpdatePricesInput, accountId?: string) {
+  public static async updateSku(id: string, input: UpdateSkuInput, accountId?: string) {
     const variant = mongoose.Types.ObjectId.isValid(id)
       ? await Variant.findById(id)
       : await Variant.findOne({ sku: id.toUpperCase() });
 
     if (!variant) throw new AppError(`SKU '${id}' not found.`, 404, 'SKU_NOT_FOUND');
+
+    await variant.populate([
+      {
+        path: 'productId',
+        populate: [
+          { path: 'brandId' },
+          { path: 'categoryId' },
+        ],
+      },
+      'sizeId',
+      'thicknessId',
+    ]);
+
+    const resolveEntity = async (model: any, idOrCode?: string) => {
+      if (!idOrCode) return null;
+      if (mongoose.Types.ObjectId.isValid(idOrCode)) {
+        const doc = await model.findById(idOrCode);
+        if (doc) return doc;
+      }
+      return await model.findOne({
+        $or: [
+          { code: idOrCode },
+          { code: idOrCode.toUpperCase() },
+          { name: idOrCode },
+          { displayLabel: idOrCode },
+        ],
+      });
+    };
+
+    const currentProd = variant.productId as any;
+    const currentBrand = currentProd?.brandId;
+    const currentCat = currentProd?.categoryId;
+    const currentSize = variant.sizeId as any;
+    const currentThick = variant.thicknessId as any;
+
+    const brand = input.brandId
+      ? await resolveEntity(Brand, input.brandId)
+      : currentBrand;
+    const category = input.categoryId
+      ? await resolveEntity(Category, input.categoryId)
+      : currentCat;
+    const size = input.sizeId
+      ? await resolveEntity(Size, input.sizeId)
+      : currentSize;
+    const thickness = input.thicknessId
+      ? await resolveEntity(Thickness, input.thicknessId)
+      : currentThick;
+
+    if (!brand || brand.status !== 'ACTIVE') {
+      throw new AppError('Brand not found or inactive.', 400, 'INVALID_BRAND');
+    }
+    if (!category || category.status !== 'ACTIVE') {
+      throw new AppError('Category not found or inactive.', 400, 'INVALID_CATEGORY');
+    }
+    if (category.brandId.toString() !== brand._id.toString()) {
+      throw new AppError(
+        `Category '${category.name}' does not belong to Brand '${brand.name}'.`,
+        400,
+        'CATEGORY_BRAND_MISMATCH'
+      );
+    }
+    if (!size || size.status !== 'ACTIVE') {
+      throw new AppError('Size not found or inactive.', 400, 'INVALID_SIZE');
+    }
+    if (!thickness || thickness.status !== 'ACTIVE') {
+      throw new AppError('Thickness not found or inactive.', 400, 'INVALID_THICKNESS');
+    }
+
+    // Find or create base product
+    const productName = `${brand.name} - ${category.name}`;
+    let product = await Product.findOne({
+      brandId: brand._id,
+      categoryId: category._id,
+    });
+    if (!product) {
+      product = await Product.create({
+        brandId: brand._id,
+        categoryId: category._id,
+        name: productName,
+        status: 'ACTIVE',
+      });
+    }
+
+    variant.productId = product._id;
+    variant.sizeId = size._id;
+    variant.thicknessId = thickness._id;
+
+    // Check SKU
+    const newSku = generateSkuCode(brand.code, category.code, size.displayLabel, thickness.value);
+    const oldSku = variant.sku;
+
+    if (newSku !== oldSku) {
+      const duplicate = await Variant.findOne({ sku: newSku, _id: { $ne: variant._id } });
+      if (duplicate) {
+        throw new AppError(
+          `A mattress variant with SKU '${newSku}' already exists.`,
+          409,
+          'DUPLICATE_SKU'
+        );
+      }
+      variant.sku = newSku;
+
+      // Update associated stock records
+      await StockBalance.updateMany(
+        { $or: [{ variantId: variant._id }, { sku: oldSku }] },
+        { $set: { sku: newSku, variantId: variant._id } }
+      );
+      await StockMovement.updateMany(
+        { sku: oldSku },
+        { $set: { sku: newSku } }
+      );
+    }
+
+    if (input.status) {
+      variant.status = input.status.toUpperCase() as 'ACTIVE' | 'INACTIVE';
+    }
 
     const accountObjectId = accountId && mongoose.Types.ObjectId.isValid(accountId)
       ? new mongoose.Types.ObjectId(accountId)
@@ -1122,6 +1369,10 @@ export class CatalogueService {
       minimumStock: finalStockDoc?.reorderLevel ?? 5,
       changesRecorded: auditHistoryRecords.length,
     };
+  }
+
+  public static async updateSkuPrices(id: string, input: UpdatePricesInput, accountId?: string) {
+    return this.updateSku(id, input, accountId);
   }
 
   public static async getSkuPriceHistory(id: string) {

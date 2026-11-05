@@ -35,7 +35,7 @@ function ProductsPageContent() {
   const { data: demoProducts = [] } = useGetProductsQuery();
   const { data: demoVariants = [] } = useGetVariantsQuery();
   const { data: backendProductsData } = useGetBackendProductsQuery();
-  const { data: backendSkusData } = useGetBackendSkusQuery();
+  const { data: backendSkusData } = useGetBackendSkusQuery({ status: 'ALL' });
 
   const totalProducts = backendProductsData?.pagination?.total ?? demoProducts.length;
   const totalVariants = backendSkusData?.pagination?.total ?? demoVariants.length;

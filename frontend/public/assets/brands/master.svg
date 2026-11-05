@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 50">
+  <rect x="5" y="10" width="85" height="30" rx="4" fill="none" stroke="#1e293b" stroke-width="2.5"/>
+  <text x="47.5" y="31" fill="#1e293b" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="900" letter-spacing="2" text-anchor="middle">MASTER</text>
+  <text x="100" y="31" fill="#475569" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="700">Foam</text>
+</svg>

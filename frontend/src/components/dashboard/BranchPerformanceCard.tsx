@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Building2 } from 'lucide-react';
 import { useGetBranchesQuery } from '@/store/services/catalogueApi';
 
-interface BranchPerformanceRow {
+export interface BranchPerformanceRow {
   id: string;
   name: string;
   revenue: string;
@@ -13,10 +13,14 @@ interface BranchPerformanceRow {
   growth: string;
 }
 
-export default function BranchPerformanceCard() {
-  const { data: branches = [] } = useGetBranchesQuery();
+interface BranchPerformanceCardProps {
+  data?: BranchPerformanceRow[];
+}
 
-  const performanceRows: BranchPerformanceRow[] = branches.map((b) => ({
+export default function BranchPerformanceCard({ data }: BranchPerformanceCardProps) {
+  const { data: branches = [] } = useGetBranchesQuery(undefined, { skip: !!data });
+
+  const performanceRows: BranchPerformanceRow[] = data || branches.map((b) => ({
     id: b.id,
     name: b.name,
     revenue: 'Rs. 0',

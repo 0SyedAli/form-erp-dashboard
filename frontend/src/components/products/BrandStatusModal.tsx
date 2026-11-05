@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { Brand } from '@/types';
-import { useToggleBrandStatusMutation } from '@/store/services/apiSlice';
+import { useToggleBrandStatusMutation as useToggleBackendBrandStatusMutation } from '@/store/services/catalogueApi';
+import { useToggleBrandStatusMutation as useToggleDemoBrandStatusMutation } from '@/store/services/apiSlice';
 import { AlertTriangle, Power, CheckCircle2, X } from 'lucide-react';
 
 interface BrandStatusModalProps {
@@ -18,20 +19,30 @@ export default function BrandStatusModal({
   onClose,
   onSuccess,
 }: BrandStatusModalProps) {
-  const [toggleStatus, { isLoading }] = useToggleBrandStatusMutation();
+  const [toggleBackendStatus, { isLoading }] = useToggleBackendBrandStatusMutation();
+  const [toggleDemoStatus] = useToggleDemoBrandStatusMutation();
 
   if (!isOpen || !brand) return null;
 
   const willDeactivate = brand.status === 'active' || brand.status === 'ACTIVE';
 
   const handleConfirm = async () => {
+    const nextStatus: 'ACTIVE' | 'INACTIVE' = willDeactivate ? 'INACTIVE' : 'ACTIVE';
     try {
-      const result = await toggleStatus(brand.id).unwrap();
-
-      onSuccess(result);
+      const res = await toggleBackendStatus({ id: brand.id, status: nextStatus }).unwrap();
+      try {
+        await toggleDemoStatus(brand.id);
+      } catch {}
+      onSuccess(res as unknown as Brand);
       onClose();
-    } catch (err: unknown) {
-      console.error('Failed to toggle brand status', err);
+    } catch {
+      try {
+        const demoRes = await toggleDemoStatus(brand.id).unwrap();
+        onSuccess(demoRes);
+        onClose();
+      } catch (err: unknown) {
+        console.error('Failed to toggle brand status', err);
+      }
     }
   };
 

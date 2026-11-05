@@ -123,6 +123,10 @@ export interface CreateProductRequest {
 
 export interface UpdatePricesRequest {
   id: string;
+  brandId?: string;
+  categoryId?: string;
+  sizeId?: string;
+  thicknessId?: string;
   listPrice: number;
   purchasePercent?: number;
   purchasePrice?: number;
@@ -134,8 +138,11 @@ export interface UpdatePricesRequest {
   distributorPrice?: number;
   stock?: number;
   minimumStock?: number;
+  status?: 'ACTIVE' | 'INACTIVE';
   reason?: string;
 }
+
+export type UpdateSkuRequest = UpdatePricesRequest;
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
@@ -198,7 +205,7 @@ export const catalogueApi = createApi({
 
     createBrand: builder.mutation<
       Brand,
-      { name: string; code: string; description?: string; logoUrl?: string; logo?: string }
+      { name: string; code: string; description?: string; logoUrl?: string; logo?: string; status?: string }
     >({
       query: (body) => ({
         url: '/brands',
@@ -208,6 +215,7 @@ export const catalogueApi = createApi({
           code: body.code,
           description: body.description,
           logoUrl: body.logoUrl || body.logo,
+          ...(body.status && { status: body.status }),
         },
       }),
       invalidatesTags: ['Brand'],
@@ -237,7 +245,15 @@ export const catalogueApi = createApi({
         method: 'PATCH',
         body: { status },
       }),
-      invalidatesTags: ['Brand'],
+      invalidatesTags: ['Brand', 'Category', 'Product', 'Variant'],
+    }),
+
+    deleteBrand: builder.mutation<ApiResponse<{ deleted: boolean; message: string }>, string>({
+      query: (id) => ({
+        url: `/brands/${id}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Brand', 'Category', 'Product', 'Variant'],
     }),
 
     getCategories: builder.query<Category[], { brandId?: string } | void>({
@@ -270,6 +286,23 @@ export const catalogueApi = createApi({
       invalidatesTags: ['Category'],
     }),
 
+    toggleCategoryStatus: builder.mutation<Category, { id: string; status: 'ACTIVE' | 'INACTIVE' }>({
+      query: ({ id, status }) => ({
+        url: `/categories/${id}/status`,
+        method: 'PATCH',
+        body: { status },
+      }),
+      invalidatesTags: ['Category', 'Product', 'Variant'],
+    }),
+
+    deleteCategory: builder.mutation<ApiResponse<{ deleted: boolean; message: string }>, string>({
+      query: (id) => ({
+        url: `/categories/${id}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Category', 'Product', 'Variant'],
+    }),
+
     getSizes: builder.query<Size[], void>({
       query: () => '/sizes',
       transformResponse: (response: ApiResponse<Size[]>) =>
@@ -292,6 +325,23 @@ export const catalogueApi = createApi({
       invalidatesTags: ['Size'],
     }),
 
+    toggleSizeStatus: builder.mutation<Size, { id: string; status: 'ACTIVE' | 'INACTIVE' }>({
+      query: ({ id, status }) => ({
+        url: `/sizes/${id}/status`,
+        method: 'PATCH',
+        body: { status },
+      }),
+      invalidatesTags: ['Size', 'Variant'],
+    }),
+
+    deleteSize: builder.mutation<ApiResponse<{ deleted: boolean; message: string }>, string>({
+      query: (id) => ({
+        url: `/sizes/${id}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Size', 'Variant'],
+    }),
+
     getThicknesses: builder.query<Thickness[], void>({
       query: () => '/thicknesses',
       transformResponse: (response: ApiResponse<Thickness[]>) =>
@@ -312,6 +362,23 @@ export const catalogueApi = createApi({
         body,
       }),
       invalidatesTags: ['Thickness'],
+    }),
+
+    toggleThicknessStatus: builder.mutation<Thickness, { id: string; status: 'ACTIVE' | 'INACTIVE' }>({
+      query: ({ id, status }) => ({
+        url: `/thicknesses/${id}/status`,
+        method: 'PATCH',
+        body: { status },
+      }),
+      invalidatesTags: ['Thickness', 'Variant'],
+    }),
+
+    deleteThickness: builder.mutation<ApiResponse<{ deleted: boolean; message: string }>, string>({
+      query: (id) => ({
+        url: `/thicknesses/${id}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Thickness', 'Variant'],
     }),
 
     getProducts: builder.query<
@@ -377,12 +444,13 @@ export const catalogueApi = createApi({
 
     getSkus: builder.query<
       PaginatedResponse<ProductVariant>,
-      { productId?: string; search?: string; page?: number; limit?: number } | void
+      { productId?: string; search?: string; status?: string; page?: number; limit?: number } | void
     >({
       query: (params) => {
         const queryParams = new URLSearchParams();
         if (params?.productId) queryParams.append('productId', params.productId);
         if (params?.search) queryParams.append('search', params.search);
+        if (params?.status) queryParams.append('status', params.status);
         if (params?.page) queryParams.append('page', params.page.toString());
         if (params?.limit) queryParams.append('limit', params.limit.toString());
         const queryStr = queryParams.toString();
@@ -439,7 +507,31 @@ export const catalogueApi = createApi({
         method: 'PATCH',
         body,
       }),
-      invalidatesTags: ['Variant', 'PriceHistory'],
+      invalidatesTags: ['Variant', 'Product', 'PriceHistory'],
+    }),
+
+    updateSku: builder.mutation<
+      ApiResponse<{ variant: ProductVariant; priceHistory: unknown }>,
+      UpdateSkuRequest
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/skus/${id}`,
+        method: 'PATCH',
+        body,
+      }),
+      invalidatesTags: ['Variant', 'Product', 'PriceHistory'],
+    }),
+
+    toggleSkuStatus: builder.mutation<
+      ApiResponse<ProductVariant>,
+      { id: string; status: 'ACTIVE' | 'INACTIVE' }
+    >({
+      query: ({ id, status }) => ({
+        url: `/skus/${id}/status`,
+        method: 'PATCH',
+        body: { status },
+      }),
+      invalidatesTags: ['Variant', 'Product'],
     }),
 
     getSkuById: builder.query<
@@ -464,17 +556,26 @@ export const {
   useCreateBrandMutation,
   useUpdateBrandMutation,
   useToggleBrandStatusMutation,
+  useDeleteBrandMutation,
   useGetCategoriesQuery,
   useCreateCategoryMutation,
+  useToggleCategoryStatusMutation,
+  useDeleteCategoryMutation,
   useGetSizesQuery,
   useCreateSizeMutation,
+  useToggleSizeStatusMutation,
+  useDeleteSizeMutation,
   useGetThicknessesQuery,
   useCreateThicknessMutation,
+  useToggleThicknessStatusMutation,
+  useDeleteThicknessMutation,
   useGetProductsQuery,
   useCreateProductWithVariantMutation,
   useGetSkusQuery,
   useGetSkuByIdQuery,
   useUpdateSkuPricesMutation,
+  useUpdateSkuMutation,
+  useToggleSkuStatusMutation,
   useGetSkuPriceHistoryQuery,
 } = catalogueApi;
 

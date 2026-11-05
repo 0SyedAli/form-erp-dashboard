@@ -55,6 +55,16 @@ export class CatalogueController {
     }
   }
 
+  public static async deleteBrand(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const data = await CatalogueService.deleteBrand(id);
+      sendSuccess(res, data, data.message);
+    } catch (error) {
+      sendError(res, (error as any).message || 'Failed to delete brand.', (error as any).statusCode || 500);
+    }
+  }
+
   // CATEGORIES
   public static async getCategories(req: Request, res: Response): Promise<void> {
     try {
@@ -108,6 +118,16 @@ export class CatalogueController {
     }
   }
 
+  public static async deleteCategory(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const data = await CatalogueService.deleteCategory(id);
+      sendSuccess(res, data, data.message);
+    } catch (error) {
+      sendError(res, (error as any).message || 'Failed to delete category.', (error as any).statusCode || 500);
+    }
+  }
+
   // SIZES
   public static async getSizes(req: Request, res: Response): Promise<void> {
     try {
@@ -149,6 +169,16 @@ export class CatalogueController {
     }
   }
 
+  public static async deleteSize(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const data = await CatalogueService.deleteSize(id);
+      sendSuccess(res, data, data.message);
+    } catch (error) {
+      sendError(res, (error as any).message || 'Failed to delete size.', (error as any).statusCode || 500);
+    }
+  }
+
   // THICKNESSES
   public static async getThicknesses(req: Request, res: Response): Promise<void> {
     try {
@@ -187,6 +217,16 @@ export class CatalogueController {
       sendSuccess(res, data, `Thickness marked as ${req.body.status}.`);
     } catch (error) {
       sendError(res, (error as any).message || 'Failed to toggle thickness status.', (error as any).statusCode || 500);
+    }
+  }
+
+  public static async deleteThickness(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const data = await CatalogueService.deleteThickness(id);
+      sendSuccess(res, data, data.message);
+    } catch (error) {
+      sendError(res, (error as any).message || 'Failed to delete thickness.', (error as any).statusCode || 500);
     }
   }
 
@@ -237,13 +277,15 @@ export class CatalogueController {
   public static async getSkus(req: Request, res: Response): Promise<void> {
     try {
       const isSuperAdmin = req.account?.role === 'SUPER_ADMIN';
+      const canManageProducts =
+        isSuperAdmin || Boolean((req.account?.permissions as any)?.addEditProducts);
       const data = await CatalogueService.getSkus(
         {
           search: req.query.search as string,
           productId: req.query.productId as string,
-          status: req.query.status as string,
+          status: (req.query.status as string) || (canManageProducts ? 'ALL' : 'ACTIVE'),
         },
-        isSuperAdmin
+        canManageProducts
       );
       sendSuccess(res, data);
     } catch (error) {
@@ -266,12 +308,23 @@ export class CatalogueController {
     }
   }
 
+  public static async updateSku(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const accountId = req.account?._id.toString();
+      const data = await CatalogueService.updateSku(id, req.body, accountId);
+      sendSuccess(res, data, 'SKU updated successfully.');
+    } catch (error) {
+      sendError(res, (error as any).message || 'Failed to update SKU.', (error as any).statusCode || 500);
+    }
+  }
+
   public static async updateSkuPrices(req: Request, res: Response): Promise<void> {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const accountId = req.account?._id.toString();
-      const data = await CatalogueService.updateSkuPrices(id, req.body, accountId);
-      sendSuccess(res, data, 'SKU prices updated successfully.');
+      const data = await CatalogueService.updateSku(id, req.body, accountId);
+      sendSuccess(res, data, 'SKU updated successfully.');
     } catch (error) {
       sendError(res, (error as any).message || 'Failed to update SKU prices.', (error as any).statusCode || 500);
     }

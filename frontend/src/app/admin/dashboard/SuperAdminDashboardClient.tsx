@@ -40,8 +40,10 @@ function SuperAdminDashboardContent() {
   const { data: branches = [] } = useGetBranchesQuery(undefined, { skip: !mounted });
   const { data: kpis } = useGetDashboardKPIsQuery(filters, { skip: !mounted || isBackendMode });
   const { data: backendDashboard } = useGetAdminDashboardQuery(
-    { preset: 'thisMonth' },
-    { skip: !mounted || !isBackendMode }
+    filters.branchId && filters.branchId !== 'all'
+      ? { preset: 'thisMonth', branchId: filters.branchId }
+      : { preset: 'thisMonth' },
+    { skip: !mounted || !isBackendMode, refetchOnMountOrArgChange: true }
   );
 
   const displayNetSales = isBackendMode
@@ -75,6 +77,45 @@ function SuperAdminDashboardContent() {
   const displayOverdue = isBackendMode
     ? backendDashboard?.collections?.overdueCustomerReceivables ?? 0
     : kpis?.overdueAmount ?? 0;
+
+  // Chart & Table Data Mappings from Live Backend
+  const revenueTrendData = React.useMemo(() => {
+    return (backendDashboard?.salesTrends || []).map((t) => ({
+      date: t.date,
+      retail: t.retail ?? (t.netSales || 0),
+      wholesale: t.wholesale ?? 0,
+    }));
+  }, [backendDashboard?.salesTrends]);
+
+  const branchDonutData = React.useMemo(() => {
+    const donutColors = ['#DC2626', '#2563EB', '#059669', '#7C3AED', '#D97706'];
+    const totalNet = backendDashboard?.branches?.reduce((sum, b) => sum + (b.netSales || 0), 0) || 1;
+    return (backendDashboard?.branches || []).map((b, idx) => ({
+      name: b.name,
+      value: b.netSales || 0,
+      percent: Math.round(((b.netSales || 0) / totalNet) * 100),
+      color: donutColors[idx % donutColors.length],
+    }));
+  }, [backendDashboard?.branches]);
+
+  const topProductsData = React.useMemo(() => {
+    return (backendDashboard?.topProducts || []).map((p, idx) => ({
+      rank: idx + 1,
+      name: p.productName ? `${p.productName}${p.sizeLabel ? ` (${p.sizeLabel})` : ''}` : p.sku,
+      totalSold: p.unitsSold,
+      revenue: `Rs. ${(p.revenue || 0).toLocaleString()}`,
+    }));
+  }, [backendDashboard?.topProducts]);
+
+  const branchPerformanceData = React.useMemo(() => {
+    return (backendDashboard?.branches || []).map((b) => ({
+      id: b.branchId,
+      name: b.name,
+      revenue: `Rs. ${(b.netSales || 0).toLocaleString()}`,
+      orders: b.invoiceCount || 0,
+      growth: b.invoiceCount > 0 ? '+100%' : '0%',
+    }));
+  }, [backendDashboard?.branches]);
 
   return (
     <AppLayout>
@@ -207,17 +248,17 @@ function SuperAdminDashboardContent() {
       {/* Middle Row: Revenue Trend & Branchwise Revenue */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
         <div className="lg:col-span-7 xl:col-span-8">
-          <RevenueTrendChart />
+          <RevenueTrendChart data={revenueTrendData} />
         </div>
         <div className="lg:col-span-5 xl:col-span-4">
-          <BranchwiseRevenueDonut />
+          <BranchwiseRevenueDonut data={branchDonutData} />
         </div>
       </div>
 
       {/* Bottom Row: Top Selling Products & Branch Performance */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <TopSellingProductsCard />
-        <BranchPerformanceCard />
+        <TopSellingProductsCard products={topProductsData} />
+        <BranchPerformanceCard data={branchPerformanceData} />
       </div>
     </AppLayout>
   );

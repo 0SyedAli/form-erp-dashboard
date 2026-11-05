@@ -2,14 +2,24 @@
 
 import React, { useState, useMemo } from 'react';
 import { MattressSize } from '@/types';
-import { useGetSizesQuery, useGetVariantsQuery } from '@/store/services/apiSlice';
+import {
+  useGetSizesQuery as useGetDemoSizesQuery,
+  useGetVariantsQuery as useGetDemoVariantsQuery,
+} from '@/store/services/apiSlice';
+import {
+  useGetSizesQuery as useGetBackendSizesQuery,
+  useGetSkusQuery as useGetBackendSkusQuery,
+  useDeleteSizeMutation,
+} from '@/store/services/catalogueApi';
 import SizeModal from './SizeModal';
 import SizeStatusModal from './SizeStatusModal';
+import DeleteConfirmModal from './DeleteConfirmModal';
 import {
   Search,
   Plus,
   Edit2,
   Power,
+  Trash2,
   RotateCcw,
   Maximize2,
   Boxes,
@@ -21,14 +31,50 @@ interface SizesTabProps {
 }
 
 export default function SizesTab({ canManage, onToast }: SizesTabProps) {
-  const { data: sizes = [], isLoading } = useGetSizesQuery();
-  const { data: variants = [] } = useGetVariantsQuery();
+  const isBackendMode = process.env.NEXT_PUBLIC_USE_BACKEND !== 'false';
+  const { data: demoSizes = [], isLoading: isDemoLoading } = useGetDemoSizesQuery(undefined, { skip: isBackendMode });
+  const { data: backendSizes = [], isLoading: isBackendLoading } = useGetBackendSizesQuery(undefined, { skip: !isBackendMode });
+  const { data: demoVariants = [] } = useGetDemoVariantsQuery(undefined, { skip: isBackendMode });
+  const { data: backendSkusResponse } = useGetBackendSkusQuery(undefined, { skip: !isBackendMode });
+
+  const rawSizes = isBackendMode
+    ? (Array.isArray(backendSizes) ? backendSizes : (backendSizes as any)?.data || [])
+    : demoSizes;
+  const sizes: MattressSize[] = (Array.isArray(rawSizes) ? rawSizes : []).map((s: any) => ({
+    ...s,
+    id: String(s.id || s._id || ''),
+    status: s.status || 'ACTIVE',
+  })) as MattressSize[];
+
+  const rawVariants = isBackendMode
+    ? (Array.isArray(backendSkusResponse?.data) ? backendSkusResponse.data : [])
+    : demoVariants;
+  const variants = (Array.isArray(rawVariants) ? rawVariants : []).map((v: any) => ({
+    ...v,
+    sizeId: String(v.sizeId || v.size?._id || v.size?.id || ''),
+  }));
+
+  const isLoading = isBackendMode ? isBackendLoading : isDemoLoading;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedSize, setSelectedSize] = useState<MattressSize | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [statusModalSize, setStatusModalSize] = useState<MattressSize | null>(null);
+  const [sizeToDelete, setSizeToDelete] = useState<MattressSize | null>(null);
+
+  const [deleteSizeMutation, { isLoading: isDeleting }] = useDeleteSizeMutation();
+
+  const handleDeleteSize = async () => {
+    if (!sizeToDelete) return;
+    try {
+      await deleteSizeMutation(sizeToDelete.id).unwrap();
+      onToast(`Size "${sizeToDelete.displayLabel}" deleted successfully`, 'success');
+      setSizeToDelete(null);
+    } catch (err: any) {
+      onToast(err?.data?.message || err?.message || 'Failed to delete size', 'error');
+    }
+  };
 
   const filteredSizes = useMemo(() => {
     return sizes.filter((size) => {
@@ -216,6 +262,13 @@ export default function SizesTab({ canManage, onToast }: SizesTabProps) {
                               >
                                 <Power className="w-3.5 h-3.5" />
                               </button>
+                              <button
+                                onClick={() => setSizeToDelete(size)}
+                                className="p-1.5 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                                title="Delete Size"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </>
                           )}
                         </div>
@@ -262,9 +315,20 @@ export default function SizesTab({ canManage, onToast }: SizesTabProps) {
         onSuccess={(updated) => {
           onToast(
             `Size "${updated.displayLabel}" is now ${updated.status}`,
-            updated.status === 'active' ? 'success' : 'info'
+            updated.status.toLowerCase() === 'active' ? 'success' : 'info'
           );
         }}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={!!sizeToDelete}
+        title="Delete Size"
+        entityName={sizeToDelete ? sizeToDelete.displayLabel : ''}
+        warningText="Deleting this size will remove associated mattress variants and configurations from the catalogue."
+        isLoading={isDeleting}
+        onConfirm={handleDeleteSize}
+        onClose={() => setSizeToDelete(null)}
       />
     </div>
   );

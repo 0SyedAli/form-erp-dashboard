@@ -19,6 +19,7 @@ import {
   User,
   Receipt,
 } from 'lucide-react';
+import AppLayout from '@/components/layout/AppLayout';
 
 interface LedgerPageProps {
   params: Promise<{ id: string }>;
@@ -91,50 +92,51 @@ function LedgerContent({ params }: LedgerPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      {/* Top Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-2xs">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/customers"
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 px-3 py-2 rounded-xl transition-colors cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back to Customers</span>
-          </Link>
-          <div>
-            <h1 className="text-xl font-extrabold text-slate-800 tracking-tight font-sans flex items-center gap-2">
-              <FileSpreadsheet className="w-5 h-5 text-blue-600" />
-              <span>Customer Account Ledger</span>
-            </h1>
-            <p className="text-xs text-slate-500 font-sans">
-              Complete chronological statement of credit sales, recoveries, and running balance
-            </p>
+    <AppLayout>
+      <div className="space-y-6 font-sans">
+        {/* Top Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/customers"
+              className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 bg-white border border-slate-200 hover:bg-blue-50 px-3 py-2 rounded-xl transition-colors shadow-2xs cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to Customers</span>
+            </Link>
+            <div>
+              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight font-sans flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+                <span>Customer Account Ledger</span>
+              </h1>
+              <p className="text-xs text-slate-500 font-sans">
+                Complete chronological statement of credit sales, recoveries, and running balance
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <Link
+              href={`/payments/collections?customerId=${customerId}`}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Receipt className="w-4 h-4" />
+              <span>Record Payment Recovery</span>
+            </Link>
+
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Printer className="w-4 h-4 text-slate-600" />
+              <span>Print Statement</span>
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <Link
-            href={`/payments/collections?customerId=${customerId}`}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <Receipt className="w-4 h-4" />
-            <span>Record Payment Recovery</span>
-          </Link>
-
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <Printer className="w-4 h-4 text-slate-600" />
-            <span>Print Statement</span>
-          </button>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 p-6 space-y-6 max-w-6xl mx-auto w-full">
+        {/* Main Content Area */}
+        <div className="space-y-6">
         {/* Customer Profile & Financial Summary Card */}
         {isCustLoading ? (
           <div className="p-8 text-center text-xs text-slate-400 bg-white rounded-2xl border border-slate-200">
@@ -344,8 +346,9 @@ function LedgerContent({ params }: LedgerPageProps) {
             </table>
           </div>
         </div>
-      </main>
+      </div>
     </div>
+  </AppLayout>
   );
 }
 
