@@ -38,7 +38,14 @@ export default function BrandSelector({
             >
               {/* Brand Logo / Artwork preview */}
               <div className="h-7 flex items-center justify-center mb-1">
-                {brand.code === 'DURA' ? (
+                {brand.logoUrl || brand.logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={brand.logoUrl || brand.logo}
+                    alt={brand.name}
+                    className="h-6 w-auto max-w-[80px] object-contain"
+                  />
+                ) : brand.code === 'DURA' ? (
                   <div className="flex items-center gap-1 font-black text-blue-900 tracking-tight text-sm">
                     <span className="bg-blue-600 text-white rounded-sm px-1 py-0.2 text-[10px] font-bold">
                       DF

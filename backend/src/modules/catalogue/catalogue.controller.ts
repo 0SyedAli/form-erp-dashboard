@@ -255,7 +255,11 @@ export class CatalogueController {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const isSuperAdmin = req.account?.role === 'SUPER_ADMIN';
-      const data = await CatalogueService.getSkuById(id, isSuperAdmin);
+      const canViewCost =
+        isSuperAdmin ||
+        Boolean((req.account?.permissions as any)?.viewCostPrice) ||
+        Boolean((req.account?.permissions as any)?.addEditProducts);
+      const data = await CatalogueService.getSkuById(id, canViewCost);
       sendSuccess(res, data);
     } catch (error) {
       sendError(res, (error as any).message || 'SKU not found.', (error as any).statusCode || 404);

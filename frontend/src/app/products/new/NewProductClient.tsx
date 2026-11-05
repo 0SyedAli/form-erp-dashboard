@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useRef, useCallback, Suspense } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
@@ -16,6 +16,8 @@ import {
   useGetSizesQuery as useGetBackendSizesQuery,
   useGetThicknessesQuery as useGetBackendThicknessesQuery,
   useCreateProductWithVariantMutation,
+  useGetSkuByIdQuery,
+  useUpdateSkuPricesMutation,
 } from '@/store/services/catalogueApi';
 import {
   productsRepository,
@@ -87,25 +89,46 @@ function NewProductContent() {
     return demoThicknesses;
   }, [backendThicknesses, demoThicknesses]);
 
-  const [createProductWithVariant] = useCreateProductWithVariantMutation();
+  const isEditMode = Boolean(editSku);
+  const { data: skuResponse, isLoading: isLoadingSku } = useGetSkuByIdQuery(editSku || '', {
+    skip: !editSku,
+  });
+  const backendSku = skuResponse?.data;
 
-  // If in edit mode, lookup existing entity
+  const [createProductWithVariant] = useCreateProductWithVariantMutation();
+  const [updateSkuPrices] = useUpdateSkuPricesMutation();
+
+  // If in edit mode, lookup existing entity (Production backend primary, demo fallback)
   const editingVariant = useMemo(() => {
     if (!editSku) return null;
+    if (backendSku) return backendSku;
     return variantsRepository.getBySku(editSku) || null;
-  }, [editSku]);
+  }, [editSku, backendSku]);
 
   const editingProduct = useMemo(() => {
     if (!editingVariant) return null;
-    return productsRepository.getById(editingVariant.productId) || null;
+    if ((editingVariant as any).product) return (editingVariant as any).product;
+    return productsRepository.getById((editingVariant as any).productId) || null;
   }, [editingVariant]);
 
   // Selected Step Overrides
-  const [selectedBrandIdOverride, setSelectedBrandId] = useState<string>(() => editingProduct?.brandId || '');
-  const [selectedCategoryIdOverride, setSelectedCategoryId] = useState<string>(() => editingProduct?.categoryId || '');
-  const [selectedSizeIdOverride, setSelectedSizeId] = useState<string>(() => editingVariant?.sizeId || '');
-  const [selectedThicknessIdOverride, setSelectedThicknessId] = useState<string>(() => editingVariant?.thicknessId || '');
+  const [selectedBrandIdOverride, setSelectedBrandId] = useState<string>('');
+  const [selectedCategoryIdOverride, setSelectedCategoryId] = useState<string>('');
+  const [selectedSizeIdOverride, setSelectedSizeId] = useState<string>('');
+  const [selectedThicknessIdOverride, setSelectedThicknessId] = useState<string>('');
 
+  // Pricing & Stock State with Bidirectional Calculations
+  const [listPrice, setListPrice] = useState<number>(18000);
+  const [purchasePct, setPurchasePct] = useState<number>(15);
+  const [purchasePrice, setPurchasePrice] = useState<number>(15300);
+  const [retailPct, setRetailPct] = useState<number>(20);
+  const [retailPrice, setRetailPrice] = useState<number>(18360);
+  const [wholesalePct, setWholesalePct] = useState<number>(10);
+  const [wholesalePrice, setWholesalePrice] = useState<number>(16200);
+  const [distributorPct, setDistributorPct] = useState<number>(15);
+  const [distributorPrice, setDistributorPrice] = useState<number>(15300);
+  const [initialStock, setInitialStock] = useState<number>(0);
+  const [minStockQty, setMinStockQty] = useState<number>(5);
   // Derived Brand
   const selectedBrandId = useMemo(() => {
     if (selectedBrandIdOverride) return selectedBrandIdOverride;
@@ -165,33 +188,56 @@ function NewProductContent() {
     return `${brandName} - ${catName}`;
   }, [selectedBrand, selectedCategory]);
 
-  // Pricing & Stock State with Bidirectional Calculations
-  const [listPrice, setListPrice] = useState<number>(() => {
-    if (editingVariant) return Math.round(editingVariant.retailPrice / 1.02);
-    return 18000;
-  });
-  const [purchasePct, setPurchasePct] = useState<number>(15);
-  const [purchasePrice, setPurchasePrice] = useState<number>(() => {
-    if (editingVariant) return Math.round(editingVariant.wholesalePrice * 0.95);
-    return 15300;
-  });
-  const [retailPct, setRetailPct] = useState<number>(20);
-  const [retailPrice, setRetailPrice] = useState<number>(() => {
-    if (editingVariant) return editingVariant.retailPrice;
-    return 18360;
-  });
-  const [wholesalePct, setWholesalePct] = useState<number>(10);
-  const [wholesalePrice, setWholesalePrice] = useState<number>(() => {
-    if (editingVariant) return editingVariant.wholesalePrice;
-    return 16200;
-  });
-  const [distributorPct, setDistributorPct] = useState<number>(15);
-  const [distributorPrice, setDistributorPrice] = useState<number>(() => {
-    if (editingVariant) return Math.round(editingVariant.wholesalePrice * 0.95);
-    return 15300;
-  });
-  const [initialStock, setInitialStock] = useState<number>(0);
-  const [minStockQty, setMinStockQty] = useState<number>(5);
+  // Sync state whenever backendSku or editingVariant is retrieved
+  useEffect(() => {
+    if (backendSku) {
+      const bId =
+        (backendSku.product as any)?.brandId?._id ||
+        backendSku.product?.brandId ||
+        (backendSku.product as any)?.brand?._id ||
+        (backendSku.product as any)?.brand?.id;
+      const cId =
+        (backendSku.product as any)?.categoryId?._id ||
+        backendSku.product?.categoryId ||
+        (backendSku.product as any)?.category?._id ||
+        (backendSku.product as any)?.category?.id;
+      const sId =
+        (backendSku.size as any)?._id ||
+        (backendSku.size as any)?.id ||
+        backendSku.sizeId;
+      const tId =
+        (backendSku.thickness as any)?._id ||
+        (backendSku.thickness as any)?.id ||
+        backendSku.thicknessId;
+
+      if (bId) setSelectedBrandId(String(bId));
+      if (cId) setSelectedCategoryId(String(cId));
+      if (sId) setSelectedSizeId(String(sId));
+      if (tId) setSelectedThicknessId(String(tId));
+
+      if (backendSku.listPrice !== undefined) setListPrice(backendSku.listPrice);
+      if (backendSku.purchasePrice !== undefined) setPurchasePrice(backendSku.purchasePrice);
+      if (backendSku.purchaseDiscountPercent !== undefined) setPurchasePct(backendSku.purchaseDiscountPercent);
+      if (backendSku.retailPrice !== undefined) setRetailPrice(backendSku.retailPrice);
+      if (backendSku.retailMarkupPercent !== undefined) setRetailPct(backendSku.retailMarkupPercent);
+      if (backendSku.wholesalePrice !== undefined) setWholesalePrice(backendSku.wholesalePrice);
+      if (backendSku.wholesaleDiscountPercent !== undefined) setWholesalePct(backendSku.wholesaleDiscountPercent);
+      if (backendSku.distributorPrice !== undefined) setDistributorPrice(backendSku.distributorPrice);
+      if (backendSku.distributorDiscountPercent !== undefined) setDistributorPct(backendSku.distributorDiscountPercent);
+      if (backendSku.stock !== undefined) setInitialStock(backendSku.stock);
+      if (backendSku.minimumStock !== undefined) setMinStockQty(backendSku.minimumStock);
+    } else if (editingVariant && !backendSku) {
+      const demoProd = productsRepository.getById((editingVariant as any).productId);
+      if (demoProd) {
+        setSelectedBrandId(demoProd.brandId);
+        setSelectedCategoryId(demoProd.categoryId);
+      }
+      if (editingVariant.sizeId) setSelectedSizeId(editingVariant.sizeId);
+      if (editingVariant.thicknessId) setSelectedThicknessId(editingVariant.thicknessId);
+      if (editingVariant.retailPrice) setRetailPrice(editingVariant.retailPrice);
+      if (editingVariant.wholesalePrice) setWholesalePrice(editingVariant.wholesalePrice);
+    }
+  }, [backendSku, editingVariant]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -280,6 +326,106 @@ function NewProductContent() {
   // Form Submission
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 1. EDIT MODE WORKFLOW
+    if (isEditMode) {
+      setIsSubmitting(true);
+      try {
+        let isBackendSaved = false;
+        try {
+          const skuIdToUpdate = backendSku?.id || (backendSku as any)?._id || editSku;
+          const backendRes = await updateSkuPrices({
+            id: skuIdToUpdate,
+            listPrice,
+            purchasePercent: purchasePct,
+            purchasePrice,
+            retailPercent: retailPct,
+            retailPrice,
+            wholesalePercent: wholesalePct,
+            wholesalePrice,
+            distributorPercent: distributorPct,
+            distributorPrice,
+            stock: initialStock,
+            minimumStock: minStockQty,
+            reason: 'Product catalogue edit',
+          }).unwrap();
+
+          if (backendRes?.success) {
+            isBackendSaved = true;
+          }
+        } catch (backendErr: unknown) {
+          const errObj = backendErr as {
+            status?: number | string;
+            data?: { error?: { message?: string }; message?: string };
+          };
+          if (errObj?.status && errObj.status !== 'FETCH_ERROR') {
+            const errDetail =
+              errObj.data?.error?.message ||
+              errObj.data?.message ||
+              'Server rejected product update';
+            showToast('error', 'Backend Update Error', errDetail);
+            setIsSubmitting(false);
+            return;
+          }
+        }
+
+        if (isBackendSaved) {
+          // Best effort sync demo-db cache without throwing
+          try {
+            if (editSku) {
+              const demoVar = variantsRepository.getBySku(editSku);
+              if (demoVar) {
+                variantsRepository.update(demoVar.id, {
+                  retailPrice,
+                  wholesalePrice,
+                });
+              }
+            }
+          } catch {
+            // Ignore demo repository cache sync
+          }
+
+          showToast(
+            'success',
+            'Product Updated Successfully',
+            `Product ${editSku} prices and stock have been updated.`
+          );
+          setTimeout(() => {
+            router.push('/products');
+          }, 1000);
+          return;
+        }
+
+        // Offline demo-db fallback
+        if (editingVariant && !isBackendSaved) {
+          try {
+            variantsRepository.update(editingVariant.id, {
+              retailPrice,
+              wholesalePrice,
+            });
+          } catch {
+            // Ignore
+          }
+        }
+
+        showToast(
+          'success',
+          'Product Updated Successfully',
+          `Product ${editSku} prices and stock have been updated.`
+        );
+        setTimeout(() => {
+          router.push('/products');
+        }, 1000);
+      } catch (err: unknown) {
+        const error = err as Error;
+        showToast('error', 'Update Failed', error.message || 'Could not update product.');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    // 2. CREATE NEW PRODUCT WORKFLOW
     if (!selectedBrandId || !selectedCategoryId || !selectedSizeId || !selectedThicknessId) {
       showToast('error', 'Missing Information', 'Please select brand, category, size and thickness.');
       return;
@@ -330,6 +476,27 @@ function NewProductContent() {
           return;
         }
         // If FETCH_ERROR (e.g. backend server not running / offline in demo test), proceed with demo fallback
+      }
+
+      // If saved in production backend, notify and return immediately
+      if (isBackendSaved) {
+        try {
+          const demoVar = variantsRepository.getBySku(createdVariantSku);
+          if (demoVar) {
+            variantsRepository.update(demoVar.id, { retailPrice, wholesalePrice });
+          }
+        } catch {
+          // Ignore local demo-db cache errors
+        }
+
+        const toastTitle = 'Product Saved Successfully';
+        const toastMsg = `${autoProductName} (${createdVariantSku}) saved to catalogue with ${initialStock} opening stock.`;
+
+        showToast('success', toastTitle, toastMsg);
+        setTimeout(() => {
+          router.push('/products');
+        }, 1000);
+        return;
       }
 
       // 2. Sync to demo-db for local client demo persistence
@@ -400,15 +567,13 @@ function NewProductContent() {
         priceListsRepository.setPrice('DISTRIBUTOR', variantId, distributorPrice);
       }
 
-      const toastTitle = editingVariant ? 'Product Updated' : 'Product Saved';
-      const toastMsg = isBackendSaved
-        ? `${autoProductName} (${baseSku}) created in production MongoDB backend.`
-        : `${autoProductName} (${baseSku}) saved to catalogue.`;
+      const toastTitle = 'Product Saved Successfully';
+      const toastMsg = `${autoProductName} (${baseSku}) saved to catalogue with ${initialStock} opening stock.`;
 
       showToast('success', toastTitle, toastMsg);
       setTimeout(() => {
         router.push('/products');
-      }, 900);
+      }, 1000);
     } catch (err: unknown) {
       showToast('error', editingVariant ? 'Error Updating Product' : 'Error Saving Product', (err as Error)?.message || 'Could not save product.');
     } finally {
@@ -456,6 +621,17 @@ function NewProductContent() {
           </div>
 
           <form onSubmit={handleSaveProduct} className="space-y-6">
+            {isEditMode && (
+              <div className="p-3.5 bg-blue-50/90 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-blue-900 font-medium">
+                <div className="flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-brand-blue shrink-0" />
+                  <span>Editing Product SKU: <strong className="font-mono">{editSku}</strong></span>
+                </div>
+                <span className="px-2.5 py-0.5 bg-blue-100 text-brand-blue rounded-full font-bold text-[10px] uppercase">
+                  Edit Mode
+                </span>
+              </div>
+            )}
             {/* Step 1: Brand */}
             <div className="space-y-2">
               <div className="flex items-center gap-2.5">
@@ -702,7 +878,7 @@ function NewProductContent() {
               {/* Row 2: Retail % / Retail Price, Wholesale % / Wholesale Price */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Retail Group */}
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:col-span-2 pt-2 border-t border-gray-100">
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">
                       Retail %
@@ -1032,7 +1208,7 @@ function NewProductContent() {
             {/* Stock Info Note */}
             <div className="mt-4 p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center gap-2 text-xs text-gray-500 font-medium">
               <Info className="w-3.5 h-3.5 text-brand-blue shrink-0" />
-              <span>Branch stocks are assigned via <strong>Manage Stock</strong>.</span>
+              <span>Floor inventory is automatically synchronized with Opening Stock.</span>
             </div>
           </div>
         </div>

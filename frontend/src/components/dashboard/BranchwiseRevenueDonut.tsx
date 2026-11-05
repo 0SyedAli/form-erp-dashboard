@@ -33,7 +33,7 @@ export default function BranchwiseRevenueDonut({ data = [], isLoading = false }:
   const totalValue = data.reduce((sum, item) => sum + (item.value || 0), 0);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200/80 p-5 shadow-2xs flex flex-col justify-between">
+    <div className="bg-white rounded-xl border border-gray-200/80 p-5 shadow-2xs flex flex-col justify-between  h-[100%]">
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <h3 className="font-bold text-gray-900 text-sm sm:text-base">
@@ -43,7 +43,7 @@ export default function BranchwiseRevenueDonut({ data = [], isLoading = false }:
 
       {/* Donut or Clean Empty State */}
       {!hasData ? (
-        <div className="h-56 w-full flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed border-gray-200 my-auto p-4 text-center">
+        <div className="h-[100%] w-full flex flex-col items-center justify-center text-gray-400 bg-gray-50/50 rounded-xl border border-dashed border-gray-200 my-auto p-4 text-center">
           <PieChartIcon className="w-8 h-8 text-gray-300 mb-2" />
           <p className="text-xs font-semibold text-gray-700">No Branch Revenue</p>
           <p className="text-[11px] text-gray-400 mt-0.5 max-w-xs">

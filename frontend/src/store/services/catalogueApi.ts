@@ -132,6 +132,8 @@ export interface UpdatePricesRequest {
   wholesalePrice?: number;
   distributorPercent?: number;
   distributorPrice?: number;
+  stock?: number;
+  minimumStock?: number;
   reason?: string;
 }
 
@@ -194,11 +196,46 @@ export const catalogueApi = createApi({
       providesTags: ['Brand'],
     }),
 
-    createBrand: builder.mutation<Brand, { name: string; code: string; description?: string }>({
+    createBrand: builder.mutation<
+      Brand,
+      { name: string; code: string; description?: string; logoUrl?: string; logo?: string }
+    >({
       query: (body) => ({
         url: '/brands',
         method: 'POST',
-        body,
+        body: {
+          name: body.name,
+          code: body.code,
+          description: body.description,
+          logoUrl: body.logoUrl || body.logo,
+        },
+      }),
+      invalidatesTags: ['Brand'],
+    }),
+
+    updateBrand: builder.mutation<
+      Brand,
+      { id: string; name?: string; code?: string; description?: string; logoUrl?: string; logo?: string; status?: string }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/brands/${id}`,
+        method: 'PATCH',
+        body: {
+          ...(body.name && { name: body.name }),
+          ...(body.code && { code: body.code }),
+          ...(body.description !== undefined && { description: body.description }),
+          ...(body.logoUrl !== undefined || body.logo !== undefined ? { logoUrl: body.logoUrl || body.logo } : {}),
+          ...(body.status && { status: body.status }),
+        },
+      }),
+      invalidatesTags: ['Brand'],
+    }),
+
+    toggleBrandStatus: builder.mutation<Brand, { id: string; status: 'ACTIVE' | 'INACTIVE' }>({
+      query: ({ id, status }) => ({
+        url: `/brands/${id}/status`,
+        method: 'PATCH',
+        body: { status },
       }),
       invalidatesTags: ['Brand'],
     }),
@@ -307,10 +344,19 @@ export const catalogueApi = createApi({
         };
         return {
           success: true,
-          data: rawList.map((p: any) => ({
-            ...p,
-            id: p.id || p._id || '',
-          })),
+          data: rawList.map((p: any) => {
+            const bId = String(p.brandId?._id || p.brandId || p.brand?._id || p.brand?.id || '');
+            const cId = String(p.categoryId?._id || p.categoryId || p.category?._id || p.category?.id || '');
+            const bCode = p.brand?.code || 'MF';
+            const cCode = p.category?.code || 'CAT';
+            return {
+              ...p,
+              id: p.id || p._id || '',
+              brandId: bId,
+              categoryId: cId,
+              code: p.code || `${bCode}-${cCode}`.toUpperCase(),
+            };
+          }),
           pagination,
         };
       },
@@ -358,10 +404,26 @@ export const catalogueApi = createApi({
         };
         return {
           success: true,
-          data: rawList.map((v: any) => ({
-            ...v,
-            id: v.id || v._id || '',
-          })),
+          data: rawList.map((v: any) => {
+            const pId = String(v.productId?._id || v.productId || v.product?._id || v.product?.id || '');
+            const bId = String(v.brandId?._id || v.brandId || v.brand?._id || v.brand?.id || '');
+            const cId = String(v.categoryId?._id || v.categoryId || v.category?._id || v.category?.id || '');
+            const sId = String(v.sizeId?._id || v.sizeId || v.size?._id || v.size?.id || '');
+            const tId = String(v.thicknessId?._id || v.thicknessId || v.thickness?._id || v.thickness?.id || '');
+            const retPrice = v.retailPrice || v.walkInPrice || 0;
+            return {
+              ...v,
+              id: v.id || v._id || '',
+              productId: pId,
+              brandId: bId,
+              categoryId: cId,
+              sizeId: sId,
+              thicknessId: tId,
+              retailPrice: retPrice,
+              walkInPrice: v.walkInPrice || retPrice,
+              stock: v.stock ?? v.onHand ?? 0,
+            };
+          }),
           pagination,
         };
       },
@@ -380,6 +442,14 @@ export const catalogueApi = createApi({
       invalidatesTags: ['Variant', 'PriceHistory'],
     }),
 
+    getSkuById: builder.query<
+      ApiResponse<ProductVariant & { stock?: number; minimumStock?: number }>,
+      string
+    >({
+      query: (id) => `/skus/${id}`,
+      providesTags: ['Variant'],
+    }),
+
     getSkuPriceHistory: builder.query<ApiResponse<unknown[]>, string>({
       query: (skuId) => `/skus/${skuId}/prices`,
       providesTags: ['PriceHistory'],
@@ -392,6 +462,8 @@ export const {
   useCreateBranchMutation,
   useGetBrandsQuery,
   useCreateBrandMutation,
+  useUpdateBrandMutation,
+  useToggleBrandStatusMutation,
   useGetCategoriesQuery,
   useCreateCategoryMutation,
   useGetSizesQuery,
@@ -401,6 +473,7 @@ export const {
   useGetProductsQuery,
   useCreateProductWithVariantMutation,
   useGetSkusQuery,
+  useGetSkuByIdQuery,
   useUpdateSkuPricesMutation,
   useGetSkuPriceHistoryQuery,
 } = catalogueApi;

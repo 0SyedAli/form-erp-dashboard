@@ -1,14 +1,15 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { Upload, Trash2, Image as ImageIcon } from 'lucide-react';
+import { Upload, Trash2, Image as ImageIcon, Loader2 } from 'lucide-react';
 
 interface ProductImageUploadProps {
   value?: string;
-  onChange: (dataUrl: string) => void;
+  onChange: (url: string) => void;
   label?: string;
   shape?: 'square' | 'rounded';
   presets?: Array<{ name: string; url: string }>;
+  uploadFolder?: string;
 }
 
 export default function ProductImageUpload({
@@ -17,11 +18,13 @@ export default function ProductImageUpload({
   label = 'Image',
   shape = 'rounded',
   presets = [],
+  uploadFolder = 'brands',
 }: ProductImageUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
-  const processAndCompressFile = (file: File) => {
+  const processAndUploadFile = async (file: File) => {
     setError(null);
 
     if (!file.type.startsWith('image/')) {
@@ -29,11 +32,38 @@ export default function ProductImageUpload({
       return;
     }
 
-    if (file.size > 3 * 1024 * 1024) {
-      setError('Image exceeds 3MB limit. Please choose a smaller file.');
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image exceeds 5MB limit. Please choose a smaller file.');
       return;
     }
 
+    // Upload directly to server endpoint to save into public/ folder
+    if (uploadFolder) {
+      setIsUploading(true);
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('folder', uploadFolder);
+
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+        if (data.success && data.url) {
+          onChange(data.url);
+        } else {
+          setError(data.error || 'Failed to upload image.');
+        }
+      } catch (err: any) {
+        setError(err.message || 'Network error during upload.');
+      } finally {
+        setIsUploading(false);
+      }
+      return;
+    }
+
+    // Fallback: client-side canvas compression for local previews
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
@@ -77,7 +107,7 @@ export default function ProductImageUpload({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      processAndCompressFile(file);
+      processAndUploadFile(file);
     }
   };
 
@@ -113,11 +143,21 @@ export default function ProductImageUpload({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              disabled={isUploading}
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium shadow-2xs transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
             >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Upload File</span>
+              {isUploading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                  <span>Saving to public...</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Upload File</span>
+                </>
+              )}
             </button>
 
             {value && (

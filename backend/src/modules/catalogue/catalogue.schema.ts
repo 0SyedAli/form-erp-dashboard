@@ -5,7 +5,7 @@ export const brandSchema = z.object({
     code: z.string().trim().min(2).max(10).toUpperCase(),
     name: z.string().trim().min(2).max(100),
     description: z.string().trim().optional(),
-    logoUrl: z.string().url().optional().or(z.literal('')),
+    logoUrl: z.string().trim().optional().or(z.literal('')),
   }),
 });
 
@@ -15,7 +15,7 @@ export const updateBrandSchema = z.object({
     code: z.string().trim().min(2).max(10).toUpperCase().optional(),
     name: z.string().trim().min(2).max(100).optional(),
     description: z.string().trim().optional(),
-    logoUrl: z.string().url().optional().or(z.literal('')),
+    logoUrl: z.string().trim().optional().or(z.literal('')),
   }),
 });
 
@@ -109,6 +109,8 @@ export const updatePricesSchema = z.object({
     wholesalePrice: z.coerce.number().min(0).optional(),
     distributorPercent: z.coerce.number().min(0).max(100).optional(),
     distributorPrice: z.coerce.number().min(0).optional(),
+    stock: z.coerce.number().min(0).optional(),
+    minimumStock: z.coerce.number().min(0).optional(),
     reason: z.string().trim().optional(),
   }),
 });

@@ -3,10 +3,15 @@
 import React, { useState, useMemo } from 'react';
 import { Brand } from '@/types';
 import {
-  useGetBrandsQuery,
-  useGetCategoriesQuery,
-  useGetProductsQuery,
+  useGetBrandsQuery as useGetDemoBrandsQuery,
+  useGetCategoriesQuery as useGetDemoCategoriesQuery,
+  useGetProductsQuery as useGetDemoProductsQuery,
 } from '@/store/services/apiSlice';
+import {
+  useGetBrandsQuery as useGetBackendBrandsQuery,
+  useGetCategoriesQuery as useGetBackendCategoriesQuery,
+  useGetProductsQuery as useGetBackendProductsQuery,
+} from '@/store/services/catalogueApi';
 import BrandModal from './BrandModal';
 import BrandStatusModal from './BrandStatusModal';
 import {
@@ -26,9 +31,45 @@ interface BrandsTabProps {
 }
 
 export default function BrandsTab({ canManage, onToast }: BrandsTabProps) {
-  const { data: brands = [], isLoading } = useGetBrandsQuery();
-  const { data: categories = [] } = useGetCategoriesQuery();
-  const { data: products = [] } = useGetProductsQuery();
+  const isBackendMode = process.env.NEXT_PUBLIC_USE_BACKEND !== 'false';
+  const { data: demoBrands = [], isLoading: isDemoLoading } = useGetDemoBrandsQuery(undefined, { skip: isBackendMode });
+  const { data: backendBrands = [], isLoading: isBackendLoading } = useGetBackendBrandsQuery(undefined, { skip: !isBackendMode });
+  const { data: demoCategories = [] } = useGetDemoCategoriesQuery(undefined, { skip: isBackendMode });
+  const { data: backendCategories = [] } = useGetBackendCategoriesQuery(undefined, { skip: !isBackendMode });
+  const { data: demoProducts = [] } = useGetDemoProductsQuery(undefined, { skip: isBackendMode });
+  const { data: backendProducts = [] } = useGetBackendProductsQuery(undefined, { skip: !isBackendMode });
+
+  const rawBrands = isBackendMode
+    ? (Array.isArray(backendBrands) ? backendBrands : (backendBrands as any)?.data || [])
+    : demoBrands;
+  const brands: Brand[] = (Array.isArray(rawBrands) ? rawBrands : []).map((b: any) => ({
+    ...b,
+    id: String(b.id || b._id || ''),
+    logo: b.logo || b.logoUrl || '',
+    status: b.status || 'ACTIVE',
+  })) as Brand[];
+
+  const rawCategories = isBackendMode
+    ? (Array.isArray(backendCategories) ? backendCategories : (backendCategories as any)?.data || [])
+    : demoCategories;
+  const categories = (Array.isArray(rawCategories) ? rawCategories : []).map((c: any) => ({
+    ...c,
+    id: String(c.id || c._id || ''),
+    brandId: String(c.brandId?._id || c.brandId || c.brand?._id || c.brand?.id || ''),
+  }));
+
+  const rawProducts = isBackendMode
+    ? (Array.isArray(backendProducts)
+      ? backendProducts
+      : (backendProducts as any)?.data || (backendProducts as any)?.items || [])
+    : demoProducts;
+  const products = (Array.isArray(rawProducts) ? rawProducts : []).map((p: any) => ({
+    ...p,
+    id: String(p.id || p._id || ''),
+    brandId: String(p.brandId?._id || p.brandId || p.brand?._id || p.brand?.id || ''),
+  }));
+
+  const isLoading = isBackendMode ? isBackendLoading : isDemoLoading;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -164,10 +205,10 @@ export default function BrandsTab({ canManage, onToast }: BrandsTabProps) {
                       <td className="py-4 px-4 font-medium text-gray-900">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-200 overflow-hidden shrink-0 flex items-center justify-center">
-                            {brand.logo ? (
+                            {brand.logo || (brand as any).logoUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
-                                src={brand.logo}
+                                src={brand.logo || (brand as any).logoUrl}
                                 alt={brand.name}
                                 className="w-full h-full object-cover"
                               />
@@ -177,7 +218,7 @@ export default function BrandsTab({ canManage, onToast }: BrandsTabProps) {
                           </div>
                           <div>
                             <div className="text-sm font-semibold text-gray-900">{brand.name}</div>
-                            <span className="text-xs text-gray-400">ID: {brand.id}</span>
+                            {/* <span className="text-xs text-gray-400">ID: {brand.id}</span> */}
                           </div>
                         </div>
                       </td>
@@ -203,11 +244,10 @@ export default function BrandsTab({ canManage, onToast }: BrandsTabProps) {
                       </td>
                       <td className="py-4 px-4 text-center">
                         <span
-                          className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            brand.status.toLowerCase() === 'active'
+                          className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${brand.status.toLowerCase() === 'active'
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                               : 'bg-gray-100 text-gray-600 border border-gray-200'
-                          }`}
+                            }`}
                         >
                           {brand.status.toLowerCase() === 'active' ? 'Active' : 'Inactive'}
                         </span>
@@ -225,11 +265,10 @@ export default function BrandsTab({ canManage, onToast }: BrandsTabProps) {
                               </button>
                               <button
                                 onClick={() => handleStatusToggle(brand)}
-                                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-                                  brand.status.toLowerCase() === 'active'
+                                className={`p-1.5 rounded-md transition-colors cursor-pointer ${brand.status.toLowerCase() === 'active'
                                     ? 'hover:text-amber-600 hover:bg-amber-50'
                                     : 'hover:text-emerald-600 hover:bg-emerald-50'
-                                }`}
+                                  }`}
                                 title={brand.status.toLowerCase() === 'active' ? 'Deactivate Brand' : 'Activate Brand'}
                               >
                                 <Power className="w-3.5 h-3.5" />

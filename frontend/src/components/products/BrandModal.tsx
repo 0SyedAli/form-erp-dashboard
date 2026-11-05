@@ -5,7 +5,14 @@ import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Brand } from '@/types';
-import { useCreateBrandMutation, useUpdateBrandMutation } from '@/store/services/apiSlice';
+import {
+  useCreateBrandMutation as useCreateBrandDemoMutation,
+  useUpdateBrandMutation as useUpdateBrandDemoMutation,
+} from '@/store/services/apiSlice';
+import {
+  useCreateBrandMutation as useCreateBrandBackendMutation,
+  useUpdateBrandMutation as useUpdateBrandBackendMutation,
+} from '@/store/services/catalogueApi';
 import ProductImageUpload from './ProductImageUpload';
 import { X, Award } from 'lucide-react';
 
@@ -42,8 +49,14 @@ export default function BrandModal({
   brand,
   onSuccess,
 }: BrandModalProps) {
-  const [createBrand, { isLoading: isCreating }] = useCreateBrandMutation();
-  const [updateBrand, { isLoading: isUpdating }] = useUpdateBrandMutation();
+  const isBackendMode = process.env.NEXT_PUBLIC_USE_BACKEND !== 'false';
+  const [createBrandBackend, { isLoading: isCreatingBackend }] = useCreateBrandBackendMutation();
+  const [updateBrandBackend, { isLoading: isUpdatingBackend }] = useUpdateBrandBackendMutation();
+  const [createBrandDemo, { isLoading: isCreatingDemo }] = useCreateBrandDemoMutation();
+  const [updateBrandDemo, { isLoading: isUpdatingDemo }] = useUpdateBrandDemoMutation();
+
+  const isCreating = isBackendMode ? isCreatingBackend : isCreatingDemo;
+  const isUpdating = isBackendMode ? isUpdatingBackend : isUpdatingDemo;
   const [apiError, setApiError] = useState<string | null>(null);
 
   const isEdit = !!brand;
@@ -98,26 +111,72 @@ export default function BrandModal({
   const onSubmit = async (data: BrandFormData) => {
     setApiError(null);
     try {
-      if (isEdit && brand) {
-        const result = await updateBrand({
-          id: brand.id,
-          name: data.name.trim(),
-          code: data.code.trim().toUpperCase(),
-          description: data.description?.trim(),
-          logo: data.logo,
-          status: data.status,
-        }).unwrap();
-        onSuccess(result);
+      let savedBrand: Brand;
+
+      if (isBackendMode) {
+        if (isEdit && brand) {
+          savedBrand = (await updateBrandBackend({
+            id: brand.id,
+            name: data.name.trim(),
+            code: data.code.trim().toUpperCase(),
+            description: data.description?.trim(),
+            logoUrl: data.logo,
+            status: data.status.toUpperCase(),
+          }).unwrap()) as unknown as Brand;
+        } else {
+          savedBrand = (await createBrandBackend({
+            name: data.name.trim(),
+            code: data.code.trim().toUpperCase(),
+            description: data.description?.trim(),
+            logoUrl: data.logo,
+          }).unwrap()) as unknown as Brand;
+        }
+
+        // Sync demo-db non-blockingly
+        try {
+          if (isEdit && brand) {
+            await updateBrandDemo({
+              id: brand.id,
+              name: data.name.trim(),
+              code: data.code.trim().toUpperCase(),
+              description: data.description?.trim(),
+              logo: data.logo,
+              status: data.status,
+            }).unwrap();
+          } else {
+            await createBrandDemo({
+              name: data.name.trim(),
+              code: data.code.trim().toUpperCase(),
+              description: data.description?.trim(),
+              logo: data.logo,
+              status: data.status,
+            }).unwrap();
+          }
+        } catch {
+          // ignore demo-db sync errors
+        }
       } else {
-        const result = await createBrand({
-          name: data.name.trim(),
-          code: data.code.trim().toUpperCase(),
-          description: data.description?.trim(),
-          logo: data.logo,
-          status: data.status,
-        }).unwrap();
-        onSuccess(result);
+        if (isEdit && brand) {
+          savedBrand = await updateBrandDemo({
+            id: brand.id,
+            name: data.name.trim(),
+            code: data.code.trim().toUpperCase(),
+            description: data.description?.trim(),
+            logo: data.logo,
+            status: data.status,
+          }).unwrap();
+        } else {
+          savedBrand = await createBrandDemo({
+            name: data.name.trim(),
+            code: data.code.trim().toUpperCase(),
+            description: data.description?.trim(),
+            logo: data.logo,
+            status: data.status,
+          }).unwrap();
+        }
       }
+
+      onSuccess(savedBrand);
       onClose();
     } catch (err: unknown) {
       const e = err as { data?: { message?: string } | string; message?: string };
@@ -220,14 +279,15 @@ export default function BrandModal({
             </select>
           </div>
 
-          {/* Logo Upload with Canvas Compression */}
+          {/* Logo Upload saved directly to project public/uploads/brands folder */}
           <div className="pt-2 border-t border-gray-100">
             <ProductImageUpload
               label="Brand Logo"
               value={logoValue}
-              onChange={(dataUrl) => setValue('logo', dataUrl)}
+              onChange={(url) => setValue('logo', url)}
               shape="rounded"
               presets={BRAND_LOGO_PRESETS}
+              uploadFolder="brands"
             />
           </div>
 

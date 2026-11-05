@@ -5,13 +5,20 @@ import Link from 'next/link';
 import { ProductVariant } from '@/types';
 import {
   useGetVariantsQuery,
-  useGetBrandsQuery,
-  useGetCategoriesQuery,
-  useGetSizesQuery,
-  useGetThicknessQuery,
+  useGetBrandsQuery as useGetDemoBrandsQuery,
+  useGetCategoriesQuery as useGetDemoCategoriesQuery,
+  useGetSizesQuery as useGetDemoSizesQuery,
+  useGetThicknessQuery as useGetDemoThicknessQuery,
   useGetInventoryBalancesQuery,
   useToggleVariantStatusMutation,
 } from '@/store/services/apiSlice';
+import {
+  useGetSkusQuery as useGetBackendSkusQuery,
+  useGetBrandsQuery as useGetBackendBrandsQuery,
+  useGetCategoriesQuery as useGetBackendCategoriesQuery,
+  useGetSizesQuery as useGetBackendSizesQuery,
+  useGetThicknessesQuery as useGetBackendThicknessesQuery,
+} from '@/store/services/catalogueApi';
 import {
   Search,
   Plus,
@@ -32,13 +39,70 @@ export default function ProductsTab({
   canManage,
   onToast,
 }: ProductsTabProps) {
-  const { data: variants = [], isLoading } = useGetVariantsQuery();
-  const { data: brands = [] } = useGetBrandsQuery();
-  const { data: categories = [] } = useGetCategoriesQuery();
-  const { data: sizes = [] } = useGetSizesQuery();
-  const { data: thicknesses = [] } = useGetThicknessQuery();
+  const { data: demoVariants = [], isLoading: isDemoLoading } = useGetVariantsQuery();
+  const { data: backendSkusResponse, isLoading: isBackendLoading } = useGetBackendSkusQuery();
+  const { data: backendBrands = [] } = useGetBackendBrandsQuery();
+  const { data: demoBrands = [] } = useGetDemoBrandsQuery();
+  const { data: backendCategories = [] } = useGetBackendCategoriesQuery();
+  const { data: demoCategories = [] } = useGetDemoCategoriesQuery();
+  const { data: backendSizes = [] } = useGetBackendSizesQuery();
+  const { data: demoSizes = [] } = useGetDemoSizesQuery();
+  const { data: backendThicknesses = [] } = useGetBackendThicknessesQuery();
+  const { data: demoThicknesses = [] } = useGetDemoThicknessQuery();
   const { data: balances = [] } = useGetInventoryBalancesQuery();
   const [toggleStatus] = useToggleVariantStatusMutation();
+
+  const isLoading = isBackendLoading && isDemoLoading;
+
+  const brands = useMemo(() => {
+    return backendBrands.length > 0 ? backendBrands : demoBrands;
+  }, [backendBrands, demoBrands]);
+
+  const categories = useMemo(() => {
+    return backendCategories.length > 0 ? backendCategories : demoCategories;
+  }, [backendCategories, demoCategories]);
+
+  const sizes = useMemo(() => {
+    return backendSizes.length > 0 ? backendSizes : demoSizes;
+  }, [backendSizes, demoSizes]);
+
+  const thicknesses = useMemo(() => {
+    return backendThicknesses.length > 0 ? backendThicknesses : demoThicknesses;
+  }, [backendThicknesses, demoThicknesses]);
+
+  const rawBackendSkus = useMemo(() => {
+    if (Array.isArray(backendSkusResponse)) return backendSkusResponse;
+    if (Array.isArray((backendSkusResponse as any)?.data)) return (backendSkusResponse as any).data;
+    if (Array.isArray((backendSkusResponse as any)?.items)) return (backendSkusResponse as any).items;
+    return [];
+  }, [backendSkusResponse]);
+
+  const variants: ProductVariant[] = useMemo(() => {
+    if (rawBackendSkus.length > 0) {
+      return rawBackendSkus.map((v: any) => ({
+        id: v.id || v._id || '',
+        productId: v.productId || v._id || '',
+        sku: v.sku,
+        productName: v.productName || `${v.brand?.name || ''} - ${v.category?.name || ''}`,
+        brandId: v.brandId || v.brand?._id || v.brand?.id || '',
+        brandName: v.brandName || v.brand?.name || '',
+        categoryId: v.categoryId || v.category?._id || v.category?.id || '',
+        categoryName: v.categoryName || v.category?.name || '',
+        sizeId: v.sizeId || v.size?._id || v.size?.id || '',
+        sizeLabel: v.sizeLabel || v.size?.displayLabel || (v.size ? `${v.size.length} × ${v.size.width}` : ''),
+        thicknessId: v.thicknessId || v.thickness?._id || v.thickness?.id || '',
+        thicknessLabel: v.thicknessLabel || v.thickness?.displayLabel || (v.thickness ? `${v.thickness.value} inch` : ''),
+        listPrice: v.listPrice || 0,
+        purchasePrice: v.purchasePrice || 0,
+        retailPrice: v.retailPrice || 0,
+        wholesalePrice: v.wholesalePrice || 0,
+        distributorPrice: v.distributorPrice || 0,
+        stock: v.stock !== undefined ? v.stock : v.onHand !== undefined ? v.onHand : 0,
+        status: (v.status || 'ACTIVE'),
+      }));
+    }
+    return demoVariants;
+  }, [rawBackendSkus, demoVariants]);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,9 +111,9 @@ export default function ProductsTab({
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   // Fast lookups
-  const sizeMap = useMemo(() => new Map(sizes.map((s) => [s.id, s.displayLabel || s.name || '78 × 78'])), [sizes]);
+  const sizeMap = useMemo(() => new Map(sizes.map((s) => [s.id || (s as any)._id, s.displayLabel || s.name || '78 × 78'])), [sizes]);
   const thicknessMap = useMemo(
-    () => new Map(thicknesses.map((t) => [t.id, t.displayLabel || `${t.value} inch`])),
+    () => new Map(thicknesses.map((t) => [t.id || (t as any)._id, t.displayLabel || `${t.value} inch`])),
     [thicknesses]
   );
   const balanceMap = useMemo(() => {
@@ -64,15 +128,15 @@ export default function ProductsTab({
   // Categories available based on brand filter
   const availableCategories = useMemo(() => {
     if (brandFilter === 'all') return categories;
-    return categories.filter((c) => c.brandId === brandFilter);
+    return categories.filter((c) => (c.brandId || (c as any).brand?._id) === brandFilter);
   }, [categories, brandFilter]);
 
   // Filtered variants list (each row is a simple concrete product)
   const filteredItems = useMemo(() => {
     return variants.filter((item) => {
       const q = searchQuery.toLowerCase().trim();
-      const brand = brands.find((b) => b.name === item.brandName);
-      const cat = categories.find((c) => c.name === item.categoryName);
+      const brand = brands.find((b) => (b.id === item.brandId || (b as any)._id === item.brandId || b.name === item.brandName));
+      const cat = categories.find((c) => (c.id === item.categoryId || (c as any)._id === item.categoryId || c.name === item.categoryName));
 
       const matchesSearch =
         !q ||
@@ -83,10 +147,16 @@ export default function ProductsTab({
         (item.sizeLabel && item.sizeLabel.toLowerCase().includes(q));
 
       const matchesBrand =
-        brandFilter === 'all' || (brand && brand.id === brandFilter) || (item.brandName && item.brandName.toLowerCase().includes(brandFilter.toLowerCase()));
+        brandFilter === 'all' ||
+        item.brandId === brandFilter ||
+        (brand && (brand.id === brandFilter || (brand as any)._id === brandFilter)) ||
+        (item.brandName && item.brandName.toLowerCase().includes(brandFilter.toLowerCase()));
 
       const matchesCategory =
-        categoryFilter === 'all' || (cat && cat.id === categoryFilter) || (item.categoryName && item.categoryName.toLowerCase().includes(categoryFilter.toLowerCase()));
+        categoryFilter === 'all' ||
+        item.categoryId === categoryFilter ||
+        (cat && (cat.id === categoryFilter || (cat as any)._id === categoryFilter)) ||
+        (item.categoryName && item.categoryName.toLowerCase().includes(categoryFilter.toLowerCase()));
 
       const isItemActive = item.status === 'active' || item.status === 'ACTIVE';
       const matchesStatus =
@@ -168,19 +238,19 @@ export default function ProductsTab({
             brandFilter !== 'all' ||
             categoryFilter !== 'all' ||
             statusFilter !== 'all') && (
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                setBrandFilter('all');
-                setCategoryFilter('all');
-                setStatusFilter('all');
-              }}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset</span>
-            </button>
-          )}
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setBrandFilter('all');
+                  setCategoryFilter('all');
+                  setStatusFilter('all');
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
+            )}
         </div>
 
         {/* Global Add Product Button */}
@@ -235,7 +305,10 @@ export default function ProductsTab({
                 </tr>
               ) : (
                 filteredItems.map((item, idx) => {
-                  const onHandStock = balanceMap.get(item.sku.toUpperCase()) ?? 15;
+                  const onHandStock =
+                    (item as any).stock !== undefined
+                      ? (item as any).stock
+                      : (balanceMap.get(item.sku.toUpperCase()) ?? 0);
                   const isActive = item.status === 'active' || item.status === 'ACTIVE';
 
                   return (
@@ -304,13 +377,12 @@ export default function ProductsTab({
                       {/* Available Stock */}
                       <td className="py-3.5 px-3 text-center">
                         <span
-                          className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-mono font-bold ${
-                            onHandStock <= 0
+                          className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-mono font-bold ${onHandStock <= 0
                               ? 'bg-rose-100 text-rose-800 border border-rose-200'
                               : onHandStock <= 5
-                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                              : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                          }`}
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            }`}
                         >
                           {onHandStock}
                         </span>
@@ -319,11 +391,10 @@ export default function ProductsTab({
                       {/* Status */}
                       <td className="py-3.5 px-3 text-center">
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            isActive
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isActive
                               ? 'bg-emerald-100 text-emerald-800'
                               : 'bg-gray-100 text-gray-600'
-                          }`}
+                            }`}
                         >
                           {isActive ? 'Active' : 'Inactive'}
                         </span>
@@ -344,11 +415,10 @@ export default function ProductsTab({
                               <button
                                 type="button"
                                 onClick={() => handleToggleStatus(item)}
-                                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                                  isActive
+                                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${isActive
                                     ? 'hover:text-amber-600 hover:bg-amber-50'
                                     : 'hover:text-emerald-600 hover:bg-emerald-50'
-                                }`}
+                                  }`}
                                 title={isActive ? 'Deactivate Product' : 'Activate Product'}
                               >
                                 <Power className="w-3.5 h-3.5" />

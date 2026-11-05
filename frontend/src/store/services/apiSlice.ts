@@ -1091,12 +1091,40 @@ export const erpApi = createApi({
     // --- Flow 04: Master Catalogue Products Endpoints ---
     getCatalogueProducts: builder.query<CatalogueProduct[], ProductFilterOptions | void>({
       async queryFn(filter) {
-        await delay(60);
         try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
+          const res = await fetch(`${apiUrl}/products`, {
+            credentials: 'include',
+          });
+          if (res.ok) {
+            const json = await res.json();
+            const rawList = Array.isArray(json?.data)
+              ? json.data
+              : Array.isArray(json?.data?.items)
+              ? json.data.items
+              : Array.isArray(json?.items)
+              ? json.items
+              : [];
+            if (rawList.length > 0) {
+              const list: CatalogueProduct[] = rawList.map((p: any) => ({
+                id: p.id || p._id || '',
+                name: p.name,
+                brandId: p.brandId || p.brand?._id || '',
+                categoryId: p.categoryId || p.category?._id || '',
+                status: (p.status || 'ACTIVE').toLowerCase(),
+                description: p.description || '',
+                variantsCount: p.variants?.length || 0,
+                createdAt: p.createdAt || new Date().toISOString(),
+                updatedAt: p.updatedAt || new Date().toISOString(),
+              }));
+              return { data: list };
+            }
+          }
           const data = productsRepository.getAll(filter || undefined);
           return { data };
-        } catch (error) {
-          return { error: { status: 500, data: (error as Error).message } };
+        } catch {
+          const data = productsRepository.getAll(filter || undefined);
+          return { data };
         }
       },
       providesTags: (result) =>
@@ -1176,12 +1204,50 @@ export const erpApi = createApi({
     // --- Flow 04: Product Variants Endpoints ---
     getProductVariants: builder.query<ProductVariant[], VariantFilterOptions | void>({
       async queryFn(filter) {
-        await delay(60);
         try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
+          const res = await fetch(`${apiUrl}/skus`, {
+            credentials: 'include',
+          });
+          if (res.ok) {
+            const json = await res.json();
+            const rawList = Array.isArray(json?.data)
+              ? json.data
+              : Array.isArray(json?.data?.items)
+              ? json.data.items
+              : Array.isArray(json?.items)
+              ? json.items
+              : [];
+            if (rawList.length > 0) {
+              const list: ProductVariant[] = rawList.map((v: any) => ({
+                id: v.id || v._id || '',
+                productId: v.productId || v._id || '',
+                sku: v.sku,
+                productName: v.productName || `${v.brand?.name || 'Brand'} - ${v.category?.name || 'Mattress'}`,
+                brandId: v.brandId || v.brand?._id || '',
+                brandName: v.brandName || v.brand?.name || '',
+                categoryId: v.categoryId || v.category?._id || '',
+                categoryName: v.categoryName || v.category?.name || '',
+                sizeId: v.sizeId || v.size?._id || '',
+                sizeLabel: v.sizeLabel || v.size?.displayLabel || (v.size ? `${v.size.length} × ${v.size.width}` : ''),
+                thicknessId: v.thicknessId || v.thickness?._id || '',
+                thicknessLabel: v.thicknessLabel || v.thickness?.displayLabel || (v.thickness ? `${v.thickness.value} inch` : ''),
+                listPrice: v.listPrice || 0,
+                purchasePrice: v.purchasePrice || 0,
+                retailPrice: v.retailPrice || 0,
+                wholesalePrice: v.wholesalePrice || 0,
+                distributorPrice: v.distributorPrice || 0,
+                status: (v.status || 'ACTIVE'),
+                stock: v.stock || 0,
+              }));
+              return { data: list };
+            }
+          }
           const data = variantsRepository.getAll(filter || undefined);
           return { data };
-        } catch (error) {
-          return { error: { status: 500, data: (error as Error).message } };
+        } catch {
+          const data = variantsRepository.getAll(filter || undefined);
+          return { data };
         }
       },
       providesTags: (result) =>

@@ -203,6 +203,9 @@ export interface ProductVariant {
   walkInPrice?: number; // alias for retailPrice
   wholesalePrice: number;
   distributorPrice?: number;
+  stock?: number;
+  onHand?: number;
+  minimumStock?: number;
   status: CatalogueItemStatus;
   createdAt: string;
   updatedAt: string;

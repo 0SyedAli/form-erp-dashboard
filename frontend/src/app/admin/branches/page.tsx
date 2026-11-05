@@ -278,31 +278,28 @@ export default function BranchesManagementPage() {
         <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
           <button
             onClick={() => setActiveTab('all')}
-            className={`px-3.5 py-2 rounded-lg transition-colors cursor-pointer ${
-              activeTab === 'all'
-                ? 'bg-brand-blue text-white shadow-xs'
-                : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50'
-            }`}
+            className={`px-3.5 py-2 rounded-lg transition-colors cursor-pointer ${activeTab === 'all'
+              ? 'bg-brand-blue text-white shadow-xs'
+              : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50'
+              }`}
           >
             All Branches ({counts.total})
           </button>
           <button
             onClick={() => setActiveTab('retail')}
-            className={`px-3.5 py-2 rounded-lg transition-colors cursor-pointer ${
-              activeTab === 'retail'
-                ? 'bg-brand-blue text-white shadow-xs'
-                : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50'
-            }`}
+            className={`px-3.5 py-2 rounded-lg transition-colors cursor-pointer ${activeTab === 'retail'
+              ? 'bg-brand-blue text-white shadow-xs'
+              : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50'
+              }`}
           >
             Retail Stores ({counts.retail})
           </button>
           <button
             onClick={() => setActiveTab('warehouse')}
-            className={`px-3.5 py-2 rounded-lg transition-colors cursor-pointer ${
-              activeTab === 'warehouse'
-                ? 'bg-brand-blue text-white shadow-xs'
-                : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50'
-            }`}
+            className={`px-3.5 py-2 rounded-lg transition-colors cursor-pointer ${activeTab === 'warehouse'
+              ? 'bg-brand-blue text-white shadow-xs'
+              : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50'
+              }`}
           >
             Warehouses ({counts.warehouse})
           </button>
@@ -346,7 +343,7 @@ export default function BranchesManagementPage() {
                 <th className="py-3.5 px-4">Type</th>
                 <th className="py-3.5 px-4">Location</th>
                 <th className="py-3.5 px-4">Contact</th>
-                <th className="py-3.5 px-4">Manager</th>
+                {/* <th className="py-3.5 px-4">Manager</th> */}
                 <th className="py-3.5 px-4 text-center">Status</th>
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
@@ -378,9 +375,8 @@ export default function BranchesManagementPage() {
                     <tr
                       key={b.id}
                       onClick={() => setSelectedBranchId(b.id)}
-                      className={`hover:bg-blue-50/30 cursor-pointer transition-colors ${
-                        isSelected ? 'bg-blue-50/60 font-medium' : ''
-                      }`}
+                      className={`hover:bg-blue-50/30 cursor-pointer transition-colors ${isSelected ? 'bg-blue-50/60 font-medium' : ''
+                        }`}
                     >
                       <td className="py-4 px-4 text-gray-400 font-normal">
                         {idx + 1}
@@ -388,11 +384,10 @@ export default function BranchesManagementPage() {
                       <td className="py-4 px-4 font-medium text-gray-900">
                         <div className="flex items-center gap-2.5">
                           <div
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                              b.isActive
-                                ? 'bg-blue-50 text-brand-blue'
-                                : 'bg-gray-100 text-gray-400'
-                            }`}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${b.isActive
+                              ? 'bg-blue-50 text-brand-blue'
+                              : 'bg-gray-100 text-gray-400'
+                              }`}
                           >
                             <Building2 className="w-4.5 h-4.5" />
                           </div>
@@ -415,9 +410,9 @@ export default function BranchesManagementPage() {
                       <td className="py-4 px-4 font-mono text-gray-600 text-sm">
                         {b.phone}
                       </td>
-                      <td className="py-4 px-4 font-medium text-gray-900 text-sm">
+                      {/* <td className="py-4 px-4 font-medium text-gray-900 text-sm">
                         {b.managerName}
-                      </td>
+                      </td> */}
                       <td className="py-4 px-4 text-center">
                         {b.isActive ? (
                           <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
@@ -453,11 +448,10 @@ export default function BranchesManagementPage() {
                           {isSuperAdmin && (
                             <button
                               onClick={() => setStatusTargetBranch(b)}
-                              className={`p-1 rounded hover:bg-gray-100 transition-colors cursor-pointer ${
-                                b.isActive
-                                  ? 'hover:text-amber-600 text-gray-400'
-                                  : 'hover:text-emerald-600 text-emerald-600'
-                              }`}
+                              className={`p-1 rounded hover:bg-gray-100 transition-colors cursor-pointer ${b.isActive
+                                ? 'hover:text-amber-600 text-gray-400'
+                                : 'hover:text-emerald-600 text-emerald-600'
+                                }`}
                               title={b.isActive ? 'Deactivate Branch' : 'Activate Branch'}
                             >
                               <Power className="w-3.5 h-3.5" />
@@ -632,22 +626,20 @@ export default function BranchesManagementPage() {
                     <button
                       type="button"
                       onClick={() => setStatusTargetBranch(selectedBranch)}
-                      className={`w-10 h-6 rounded-full flex items-center px-1 transition-colors cursor-pointer ${
-                        selectedBranch.isActive
-                          ? 'bg-emerald-500 justify-end'
-                          : 'bg-gray-300 justify-start'
-                      }`}
+                      className={`w-10 h-6 rounded-full flex items-center px-1 transition-colors cursor-pointer ${selectedBranch.isActive
+                        ? 'bg-emerald-500 justify-end'
+                        : 'bg-gray-300 justify-start'
+                        }`}
                       title="Click to toggle branch operational status"
                     >
                       <div className="w-4 h-4 bg-white rounded-full shadow-xs" />
                     </button>
                   ) : (
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        selectedBranch.isActive
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-gray-200 text-gray-600'
-                      }`}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${selectedBranch.isActive
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-gray-200 text-gray-600'
+                        }`}
                     >
                       {selectedBranch.isActive ? 'Active' : 'Inactive'}
                     </span>
@@ -800,11 +792,10 @@ export default function BranchesManagementPage() {
                       <div
                         key={perm.key}
                         onClick={() => togglePermission(perm.key as keyof BranchAccessPermissions)}
-                        className={`flex items-start justify-between p-2.5 rounded-lg border transition-all cursor-pointer ${
-                          isChecked
-                            ? 'bg-blue-50/50 border-blue-200'
-                            : 'bg-gray-50/40 border-gray-100 hover:bg-gray-50'
-                        }`}
+                        className={`flex items-start justify-between p-2.5 rounded-lg border transition-all cursor-pointer ${isChecked
+                          ? 'bg-blue-50/50 border-blue-200'
+                          : 'bg-gray-50/40 border-gray-100 hover:bg-gray-50'
+                          }`}
                       >
                         <div className="pr-3">
                           <span className={`text-xs font-semibold block ${isChecked ? 'text-blue-900' : 'text-gray-700'}`}>
@@ -815,9 +806,8 @@ export default function BranchesManagementPage() {
                           </span>
                         </div>
                         <div
-                          className={`w-8 h-4.5 rounded-full flex items-center px-0.5 transition-colors shrink-0 mt-0.5 ${
-                            isChecked ? 'bg-brand-blue justify-end' : 'bg-gray-300 justify-start'
-                          }`}
+                          className={`w-8 h-4.5 rounded-full flex items-center px-0.5 transition-colors shrink-0 mt-0.5 ${isChecked ? 'bg-brand-blue justify-end' : 'bg-gray-300 justify-start'
+                            }`}
                         >
                           <div className="w-3.5 h-3.5 bg-white rounded-full shadow-xs" />
                         </div>
@@ -841,7 +831,7 @@ export default function BranchesManagementPage() {
                     <input
                       type="checkbox"
                       checked={currentSettings.allowRetailSales}
-                      onChange={() => {}}
+                      onChange={() => { }}
                       className="rounded text-brand-blue cursor-pointer"
                     />
                   </div>
@@ -853,7 +843,7 @@ export default function BranchesManagementPage() {
                     <input
                       type="checkbox"
                       checked={currentSettings.allowWholesaleSales}
-                      onChange={() => {}}
+                      onChange={() => { }}
                       className="rounded text-brand-blue cursor-pointer"
                     />
                   </div>
@@ -865,7 +855,7 @@ export default function BranchesManagementPage() {
                     <input
                       type="checkbox"
                       checked={currentSettings.manageOwnInventory}
-                      onChange={() => {}}
+                      onChange={() => { }}
                       className="rounded text-brand-blue cursor-pointer"
                     />
                   </div>
@@ -877,7 +867,7 @@ export default function BranchesManagementPage() {
                     <input
                       type="checkbox"
                       checked={currentSettings.showInReports}
-                      onChange={() => {}}
+                      onChange={() => { }}
                       className="rounded text-brand-blue cursor-pointer"
                     />
                   </div>

@@ -48,22 +48,20 @@ export default function CategorySidebar({
       {/* "All Products" Item */}
       <button
         onClick={() => onSelectCategory('ALL')}
-        className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition-all duration-150 cursor-pointer ${
-          selectedCategoryId === 'ALL'
+        className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition-all duration-150 cursor-pointer ${selectedCategoryId === 'ALL'
             ? 'bg-blue-600 text-white font-semibold shadow-xs shadow-blue-500/20'
             : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-        }`}
+          }`}
       >
         <div className="flex items-center gap-2.5">
           <Layers className="w-4 h-4 shrink-0" />
-          <span>All Products</span>
+          <span>All Category</span>
         </div>
         <span
-          className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-            selectedCategoryId === 'ALL'
+          className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${selectedCategoryId === 'ALL'
               ? 'bg-blue-500 text-white'
               : 'bg-slate-100 text-slate-500'
-          }`}
+            }`}
         >
           {totalAllCount}
         </span>
@@ -78,11 +76,10 @@ export default function CategorySidebar({
           <button
             key={category.id}
             onClick={() => onSelectCategory(category.id)}
-            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition-all duration-150 cursor-pointer ${
-              isSelected
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition-all duration-150 cursor-pointer ${isSelected
                 ? 'bg-blue-600 text-white font-semibold shadow-xs shadow-blue-500/20'
                 : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-            }`}
+              }`}
           >
             <div className="flex items-center gap-2.5 truncate">
               {getCategoryIcon(category.name, category.code)}
@@ -90,11 +87,10 @@ export default function CategorySidebar({
             </div>
             {count > 0 && (
               <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                  isSelected
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${isSelected
                     ? 'bg-blue-500 text-white'
                     : 'bg-slate-100 text-slate-500'
-                }`}
+                  }`}
               >
                 {count}
               </span>

@@ -240,7 +240,7 @@ catalogueRoutes.patch(
 catalogueRoutes.get(
   '/skus/:id/prices',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('viewProducts'),
   validateRequest(idParamSchema),
   CatalogueController.getSkuPriceHistory
 );
@@ -248,7 +248,7 @@ catalogueRoutes.get(
 catalogueRoutes.patch(
   '/skus/:id/prices',
   authenticate,
-  requireSuperAdmin,
+  requireBranchPermission('addEditProducts'),
   validateRequest(updatePricesSchema),
   CatalogueController.updateSkuPrices
 );

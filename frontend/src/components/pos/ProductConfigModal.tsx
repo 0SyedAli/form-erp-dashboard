@@ -118,7 +118,7 @@ export default function ProductConfigModal({
   const availableStock = useMemo(() => {
     if (!selectedVariant) return 0;
     const balance = inventoryBalances.find((b) => b.variantId === selectedVariant.id);
-    const balanceOnHand = balance?.available ?? 0;
+    const balanceOnHand = balance?.available ?? selectedVariant.stock ?? (selectedVariant as any).onHand ?? 0;
     return Math.max(0, balanceOnHand - existingCartQuantity);
   }, [selectedVariant, inventoryBalances, existingCartQuantity]);
 

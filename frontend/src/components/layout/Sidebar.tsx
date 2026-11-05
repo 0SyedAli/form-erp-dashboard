@@ -93,17 +93,6 @@ export default function Sidebar({
       requiredPermission: 'pos:view',
     },
     {
-      title: 'Manage Stock',
-      href: '/manage-stock',
-      icon: Boxes,
-      requiredPermission: 'inventory:view',
-      subItems: [
-        { title: 'Manage Stock', href: '/manage-stock', icon: Boxes },
-        { title: 'Stock History', href: '/manage-stock/history', icon: History },
-        { title: 'Alert Stock', href: '/manage-stock/alerts', icon: AlertTriangle },
-      ],
-    },
-    {
       title: 'Products',
       href: '/products',
       icon: Package,
@@ -185,7 +174,7 @@ export default function Sidebar({
     if (item.href === '/branch/dashboard' && pathname === '/branch/dashboard') return true;
     if (item.href === '/manage-stock' && pathname.startsWith('/manage-stock')) return true;
     if (item.href === '/products' && pathname.startsWith('/products')) return true;
-    if (item.href === '/inventory' && pathname.startsWith('/inventory')) return true;
+    // if (item.href === '/inventory' && pathname.startsWith('/inventory')) return true;
     if (item.href === '/purchases' && pathname.startsWith('/purchases')) return true;
     if (item.href === '/suppliers' && pathname.startsWith('/suppliers')) return true;
     if (item.href === '/customers' && pathname.startsWith('/customers')) return true;
@@ -243,8 +232,8 @@ export default function Sidebar({
                 <div key={item.title} className="space-y-1">
                   <div
                     className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${isActive
-                        ? 'bg-brand-blue text-white font-semibold shadow-xs'
-                        : 'text-slate-300 hover:text-white hover:bg-slate-800/60 font-medium'
+                      ? 'bg-brand-blue text-white font-semibold shadow-xs'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/60 font-medium'
                       }`}
                     onClick={() => setIsManageStockExpanded(!isManageStockExpanded)}
                   >
@@ -286,8 +275,8 @@ export default function Sidebar({
                             href={sub.href}
                             onClick={onMobileClose}
                             className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${isSubActive
-                                ? 'bg-slate-800 text-blue-400 font-semibold'
-                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                              ? 'bg-slate-800 text-blue-400 font-semibold'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
                               }`}
                           >
                             {SubIcon && <SubIcon className="w-3.5 h-3.5" />}
@@ -307,8 +296,8 @@ export default function Sidebar({
                 href={item.href}
                 onClick={onMobileClose}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive
-                    ? 'bg-brand-blue text-white font-semibold shadow-xs'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60 font-medium'
+                  ? 'bg-brand-blue text-white font-semibold shadow-xs'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60 font-medium'
                   }`}
               >
                 <Icon

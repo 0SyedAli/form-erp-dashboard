@@ -109,7 +109,7 @@ export default function POSHeader({
 
         {/* Back to Management Link for authorized accounts */}
         <Link
-          href={isSuperAdmin ? '/admin/dashboard' : '/manage-stock'}
+          href={isSuperAdmin ? '/admin/dashboard' : '/branch/dashboard'}
           className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-brand-burgundy hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
           title="Return to ERP Management Portal"
         >

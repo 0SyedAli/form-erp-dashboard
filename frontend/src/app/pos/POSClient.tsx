@@ -62,6 +62,7 @@ import SaleTypeSelector from '@/components/pos/SaleTypeSelector';
 import RepriceConfirmModal from '@/components/pos/RepriceConfirmModal';
 import POSCustomerModal from '@/components/pos/POSCustomerModal';
 import BrandSelector from '@/components/pos/BrandSelector';
+import SizeThicknessSelector from '@/components/pos/SizeThicknessSelector';
 import CategorySidebar from '@/components/pos/CategorySidebar';
 import ProductGrid from '@/components/pos/ProductGrid';
 import ProductConfigModal from '@/components/pos/ProductConfigModal';
@@ -123,40 +124,97 @@ function POSContent() {
   const isCheckingOut = isBackendMode ? isBackendCheckingOut : isDemoCheckingOut;
 
   // Unified Data
-  const branches: Branch[] = (Array.isArray(backendBranches) ? backendBranches : (backendBranches as any)?.data || demoBranches || []) as Branch[];
-  const brands: Brand[] = (Array.isArray(backendBrands) ? backendBrands : (backendBrands as any)?.data || demoBrands || []) as Brand[];
-  const categories: Category[] = (Array.isArray(backendCategories) ? backendCategories : (backendCategories as any)?.data || demoCategories || []) as Category[];
-  const sizes: MattressSize[] = (Array.isArray(backendSizes) ? backendSizes : (backendSizes as any)?.data || demoSizes || []) as MattressSize[];
-  const thicknesses: MattressThickness[] = (Array.isArray(backendThicknesses) ? backendThicknesses : (backendThicknesses as any)?.data || demoThicknesses || []) as MattressThickness[];
+  const branches: Branch[] = useMemo(() => {
+    const raw = Array.isArray(backendBranches) ? backendBranches : (backendBranches as any)?.data || demoBranches || [];
+    return (Array.isArray(raw) ? raw : []).map((b: any) => ({
+      ...b,
+      id: String(b.id || b._id || ''),
+    })) as Branch[];
+  }, [backendBranches]);
+
+  const brands: Brand[] = useMemo(() => {
+    const raw = Array.isArray(backendBrands) ? backendBrands : (backendBrands as any)?.data || demoBrands || [];
+    return (Array.isArray(raw) ? raw : []).map((b: any) => ({
+      ...b,
+      id: String(b.id || b._id || ''),
+    })) as Brand[];
+  }, [backendBrands]);
+
+  const categories: Category[] = useMemo(() => {
+    const raw = Array.isArray(backendCategories) ? backendCategories : (backendCategories as any)?.data || demoCategories || [];
+    return (Array.isArray(raw) ? raw : []).map((c: any) => ({
+      ...c,
+      id: String(c.id || c._id || ''),
+      brandId: String(c.brandId?._id || c.brandId || c.brand?._id || c.brand?.id || ''),
+    })) as Category[];
+  }, [backendCategories]);
+
+  const sizes: MattressSize[] = useMemo(() => {
+    const raw = Array.isArray(backendSizes) ? backendSizes : (backendSizes as any)?.data || demoSizes || [];
+    return (Array.isArray(raw) ? raw : []).map((s: any) => ({
+      ...s,
+      id: String(s.id || s._id || ''),
+    })) as MattressSize[];
+  }, [backendSizes]);
+
+  const thicknesses: MattressThickness[] = useMemo(() => {
+    const raw = Array.isArray(backendThicknesses) ? backendThicknesses : (backendThicknesses as any)?.data || demoThicknesses || [];
+    return (Array.isArray(raw) ? raw : []).map((t: any) => ({
+      ...t,
+      id: String(t.id || t._id || ''),
+    })) as MattressThickness[];
+  }, [backendThicknesses]);
   
   const rawProducts = isBackendMode
-    ? (Array.isArray(backendProducts) ? backendProducts : (backendProducts as any)?.data || [])
+    ? (Array.isArray(backendProducts)
+        ? backendProducts
+        : (backendProducts as any)?.data || (backendProducts as any)?.items || [])
     : demoProducts;
-  const products: CatalogueProduct[] = (Array.isArray(rawProducts) ? rawProducts : []) as CatalogueProduct[];
+  const products: CatalogueProduct[] = useMemo(() => {
+    const list = Array.isArray(rawProducts) ? rawProducts : [];
+    return list.map((p: any) => ({
+      ...p,
+      id: String(p.id || p._id || ''),
+      brandId: String(p.brandId?._id || p.brandId || p.brand?._id || p.brand?.id || ''),
+      categoryId: String(p.categoryId?._id || p.categoryId || p.category?._id || p.category?.id || ''),
+      code: p.code || `${p.brand?.code || 'MF'}-${p.category?.code || 'CAT'}`.toUpperCase(),
+      name: p.name || 'Unnamed Product',
+      status: p.status || 'ACTIVE',
+    })) as CatalogueProduct[];
+  }, [rawProducts]);
 
   const rawVariants = isBackendMode
-    ? (Array.isArray(backendSkusResponse) ? backendSkusResponse : (backendSkusResponse as any)?.data || [])
+    ? (Array.isArray(backendSkusResponse)
+        ? backendSkusResponse
+        : (backendSkusResponse as any)?.data || (backendSkusResponse as any)?.items || [])
     : demoVariants;
-  const variants: ProductVariant[] = (Array.isArray(rawVariants) ? rawVariants : []) as ProductVariant[];
-
-  const rawStock = isBackendMode
-    ? (Array.isArray(backendStockBalances) ? backendStockBalances : (backendStockBalances as any)?.data || [])
-    : demoInventoryBalances;
-  const inventoryBalances: InventoryBalance[] = (Array.isArray(rawStock) ? rawStock : []).map((b: any) => ({
-    id: b.id || b._id,
-    sku: b.sku,
-    branchId: b.branchId,
-    variantId: b.variant?._id || b.sku,
-    locationId: b.stockLocationId,
-    onHand: b.onHand || 0,
-    reserved: b.reserved || 0,
-    available: b.available || 0,
-  })) as unknown as InventoryBalance[];
-
-  const rawHeld = isBackendMode
-    ? (Array.isArray(backendHeldSales) ? backendHeldSales : (backendHeldSales as any)?.data || [])
-    : demoHeldSales;
-  const heldSales: HeldSale[] = (Array.isArray(rawHeld) ? rawHeld : []) as HeldSale[];
+  const variants: ProductVariant[] = useMemo(() => {
+    const list = Array.isArray(rawVariants) ? rawVariants : [];
+    return list.map((v: any) => {
+      const pId = String(v.productId?._id || v.productId || v.product?._id || v.product?.id || '');
+      const bId = String(v.brandId?._id || v.brandId || v.brand?._id || v.brand?.id || '');
+      const cId = String(v.categoryId?._id || v.categoryId || v.category?._id || v.category?.id || '');
+      const sId = String(v.sizeId?._id || v.sizeId || v.size?._id || v.size?.id || '');
+      const tId = String(v.thicknessId?._id || v.thicknessId || v.thickness?._id || v.thickness?.id || '');
+      const retPrice = v.retailPrice || v.walkInPrice || 0;
+      return {
+        ...v,
+        id: String(v.id || v._id || ''),
+        sku: v.sku || '',
+        productId: pId,
+        brandId: bId,
+        categoryId: cId,
+        sizeId: sId,
+        thicknessId: tId,
+        retailPrice: retPrice,
+        walkInPrice: v.walkInPrice || retPrice,
+        wholesalePrice: v.wholesalePrice || 0,
+        distributorPrice: v.distributorPrice || 0,
+        stock: v.stock ?? v.onHand ?? 0,
+        status: v.status || 'ACTIVE',
+      };
+    }) as ProductVariant[];
+  }, [rawVariants]);
 
   // Active Branch Resolution
   const activeBranch = useMemo(() => {
@@ -175,10 +233,71 @@ function POSContent() {
 
   const isRetailAllowed = activeBranch?.settings?.allowRetailSales ?? true;
 
+  const rawStock = isBackendMode
+    ? (Array.isArray(backendStockBalances)
+        ? backendStockBalances
+        : (backendStockBalances as any)?.items || (backendStockBalances as any)?.data || [])
+    : demoInventoryBalances;
+  const inventoryBalances: InventoryBalance[] = useMemo(() => {
+    const list = Array.isArray(rawStock) ? rawStock : [];
+    const directBalances: InventoryBalance[] = list.map((b: any) => ({
+      id: String(b.id || b._id || ''),
+      sku: b.sku || '',
+      branchId: String(b.branchId?._id || b.branchId || ''),
+      stockLocationId: String(b.stockLocationId?._id || b.stockLocationId || 'LOC-FLOOR'),
+      productId: String(b.variant?.productId?._id || b.variant?.productId || b.productId || ''),
+      variantId: String(b.variantId?._id || b.variantId || b.variant?._id || b.variant?.id || b.sku || ''),
+      productName: b.variant?.productId?.name || b.productName || '',
+      brandName: b.variant?.productId?.brandId?.name || b.brandName || '',
+      categoryName: b.variant?.productId?.categoryId?.name || b.categoryName || '',
+      sizeLabel: b.variant?.sizeId?.displayLabel || b.sizeLabel || '',
+      thicknessInches: Number(b.variant?.thicknessId?.value || b.thicknessInches || 0),
+      onHand: Number(b.onHand || 0),
+      reserved: Number(b.reserved || 0),
+      available: Number(b.available || 0),
+      reorderLevel: Number(b.reorderLevel || 5),
+      stockStatus: (Number(b.available || 0) > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK') as any,
+      updatedAt: b.updatedAt || new Date().toISOString(),
+    }));
+
+    // Ensure all variants have a balance entry even if stock API didn't report them
+    const variantIdSet = new Set(directBalances.map((b) => b.variantId));
+    const fallbackBalances: InventoryBalance[] = variants
+      .filter((v) => !variantIdSet.has(v.id))
+      .map((v) => ({
+        id: `synth-${v.id}`,
+        sku: v.sku,
+        branchId: activeBranch?.id || '',
+        stockLocationId: 'LOC-FLOOR',
+        productId: v.productId,
+        variantId: v.id,
+        productName: v.productName || '',
+        brandName: v.brandName || '',
+        categoryName: v.categoryName || '',
+        sizeLabel: v.sizeLabel || '',
+        thicknessInches: 0,
+        onHand: Number(v.stock ?? (v as any).onHand ?? 0),
+        reserved: 0,
+        available: Number(v.stock ?? (v as any).onHand ?? 0),
+        reorderLevel: 5,
+        stockStatus: (Number(v.stock ?? (v as any).onHand ?? 0) > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK') as any,
+        updatedAt: new Date().toISOString(),
+      }));
+
+    return [...directBalances, ...fallbackBalances];
+  }, [rawStock, variants, activeBranch?.id]);
+
+  const rawHeld = isBackendMode
+    ? (Array.isArray(backendHeldSales) ? backendHeldSales : (backendHeldSales as any)?.data || [])
+    : demoHeldSales;
+  const heldSales: HeldSale[] = (Array.isArray(rawHeld) ? rawHeld : []) as HeldSale[];
+
   // Filtered inventory balances for active branch
   const branchBalances = useMemo(() => {
     if (!activeBranch) return inventoryBalances;
-    return inventoryBalances.filter((b) => b.branchId === activeBranch.id);
+    return inventoryBalances.filter(
+      (b) => !b.branchId || b.branchId === activeBranch.id || b.id.startsWith('synth-')
+    );
   }, [inventoryBalances, activeBranch]);
 
   // Selected Brand and Category States
@@ -187,11 +306,20 @@ function POSContent() {
     if (chosenBrandId && brands.some((b) => b.id === chosenBrandId)) {
       return chosenBrandId;
     }
+    // If a brand has active products, prefer that brand as initial default
+    const brandWithProducts = brands.find((b) =>
+      products.some((p) => p.brandId === b.id && p.status === 'ACTIVE')
+    );
+    if (brandWithProducts) {
+      return brandWithProducts.id;
+    }
     const dura = brands.find((b) => b.code === 'DURA');
     return dura ? dura.id : brands[0]?.id || 'BRAND-DURA';
-  }, [chosenBrandId, brands]);
+  }, [chosenBrandId, brands, products]);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
+  const [selectedSizeId, setSelectedSizeId] = useState<string>('ALL');
+  const [selectedThicknessId, setSelectedThicknessId] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Flow 07 Unified POS Multi-Tier & Credit States
@@ -231,7 +359,7 @@ function POSContent() {
   // Filter categories by selected brand
   const brandCategories = useMemo(() => {
     return categories.filter(
-      (c) => c.brandId === selectedBrandId && c.status === 'ACTIVE'
+      (c) => String(c.brandId) === String(selectedBrandId) && c.status === 'ACTIVE'
     );
   }, [categories, selectedBrandId]);
 
@@ -240,7 +368,7 @@ function POSContent() {
     const counts: Record<string, number> = {};
     if (Array.isArray(products)) {
       products.forEach((p) => {
-        if (p.status === 'ACTIVE') {
+        if (p.status === 'ACTIVE' && p.brandId) {
           counts[p.brandId] = (counts[p.brandId] || 0) + 1;
         }
       });
@@ -253,7 +381,7 @@ function POSContent() {
     const counts: Record<string, number> = {};
     if (Array.isArray(products)) {
       products.forEach((p) => {
-        if (p.brandId === selectedBrandId && p.status === 'ACTIVE') {
+        if (p.brandId === selectedBrandId && p.status === 'ACTIVE' && p.categoryId) {
           counts[p.categoryId] = (counts[p.categoryId] || 0) + 1;
         }
       });
@@ -261,23 +389,64 @@ function POSContent() {
     return counts;
   }, [products, selectedBrandId]);
 
-  // Filter products by Brand, Category, and Search
+  // Size & Thickness products count helper
+  const { sizeProductCounts, thicknessProductCounts } = useMemo(() => {
+    const sizeCounts: Record<string, number> = {};
+    const thickCounts: Record<string, number> = {};
+
+    const relevantProducts = products.filter((p) => {
+      if (p.status !== 'ACTIVE') return false;
+      if (p.brandId !== selectedBrandId) return false;
+      if (selectedCategoryId !== 'ALL' && p.categoryId !== selectedCategoryId) return false;
+      return true;
+    });
+
+    const relevantProductIds = new Set(relevantProducts.map((p) => p.id));
+
+    variants.forEach((v) => {
+      if (v.status === 'ACTIVE' && relevantProductIds.has(v.productId)) {
+        if (v.sizeId) sizeCounts[v.sizeId] = (sizeCounts[v.sizeId] || 0) + 1;
+        if (v.thicknessId) thickCounts[v.thicknessId] = (thickCounts[v.thicknessId] || 0) + 1;
+      }
+    });
+
+    return { sizeProductCounts: sizeCounts, thicknessProductCounts: thickCounts };
+  }, [products, variants, selectedBrandId, selectedCategoryId]);
+
+  // Filter products by Brand, Category, Size, Thickness, and Search
   const filteredProducts = useMemo(() => {
     if (!Array.isArray(products)) return [];
     return products.filter((p) => {
       if (p.status !== 'ACTIVE') return false;
       if (p.brandId !== selectedBrandId) return false;
       if (selectedCategoryId !== 'ALL' && p.categoryId !== selectedCategoryId) return false;
+
+      // Filter by size if selected
+      if (selectedSizeId !== 'ALL') {
+        const hasSize = variants.some(
+          (v) => v.productId === p.id && v.sizeId === selectedSizeId && v.status === 'ACTIVE'
+        );
+        if (!hasSize) return false;
+      }
+
+      // Filter by thickness if selected
+      if (selectedThicknessId !== 'ALL') {
+        const hasThick = variants.some(
+          (v) => v.productId === p.id && v.thicknessId === selectedThicknessId && v.status === 'ACTIVE'
+        );
+        if (!hasThick) return false;
+      }
+
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
-        const matchesName = p.name.toLowerCase().includes(query);
+        const matchesName = (p.name || '').toLowerCase().includes(query);
         const matchesDesc = (p.description || '').toLowerCase().includes(query);
-        const matchesCode = p.code.toLowerCase().includes(query);
+        const matchesCode = (p.code || '').toLowerCase().includes(query);
         if (!matchesName && !matchesDesc && !matchesCode) return false;
       }
       return true;
     });
-  }, [products, selectedBrandId, selectedCategoryId, searchQuery]);
+  }, [products, variants, selectedBrandId, selectedCategoryId, selectedSizeId, selectedThicknessId, searchQuery]);
 
   // Cart Calculations
   const subtotal = useMemo(() => {
@@ -803,8 +972,23 @@ function POSContent() {
             onSelectBrand={(id) => {
               setChosenBrandId(id);
               setSelectedCategoryId('ALL');
+              setSelectedSizeId('ALL');
+              setSelectedThicknessId('ALL');
             }}
             brandProductCounts={brandProductCounts}
+          />
+
+          {/* Quick Size & Thickness Filter Bar */}
+          <SizeThicknessSelector
+            sizes={sizes}
+            thicknesses={thicknesses}
+            selectedSizeId={selectedSizeId}
+            selectedThicknessId={selectedThicknessId}
+            onSelectSize={setSelectedSizeId}
+            onSelectThickness={setSelectedThicknessId}
+            sizeProductCounts={sizeProductCounts}
+            thicknessProductCounts={thicknessProductCounts}
+            totalProductsCount={products.filter((p) => p.brandId === selectedBrandId && p.status === 'ACTIVE').length}
           />
 
           {/* Categories Sidebar + Product Cards Grid */}
@@ -825,6 +1009,10 @@ function POSContent() {
               onSelectProduct={(product) => setConfigModalProduct(product)}
               selectedProductId={configModalProduct?.id}
               saleType={saleType}
+              selectedSizeId={selectedSizeId}
+              selectedThicknessId={selectedThicknessId}
+              sizes={sizes}
+              thicknesses={thicknesses}
             />
           </div>
         </section>

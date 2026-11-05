@@ -231,7 +231,12 @@ export const inventoryApi = createApi({
         url: '/inventory/stock',
         params: params || {},
       }),
-      transformResponse: (response: ApiResponse<StockBalance[]>) => response.data || [],
+      transformResponse: (response: any) => {
+        if (Array.isArray(response?.data?.items)) return response.data.items;
+        if (Array.isArray(response?.data)) return response.data;
+        if (Array.isArray(response?.items)) return response.items;
+        return [];
+      },
       providesTags: (result) =>
         result
           ? [

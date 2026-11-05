@@ -59,12 +59,12 @@ export class CatalogueService {
   // BRANDS
   // ==========================================
 
-  public static async getBrands(query: { search?: string; status?: string }) {
+  public static async getBrands(query: { search?: string; status?: string } = {}) {
     const filter: any = {};
-    if (query.status && query.status !== 'ALL') {
+    if (query?.status && query.status !== 'ALL') {
       filter.status = query.status;
     }
-    if (query.search) {
+    if (query?.search) {
       filter.$or = [
         { name: { $regex: query.search, $options: 'i' } },
         { code: { $regex: query.search, $options: 'i' } },
@@ -74,18 +74,36 @@ export class CatalogueService {
   }
 
   public static async getBrandById(id: string): Promise<IBrand> {
-    const brand = await Brand.findById(id);
+    let brand: any = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      brand = await Brand.findById(id);
+    }
+    if (!brand) {
+      const cleanCode = id.replace(/^BRAND-/i, '').replace(/-\d+$/, '').toUpperCase();
+      brand = await Brand.findOne({
+        $or: [
+          { code: id.toUpperCase() },
+          { code: cleanCode },
+          { code: { $regex: new RegExp(`^${cleanCode}`, 'i') } },
+        ],
+      });
+    }
     if (!brand) throw new AppError(`Brand '${id}' not found.`, 404, 'BRAND_NOT_FOUND');
     return brand;
   }
 
   public static async createBrand(input: BrandInput): Promise<IBrand> {
-    const existing = await Brand.findOne({ code: input.code.toUpperCase() });
+    const code = input.code.trim().toUpperCase();
+    const existing = await Brand.findOne({ code });
     if (existing) {
-      throw new AppError(`Brand code '${input.code}' already exists.`, 409, 'DUPLICATE_BRAND_CODE');
+      if (input.name) existing.name = input.name.trim();
+      if (input.description !== undefined) existing.description = input.description?.trim();
+      if (input.logoUrl !== undefined) existing.logoUrl = input.logoUrl;
+      existing.status = 'ACTIVE';
+      return existing.save();
     }
     return Brand.create({
-      code: input.code.toUpperCase(),
+      code,
       name: input.name.trim(),
       description: input.description?.trim(),
       logoUrl: input.logoUrl,
@@ -96,7 +114,7 @@ export class CatalogueService {
   public static async updateBrand(id: string, input: Partial<BrandInput>): Promise<IBrand> {
     const brand = await this.getBrandById(id);
     if (input.code && input.code.toUpperCase() !== brand.code) {
-      const existing = await Brand.findOne({ code: input.code.toUpperCase(), _id: { $ne: id } });
+      const existing = await Brand.findOne({ code: input.code.toUpperCase(), _id: { $ne: brand._id } });
       if (existing) throw new AppError(`Brand code '${input.code}' already exists.`, 409, 'DUPLICATE_BRAND_CODE');
       brand.code = input.code.toUpperCase();
     }
@@ -116,15 +134,15 @@ export class CatalogueService {
   // CATEGORIES
   // ==========================================
 
-  public static async getCategories(query: { brandId?: string; search?: string; status?: string }) {
+  public static async getCategories(query: { brandId?: string; search?: string; status?: string } = {}) {
     const filter: any = {};
-    if (query.brandId) {
+    if (query?.brandId) {
       filter.brandId = query.brandId;
     }
-    if (query.status && query.status !== 'ALL') {
+    if (query?.status && query.status !== 'ALL') {
       filter.status = query.status;
     }
-    if (query.search) {
+    if (query?.search) {
       filter.$or = [
         { name: { $regex: query.search, $options: 'i' } },
         { code: { $regex: query.search, $options: 'i' } },
@@ -328,12 +346,18 @@ export class CatalogueService {
     const variantsByProduct = new Map<string, any[]>();
     for (const v of variants) {
       const pId = v.productId.toString();
+      const sId = (v.sizeId as any)?._id ? (v.sizeId as any)._id.toString() : v.sizeId?.toString();
+      const tId = (v.thicknessId as any)?._id ? (v.thicknessId as any)._id.toString() : v.thicknessId?.toString();
+
       if (!variantsByProduct.has(pId)) variantsByProduct.set(pId, []);
       variantsByProduct.get(pId)!.push({
         id: v._id.toString(),
         sku: v.sku,
+        productId: pId,
         size: v.sizeId,
+        sizeId: sId,
         thickness: v.thicknessId,
+        thicknessId: tId,
         listPrice: toRupees(v.listPrice),
         purchasePrice: toRupees(v.purchasePrice),
         retailPrice: toRupees(v.retailPrice),
@@ -343,15 +367,28 @@ export class CatalogueService {
       });
     }
 
-    const items = products.map((p) => ({
-      id: p._id.toString(),
-      name: p.name,
-      brand: p.brandId,
-      category: p.categoryId,
-      status: p.status,
-      variants: variantsByProduct.get(p._id.toString()) || [],
-      createdAt: p.createdAt,
-    }));
+    const items = products.map((p: any) => {
+      const b = p.brandId;
+      const c = p.categoryId;
+      const bCode = b?.code || 'MF';
+      const cCode = c?.code || 'CAT';
+      const code = p.code || `${bCode}-${cCode}`.toUpperCase();
+      const bId = b?._id ? b._id.toString() : b?.toString() || '';
+      const cId = c?._id ? c._id.toString() : c?.toString() || '';
+
+      return {
+        id: p._id.toString(),
+        name: p.name,
+        code,
+        brandId: bId,
+        categoryId: cId,
+        brand: b,
+        category: c,
+        status: p.status,
+        variants: variantsByProduct.get(p._id.toString()) || [],
+        createdAt: p.createdAt,
+      };
+    });
 
     return {
       items,
@@ -398,6 +435,42 @@ export class CatalogueService {
       })),
       createdAt: product.createdAt,
     };
+  }
+
+  private static async resolvePrimaryBranchAndLocation(callerBranchId?: string, destinationBranchId?: string) {
+    let branch: any = null;
+    if (destinationBranchId && mongoose.Types.ObjectId.isValid(destinationBranchId)) {
+      branch = await Branch.findById(destinationBranchId);
+    }
+    if (!branch && callerBranchId && mongoose.Types.ObjectId.isValid(callerBranchId)) {
+      branch = await Branch.findById(callerBranchId);
+    }
+    if (!branch) {
+      branch =
+        (await Branch.findOne({ $or: [{ code: 'MAIN' }, { isMain: true }, { code: 'SHOP-12' }] })) ||
+        (await Branch.findOne({ isActive: true })) ||
+        (await Branch.findOne());
+    }
+    if (!branch) return null;
+
+    let location = await StockLocation.findOne({
+      branchId: branch._id,
+      $or: [{ code: 'MAIN-LOC-01' }, { code: 'LOC-FLOOR' }, { type: 'SALES_FLOOR' }],
+    });
+    if (!location) {
+      location = await StockLocation.findOne({ branchId: branch._id });
+    }
+    if (!location) {
+      location = await StockLocation.create({
+        branchId: branch._id,
+        name: `${branch.name} Sales Floor`,
+        code: `${branch.code || 'LOC'}-FLOOR`,
+        type: 'SALES_FLOOR',
+        status: 'ACTIVE',
+      });
+    }
+
+    return { branch, location };
   }
 
   /**
@@ -500,19 +573,7 @@ export class CatalogueService {
     let purchaseDiscountPercent = input.purchasePercent ?? 0;
     if (input.purchasePrice !== undefined) {
       purchasePricePaisa = toPaisa(input.purchasePrice);
-      if (input.purchasePercent !== undefined) {
-        const isValid = validatePriceReconciliation(
-          listPricePaisa,
-          purchasePricePaisa,
-          input.purchasePercent,
-          'PURCHASE'
-        );
-        if (!isValid) {
-          throw new AppError('Purchase price and discount percentage do not reconcile.', 400, 'PRICE_DISCREPANCY');
-        }
-      } else {
-        purchaseDiscountPercent = calculateDiscountPercent(listPricePaisa, purchasePricePaisa);
-      }
+      purchaseDiscountPercent = calculateDiscountPercent(listPricePaisa, purchasePricePaisa);
     } else {
       purchasePricePaisa = calculatePurchasePrice(listPricePaisa, purchaseDiscountPercent);
     }
@@ -522,19 +583,7 @@ export class CatalogueService {
     let retailMarkupPercent = input.retailPercent ?? 0;
     if (input.retailPrice !== undefined) {
       retailPricePaisa = toPaisa(input.retailPrice);
-      if (input.retailPercent !== undefined) {
-        const isValid = validatePriceReconciliation(
-          listPricePaisa,
-          retailPricePaisa,
-          input.retailPercent,
-          'RETAIL'
-        );
-        if (!isValid) {
-          throw new AppError('Retail price and markup percentage do not reconcile.', 400, 'PRICE_DISCREPANCY');
-        }
-      } else {
-        retailMarkupPercent = calculateMarkupPercent(listPricePaisa, retailPricePaisa);
-      }
+      retailMarkupPercent = calculateMarkupPercent(listPricePaisa, retailPricePaisa);
     } else {
       retailPricePaisa = calculateRetailPrice(listPricePaisa, retailMarkupPercent);
     }
@@ -544,19 +593,7 @@ export class CatalogueService {
     let wholesaleDiscountPercent = input.wholesalePercent ?? 0;
     if (input.wholesalePrice !== undefined) {
       wholesalePricePaisa = toPaisa(input.wholesalePrice);
-      if (input.wholesalePercent !== undefined) {
-        const isValid = validatePriceReconciliation(
-          listPricePaisa,
-          wholesalePricePaisa,
-          input.wholesalePercent,
-          'WHOLESALE'
-        );
-        if (!isValid) {
-          throw new AppError('Wholesale price and discount percentage do not reconcile.', 400, 'PRICE_DISCREPANCY');
-        }
-      } else {
-        wholesaleDiscountPercent = calculateDiscountPercent(listPricePaisa, wholesalePricePaisa);
-      }
+      wholesaleDiscountPercent = calculateDiscountPercent(listPricePaisa, wholesalePricePaisa);
     } else {
       wholesalePricePaisa = calculateWholesalePrice(listPricePaisa, wholesaleDiscountPercent);
     }
@@ -566,19 +603,7 @@ export class CatalogueService {
     let distributorDiscountPercent = input.distributorPercent ?? 0;
     if (input.distributorPrice !== undefined) {
       distributorPricePaisa = toPaisa(input.distributorPrice);
-      if (input.distributorPercent !== undefined) {
-        const isValid = validatePriceReconciliation(
-          listPricePaisa,
-          distributorPricePaisa,
-          input.distributorPercent,
-          'DISTRIBUTOR'
-        );
-        if (!isValid) {
-          throw new AppError('Distributor price and discount percentage do not reconcile.', 400, 'PRICE_DISCREPANCY');
-        }
-      } else {
-        distributorDiscountPercent = calculateDiscountPercent(listPricePaisa, distributorPricePaisa);
-      }
+      distributorDiscountPercent = calculateDiscountPercent(listPricePaisa, distributorPricePaisa);
     } else {
       distributorPricePaisa = calculateDistributorPrice(listPricePaisa, distributorDiscountPercent);
     }
@@ -659,57 +684,55 @@ export class CatalogueService {
     ]);
 
     // 7. Initial Stock Balance Handling
-    // Destination branch resolution
-    let targetBranchId = callerBranchId;
-    if (!targetBranchId && input.destinationBranchId) {
-      targetBranchId = input.destinationBranchId;
-    }
-    if (!targetBranchId) {
-      // Default to main branch if unassigned admin
-      const mainBranch = await Branch.findOne({ code: 'SHOP-12' });
-      targetBranchId = mainBranch?._id.toString();
-    }
+    const stockQty = Math.max(0, input.stock || 0);
+    const minStockQty = input.minimumStock !== undefined ? Math.max(0, input.minimumStock) : 5;
 
+    const branchAndLoc = await this.resolvePrimaryBranchAndLocation(callerBranchId, input.destinationBranchId);
     let initialStockCreated = false;
-    if (targetBranchId && mongoose.Types.ObjectId.isValid(targetBranchId)) {
-      const branchObjectId = new mongoose.Types.ObjectId(targetBranchId);
-      const floorLocation = await StockLocation.findOne({
-        branchId: branchObjectId,
-        code: 'LOC-FLOOR',
+
+    if (branchAndLoc) {
+      const { branch: targetBranch, location: floorLocation } = branchAndLoc;
+
+      let stockBalance = await StockBalance.findOne({
+        branchId: targetBranch._id,
+        stockLocationId: floorLocation._id,
+        sku,
       });
 
-      if (floorLocation) {
-        const stockQty = Math.max(0, input.stock || 0);
-        const minStockQty = input.minimumStock !== undefined ? Math.max(0, input.minimumStock) : undefined;
-
-        await StockBalance.create({
-          branchId: branchObjectId,
+      if (!stockBalance) {
+        stockBalance = await StockBalance.create({
+          branchId: targetBranch._id,
           stockLocationId: floorLocation._id,
           sku,
           variantId: variant._id,
           onHand: stockQty,
           reserved: 0,
-          ...(minStockQty !== undefined ? { reorderLevel: minStockQty } : {}),
+          reorderLevel: minStockQty,
         });
-
-        if (stockQty > 0) {
-          await StockMovement.create({
-            movementNumber: `MOV-INIT-${sku}-${Date.now().toString().slice(-6)}`,
-            branchId: branchObjectId,
-            stockLocationId: floorLocation._id,
-            sku,
-            movementType: 'OPENING_BALANCE',
-            quantityDifference: stockQty,
-            previousBalance: 0,
-            newBalance: stockQty,
-            referenceType: 'OPENING_BALANCE',
-            reason: 'Product catalogue opening stock registration',
-            performedBy: accountId || 'System',
-            timestamp: new Date(),
-          });
-        }
-        initialStockCreated = true;
+      } else {
+        stockBalance.onHand = stockQty;
+        stockBalance.reorderLevel = minStockQty;
+        stockBalance.variantId = variant._id;
+        await stockBalance.save();
       }
+
+      if (stockQty > 0) {
+        await StockMovement.create({
+          movementNumber: `MOV-INIT-${sku}-${Date.now().toString().slice(-6)}`,
+          branchId: targetBranch._id,
+          stockLocationId: floorLocation._id,
+          sku,
+          movementType: 'OPENING_BALANCE',
+          quantityDifference: stockQty,
+          previousBalance: 0,
+          newBalance: stockQty,
+          referenceType: 'OPENING_BALANCE',
+          reason: 'Product catalogue opening stock registration',
+          performedBy: accountId || 'System',
+          timestamp: new Date(),
+        });
+      }
+      initialStockCreated = true;
     }
 
     return {
@@ -772,19 +795,49 @@ export class CatalogueService {
       .populate('thicknessId', 'value displayLabel')
       .sort({ sku: 1 });
 
+    const variantIds = variants.map((v) => v._id);
+    const stockBalances = await StockBalance.find({
+      $or: [{ variantId: { $in: variantIds } }, { sku: { $in: variants.map((v) => v.sku) } }],
+    });
+    const stockMap = new Map<string, { onHand: number; reorderLevel: number }>();
+    stockBalances.forEach((sb) => {
+      const existing = stockMap.get(sb.sku) || { onHand: 0, reorderLevel: sb.reorderLevel ?? 5 };
+      existing.onHand += sb.onHand || 0;
+      stockMap.set(sb.sku, existing);
+    });
+
     return variants.map((v: any) => {
+      const stockInfo = stockMap.get(v.sku) || { onHand: 0, reorderLevel: 5 };
+      const p = v.productId;
+      const pId = p?._id ? p._id.toString() : p?.toString() || '';
+      const b = p?.brandId;
+      const c = p?.categoryId;
+      const bId = b?._id ? b._id.toString() : b?.toString() || '';
+      const cId = c?._id ? c._id.toString() : c?.toString() || '';
+      const sId = v.sizeId?._id ? v.sizeId._id.toString() : v.sizeId?.toString() || '';
+      const tId = v.thicknessId?._id ? v.thicknessId._id.toString() : v.thicknessId?.toString() || '';
+
       const baseObj: any = {
         id: v._id.toString(),
         sku: v.sku,
-        productName: v.productId?.name || 'Mattress',
-        brand: v.productId?.brandId,
-        category: v.productId?.categoryId,
+        productName: p?.name || 'Mattress',
+        productId: pId,
+        brandId: bId,
+        categoryId: cId,
+        sizeId: sId,
+        thicknessId: tId,
+        brand: b,
+        category: c,
         size: v.sizeId,
         thickness: v.thicknessId,
         listPrice: toRupees(v.listPrice),
         retailPrice: toRupees(v.retailPrice),
+        walkInPrice: toRupees(v.retailPrice),
         wholesalePrice: toRupees(v.wholesalePrice),
         distributorPrice: toRupees(v.distributorPrice),
+        stock: stockInfo.onHand,
+        onHand: stockInfo.onHand,
+        minimumStock: stockInfo.reorderLevel,
         status: v.status,
       };
 
@@ -824,6 +877,10 @@ export class CatalogueService {
       { path: 'thicknessId', select: 'value displayLabel' },
     ]);
 
+    const stockDoc =
+      (await StockBalance.findOne({ variantId: variant._id })) ||
+      (await StockBalance.findOne({ sku: variant.sku }));
+
     const res: any = {
       id: variant._id.toString(),
       sku: variant.sku,
@@ -838,6 +895,8 @@ export class CatalogueService {
       distributorPrice: toRupees(variant.distributorPrice),
       distributorDiscountPercent: variant.distributorDiscountPercent,
       status: variant.status,
+      stock: stockDoc ? stockDoc.onHand : 0,
+      minimumStock: stockDoc?.reorderLevel ?? 5,
     };
 
     if (isSuperAdmin) {
@@ -984,11 +1043,68 @@ export class CatalogueService {
       }
     }
 
+    // 6. Stock & Minimum Stock updates
+    if (input.stock !== undefined || input.minimumStock !== undefined) {
+      let stockDoc =
+        (await StockBalance.findOne({ variantId: variant._id })) ||
+        (await StockBalance.findOne({ sku: variant.sku }));
+
+      if (!stockDoc) {
+        const branchAndLoc = await this.resolvePrimaryBranchAndLocation();
+        if (branchAndLoc) {
+          stockDoc = await StockBalance.create({
+            branchId: branchAndLoc.branch._id,
+            stockLocationId: branchAndLoc.location._id,
+            sku: variant.sku,
+            variantId: variant._id,
+            onHand: 0,
+            reserved: 0,
+            reorderLevel: 5,
+          });
+        }
+      }
+
+      if (stockDoc) {
+        if (!stockDoc.variantId) {
+          stockDoc.variantId = variant._id;
+        }
+        if (input.stock !== undefined) {
+          const oldOnHand = stockDoc.onHand || 0;
+          const newOnHand = Math.max(0, input.stock);
+          if (oldOnHand !== newOnHand) {
+            stockDoc.onHand = newOnHand;
+            await StockMovement.create({
+              movementNumber: `MOV-EDIT-${variant.sku}-${Date.now().toString().slice(-6)}`,
+              branchId: stockDoc.branchId,
+              stockLocationId: stockDoc.stockLocationId,
+              sku: variant.sku,
+              movementType: 'ADMINISTRATIVE_ADJUSTMENT',
+              quantityDifference: newOnHand - oldOnHand,
+              previousBalance: oldOnHand,
+              newBalance: newOnHand,
+              referenceType: 'ADJUSTMENT',
+              reason: input.reason || 'Product catalogue edit stock update',
+              performedBy: accountId || 'System',
+              timestamp: new Date(),
+            });
+          }
+        }
+        if (input.minimumStock !== undefined) {
+          stockDoc.reorderLevel = Math.max(0, input.minimumStock);
+        }
+        await stockDoc.save();
+      }
+    }
+
     await variant.save();
 
     if (auditHistoryRecords.length > 0) {
       await PriceHistory.insertMany(auditHistoryRecords);
     }
+
+    const finalStockDoc =
+      (await StockBalance.findOne({ variantId: variant._id })) ||
+      (await StockBalance.findOne({ sku: variant.sku }));
 
     return {
       id: variant._id.toString(),
@@ -1002,6 +1118,8 @@ export class CatalogueService {
       wholesaleDiscountPercent: variant.wholesaleDiscountPercent,
       distributorPrice: toRupees(variant.distributorPrice),
       distributorDiscountPercent: variant.distributorDiscountPercent,
+      stock: finalStockDoc ? finalStockDoc.onHand : 0,
+      minimumStock: finalStockDoc?.reorderLevel ?? 5,
       changesRecorded: auditHistoryRecords.length,
     };
   }

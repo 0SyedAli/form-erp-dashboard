@@ -2,8 +2,8 @@
 
 import React from 'react';
 import Image from 'next/image';
-import { CatalogueProduct, ProductVariant, InventoryBalance, SaleType } from '@/types';
-import { Package, AlertCircle } from 'lucide-react';
+import { CatalogueProduct, ProductVariant, InventoryBalance, SaleType, MattressSize, MattressThickness } from '@/types';
+import { Package, AlertCircle, Ruler, Layers } from 'lucide-react';
 
 interface ProductGridProps {
   brandName: string;
@@ -13,6 +13,10 @@ interface ProductGridProps {
   onSelectProduct: (product: CatalogueProduct) => void;
   selectedProductId?: string;
   saleType?: SaleType;
+  selectedSizeId?: string;
+  selectedThicknessId?: string;
+  sizes?: MattressSize[];
+  thicknesses?: MattressThickness[];
 }
 
 export default function ProductGrid({
@@ -23,14 +27,26 @@ export default function ProductGrid({
   onSelectProduct,
   selectedProductId,
   saleType = 'WALK_IN',
+  selectedSizeId = 'ALL',
+  selectedThicknessId = 'ALL',
+  sizes = [],
+  thicknesses = [],
 }: ProductGridProps) {
-  // Helper to determine starting price and stock availability for a product based on active saleType
+  // Helper to determine starting price, stock, and matching size/thickness for a product
   const getProductMetrics = (productId: string) => {
     const productVariants = variants.filter(
       (v) => v.productId === productId && v.status === 'ACTIVE'
     );
     if (productVariants.length === 0) {
-      return { startingPrice: 0, inStock: false, totalAvailable: 0 };
+      return {
+        startingPrice: 0,
+        inStock: false,
+        totalAvailable: 0,
+        sizeLabel: '',
+        thicknessLabel: '',
+        allSizesCount: 0,
+        allThicknessesCount: 0,
+      };
     }
 
     const getVariantPrice = (v: ProductVariant) => {
@@ -39,18 +55,62 @@ export default function ProductGrid({
       return v.walkInPrice || v.retailPrice || 0;
     };
 
-    const prices = productVariants.map(getVariantPrice).filter((p) => p > 0);
-    const startingPrice = prices.length > 0 ? Math.min(...prices) : 0;
+    // Filter by selected size/thickness if user picked specific filters
+    let targetVariants = productVariants;
+    if (selectedSizeId && selectedSizeId !== 'ALL') {
+      const filtered = targetVariants.filter((v) => v.sizeId === selectedSizeId);
+      if (filtered.length > 0) targetVariants = filtered;
+    }
+    if (selectedThicknessId && selectedThicknessId !== 'ALL') {
+      const filtered = targetVariants.filter((v) => v.thicknessId === selectedThicknessId);
+      if (filtered.length > 0) targetVariants = filtered;
+    }
+
+    // Sort to get best representative variant
+    const sorted = [...targetVariants].sort((a, b) => getVariantPrice(a) - getVariantPrice(b));
+    const representative = sorted.find((v) => getVariantPrice(v) > 0) || sorted[0] || productVariants[0];
+
+    const startingPrice = representative ? getVariantPrice(representative) : 0;
+
+    // Resolve human-readable size & thickness labels
+    const matchedSize = sizes.find((s) => s.id === representative?.sizeId);
+    const matchedThick = thicknesses.find((t) => t.id === representative?.thicknessId);
+    const sizeLabel =
+      matchedSize?.displayLabel ||
+      matchedSize?.name ||
+      representative?.sizeLabel ||
+      (representative as any)?.size?.displayLabel ||
+      '';
+    const thicknessLabel =
+      matchedThick?.displayLabel ||
+      (matchedThick ? `${matchedThick.value} Inches` : '') ||
+      representative?.thicknessLabel ||
+      (representative as any)?.thickness?.displayLabel ||
+      '';
+
+    const uniqueSizes = new Set(productVariants.map((v) => v.sizeId));
+    const uniqueThicknesses = new Set(productVariants.map((v) => v.thicknessId));
 
     const variantIds = new Set(productVariants.map((v) => v.id));
-    const totalAvailable = inventoryBalances
+    let totalAvailable = inventoryBalances
       .filter((b) => variantIds.has(b.variantId))
       .reduce((sum, b) => sum + (b.available || 0), 0);
+
+    if (totalAvailable === 0) {
+      totalAvailable = productVariants.reduce(
+        (sum, v) => sum + (v.stock ?? (v as any).onHand ?? 0),
+        0
+      );
+    }
 
     return {
       startingPrice,
       inStock: totalAvailable > 0,
       totalAvailable,
+      sizeLabel,
+      thicknessLabel,
+      allSizesCount: uniqueSizes.size,
+      allThicknessesCount: uniqueThicknesses.size,
     };
   };
 
@@ -78,9 +138,14 @@ export default function ProductGrid({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {products.map((product) => {
-            const { startingPrice, inStock, totalAvailable } = getProductMetrics(
-              product.id
-            );
+            const {
+              startingPrice,
+              inStock,
+              totalAvailable,
+              sizeLabel,
+              thicknessLabel,
+              allSizesCount,
+            } = getProductMetrics(product.id);
             const isSelected = selectedProductId === product.id;
 
             return (
@@ -133,7 +198,38 @@ export default function ProductGrid({
                     <p className="text-xs text-slate-500 mt-0.5 line-clamp-1 font-sans">
                       {product.description || 'Quality Foam Mattress'}
                     </p>
+
+                    {/* Size & Thickness Spec Badges */}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2 mb-2">
+                      {sizeLabel && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-semibold border border-slate-200">
+                          <Ruler className="w-3 h-3 text-blue-600" />
+                          <span>{sizeLabel}</span>
+                        </span>
+                      )}
+                      {thicknessLabel && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-semibold border border-indigo-200">
+                          <Layers className="w-3 h-3 text-indigo-600" />
+                          <span>{thicknessLabel}</span>
+                        </span>
+                      )}
+                      {allSizesCount > 1 && (
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          +{allSizesCount - 1} sizes
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  <div className="pt-2 border-t border-slate-100">
+                    {/* Price Clarity Note */}
+                    <div className="text-[10px] text-slate-500 font-medium mb-0.5 truncate">
+                      {selectedSizeId !== 'ALL' || selectedThicknessId !== 'ALL'
+                        ? 'Selected spec price:'
+                        : sizeLabel && thicknessLabel
+                        ? `Price for ${sizeLabel} (${thicknessLabel}):`
+                        : 'Starting Price:'}
+                    </div>
 
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-baseline gap-1">
@@ -171,6 +267,7 @@ export default function ProductGrid({
                     </button>
                   </div>
                 </div>
+              </div>
             );
           })}
         </div>
