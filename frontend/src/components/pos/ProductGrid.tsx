@@ -243,13 +243,13 @@ export default function ProductGrid({
     const startingPrice = representative ? getVariantPrice(representative) : 0;
 
     const variantIds = new Set(productVariants.map((v) => v.id));
-    let totalAvailable = inventoryBalances
-      .filter((b) => variantIds.has(b.variantId))
-      .reduce((sum, b) => sum + (b.available || 0), 0);
-
-    if (totalAvailable === 0) {
+    const matchingBalances = inventoryBalances.filter((b) => variantIds.has(b.variantId));
+    let totalAvailable = 0;
+    if (matchingBalances.length > 0) {
+      totalAvailable = matchingBalances.reduce((sum, b) => sum + Math.max(0, b.available || 0), 0);
+    } else {
       totalAvailable = productVariants.reduce(
-        (sum, v) => sum + (v.stock ?? (v as any).onHand ?? 0),
+        (sum, v) => sum + Math.max(0, v.stock ?? (v as any).onHand ?? 0),
         0
       );
     }

@@ -297,19 +297,18 @@ export class CatalogueService {
       width: input.width,
       unit: input.unit || 'in',
     });
+    const targetStatus = (input as any).status ? (input as any).status.toUpperCase() : 'ACTIVE';
     if (existing) {
-      throw new AppError(
-        `Size dimension ${input.length}x${input.width} ${input.unit || 'in'} already exists.`,
-        409,
-        'DUPLICATE_SIZE'
-      );
+      if (input.displayLabel) existing.displayLabel = input.displayLabel.trim();
+      existing.status = targetStatus;
+      return existing.save();
     }
     return Size.create({
       length: input.length,
       width: input.width,
       unit: input.unit || 'in',
       displayLabel: input.displayLabel.trim(),
-      status: 'ACTIVE',
+      status: targetStatus,
     });
   }
 
@@ -333,6 +332,7 @@ export class CatalogueService {
     if (input.length) size.length = input.length;
     if (input.width) size.width = input.width;
     if (input.unit) size.unit = input.unit;
+    if ((input as any).status) size.status = (input as any).status.toUpperCase();
     return size.save();
   }
 
@@ -386,14 +386,17 @@ export class CatalogueService {
 
   public static async createThickness(input: ThicknessInput): Promise<IThickness> {
     const existing = await Thickness.findOne({ value: input.value });
+    const targetStatus = (input as any).status ? (input as any).status.toUpperCase() : 'ACTIVE';
     if (existing) {
-      throw new AppError(`Thickness ${input.value} ${input.unit || 'in'} already exists.`, 409, 'DUPLICATE_THICKNESS');
+      if (input.displayLabel) existing.displayLabel = input.displayLabel.trim();
+      existing.status = targetStatus;
+      return existing.save();
     }
     return Thickness.create({
       value: input.value,
       unit: input.unit || 'in',
       displayLabel: input.displayLabel.trim(),
-      status: 'ACTIVE',
+      status: targetStatus,
     });
   }
 
@@ -402,6 +405,7 @@ export class CatalogueService {
     if (input.displayLabel) thickness.displayLabel = input.displayLabel.trim();
     if (input.value) thickness.value = input.value;
     if (input.unit) thickness.unit = input.unit;
+    if ((input as any).status) thickness.status = (input as any).status.toUpperCase();
     return thickness.save();
   }
 

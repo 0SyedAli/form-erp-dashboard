@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import {
   useGetInvoicesQuery,
@@ -15,6 +15,7 @@ import {
 import { useAppSelector } from '@/store';
 import { Invoice } from '@/types';
 import AppLayout from '@/components/layout/AppLayout';
+import { getPendingSales } from '@/lib/offline/posOfflineDb';
 import {
   ArrowLeft,
   Search,
@@ -78,9 +79,45 @@ function SalesHistoryContent() {
     id: String(c.id || c._id || ''),
   }));
 
+  const [offlineInvoices, setOfflineInvoices] = useState<Invoice[]>([]);
+
+  useEffect(() => {
+    getPendingSales().then((sales) => {
+      if (sales && sales.length > 0) {
+        setOfflineInvoices(sales.map((s) => s.invoice));
+      }
+    });
+
+    let wasOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+    const handleOffline = () => { wasOffline = true; };
+    const handleOnline = () => {
+      if (wasOffline) {
+        window.location.reload();
+      }
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        e.preventDefault();
+        e.returnValue = 'Offline Mode Active.';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
   const invoices = useMemo(() => {
     if (isBackendMode) {
-      return (backendInvoices || []).map((inv: any) => {
+      const liveMapped = (backendInvoices || []).map((inv: any) => {
         const net = Number(inv.total ?? inv.netAmount ?? inv.grandTotal ?? 0);
         const gross = Number(inv.subtotal ?? inv.grossAmount ?? net);
         const discount = Number(inv.discount ?? inv.discountAmount ?? 0);
@@ -137,9 +174,10 @@ function SalesHistoryContent() {
           })),
         };
       }) as Invoice[];
+      return [...offlineInvoices, ...liveMapped];
     }
-    return demoInvoices;
-  }, [isBackendMode, backendInvoices, demoInvoices]);
+    return [...offlineInvoices, ...demoInvoices];
+  }, [isBackendMode, backendInvoices, demoInvoices, offlineInvoices]);
 
   const isLoading = isBackendMode ? isBackendLoading : isDemoLoading;
 

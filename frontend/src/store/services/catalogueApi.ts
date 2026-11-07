@@ -276,7 +276,7 @@ export const catalogueApi = createApi({
 
     createCategory: builder.mutation<
       Category,
-      { brandId: string; name: string; code: string; description?: string }
+      { brandId: string; name: string; code: string; description?: string; status?: string }
     >({
       query: (body) => ({
         url: '/categories',
@@ -284,6 +284,18 @@ export const catalogueApi = createApi({
         body,
       }),
       invalidatesTags: ['Category'],
+    }),
+
+    updateCategory: builder.mutation<
+      Category,
+      { id: string; brandId?: string; name?: string; code?: string; description?: string; status?: string }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/categories/${id}`,
+        method: 'PATCH',
+        body,
+      }),
+      invalidatesTags: ['Category', 'Product', 'Variant'],
     }),
 
     toggleCategoryStatus: builder.mutation<Category, { id: string; status: 'ACTIVE' | 'INACTIVE' }>({
@@ -315,7 +327,7 @@ export const catalogueApi = createApi({
 
     createSize: builder.mutation<
       Size,
-      { length: number; width: number; unit?: string; displayLabel?: string }
+      { length: number; width: number; unit?: string; displayLabel?: string; status?: string }
     >({
       query: (body) => ({
         url: '/sizes',
@@ -323,6 +335,18 @@ export const catalogueApi = createApi({
         body,
       }),
       invalidatesTags: ['Size'],
+    }),
+
+    updateSize: builder.mutation<
+      Size,
+      { id: string; length?: number; width?: number; unit?: string; displayLabel?: string; status?: string }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/sizes/${id}`,
+        method: 'PATCH',
+        body,
+      }),
+      invalidatesTags: ['Size', 'Variant'],
     }),
 
     toggleSizeStatus: builder.mutation<Size, { id: string; status: 'ACTIVE' | 'INACTIVE' }>({
@@ -354,7 +378,7 @@ export const catalogueApi = createApi({
 
     createThickness: builder.mutation<
       Thickness,
-      { value: number; unit?: string; displayLabel?: string }
+      { value: number; unit?: string; displayLabel?: string; status?: string }
     >({
       query: (body) => ({
         url: '/thicknesses',
@@ -362,6 +386,18 @@ export const catalogueApi = createApi({
         body,
       }),
       invalidatesTags: ['Thickness'],
+    }),
+
+    updateThickness: builder.mutation<
+      Thickness,
+      { id: string; value?: number; unit?: string; displayLabel?: string; status?: string }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/thicknesses/${id}`,
+        method: 'PATCH',
+        body,
+      }),
+      invalidatesTags: ['Thickness', 'Variant'],
     }),
 
     toggleThicknessStatus: builder.mutation<Thickness, { id: string; status: 'ACTIVE' | 'INACTIVE' }>({
@@ -559,14 +595,17 @@ export const {
   useDeleteBrandMutation,
   useGetCategoriesQuery,
   useCreateCategoryMutation,
+  useUpdateCategoryMutation,
   useToggleCategoryStatusMutation,
   useDeleteCategoryMutation,
   useGetSizesQuery,
   useCreateSizeMutation,
+  useUpdateSizeMutation,
   useToggleSizeStatusMutation,
   useDeleteSizeMutation,
   useGetThicknessesQuery,
   useCreateThicknessMutation,
+  useUpdateThicknessMutation,
   useToggleThicknessStatusMutation,
   useDeleteThicknessMutation,
   useGetProductsQuery,

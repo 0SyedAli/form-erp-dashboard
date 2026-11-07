@@ -47,7 +47,8 @@ export const sizeSchema = z.object({
     length: z.coerce.number().positive(),
     width: z.coerce.number().positive(),
     unit: z.string().default('in'),
-    displayLabel: z.string().trim().min(3),
+    displayLabel: z.string().trim().min(2),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
 
@@ -57,7 +58,8 @@ export const updateSizeSchema = z.object({
     length: z.coerce.number().positive().optional(),
     width: z.coerce.number().positive().optional(),
     unit: z.string().optional(),
-    displayLabel: z.string().trim().min(3).optional(),
+    displayLabel: z.string().trim().min(2).optional(),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
 
@@ -65,7 +67,8 @@ export const thicknessSchema = z.object({
   body: z.object({
     value: z.coerce.number().positive(),
     unit: z.string().default('in'),
-    displayLabel: z.string().trim().min(2),
+    displayLabel: z.string().trim().min(1),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
 
@@ -74,7 +77,8 @@ export const updateThicknessSchema = z.object({
   body: z.object({
     value: z.coerce.number().positive().optional(),
     unit: z.string().optional(),
-    displayLabel: z.string().trim().min(2).optional(),
+    displayLabel: z.string().trim().min(1).optional(),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
 

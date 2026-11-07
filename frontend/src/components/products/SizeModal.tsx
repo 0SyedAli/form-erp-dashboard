@@ -5,8 +5,24 @@ import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { MattressSize } from '@/types';
-import { useCreateSizeMutation, useUpdateSizeMutation } from '@/store/services/apiSlice';
+import {
+  useCreateSizeMutation as useCreateSizeDemoMutation,
+  useUpdateSizeMutation as useUpdateSizeDemoMutation,
+} from '@/store/services/apiSlice';
+import {
+  useCreateSizeMutation as useCreateSizeBackendMutation,
+  useUpdateSizeMutation as useUpdateSizeBackendMutation,
+} from '@/store/services/catalogueApi';
 import { X, Maximize2 } from 'lucide-react';
+
+const normalizeUnitToForm = (u?: string): 'inch' | 'cm' | 'mm' => {
+  if (!u) return 'inch';
+  const s = String(u).toLowerCase().trim();
+  if (s === 'in' || s === 'inch' || s === 'inches' || s === '"') return 'inch';
+  if (s === 'cm') return 'cm';
+  if (s === 'mm') return 'mm';
+  return 'inch';
+};
 
 const sizeSchema = z.object({
   length: z.number().positive('Length must be greater than 0'),
@@ -31,8 +47,15 @@ export default function SizeModal({
   size,
   onSuccess,
 }: SizeModalProps) {
-  const [createSize, { isLoading: isCreating }] = useCreateSizeMutation();
-  const [updateSize, { isLoading: isUpdating }] = useUpdateSizeMutation();
+  const isBackendMode = process.env.NEXT_PUBLIC_USE_BACKEND !== 'false';
+
+  const [createSizeBackend, { isLoading: isCreatingBackend }] = useCreateSizeBackendMutation();
+  const [updateSizeBackend, { isLoading: isUpdatingBackend }] = useUpdateSizeBackendMutation();
+  const [createSizeDemo, { isLoading: isCreatingDemo }] = useCreateSizeDemoMutation();
+  const [updateSizeDemo, { isLoading: isUpdatingDemo }] = useUpdateSizeDemoMutation();
+
+  const isCreating = isBackendMode ? isCreatingBackend : isCreatingDemo;
+  const isUpdating = isBackendMode ? isUpdatingBackend : isUpdatingDemo;
   const [apiError, setApiError] = useState<string | null>(null);
 
   const isEdit = !!size;
@@ -70,7 +93,7 @@ export default function SizeModal({
       reset({
         length: size.length,
         width: size.width,
-        unit: (size.unit as 'inch' | 'cm' | 'mm') || 'inch',
+        unit: normalizeUnitToForm(size.unit),
         displayLabel: size.displayLabel,
         status: (size.status.toLowerCase() as 'active' | 'inactive') || 'active',
       });
@@ -95,26 +118,74 @@ export default function SizeModal({
   const onSubmit = async (data: SizeFormData) => {
     setApiError(null);
     try {
-      if (isEdit && size) {
-        const result = await updateSize({
-          id: size.id,
-          length: Number(data.length),
-          width: Number(data.width),
-          unit: data.unit,
-          displayLabel: data.displayLabel.trim(),
-          status: data.status,
-        }).unwrap();
-        onSuccess(result);
+      let savedSize: MattressSize;
+
+      if (isBackendMode) {
+        if (isEdit && size) {
+          const targetId = (size as any)._id || size.id;
+          savedSize = (await updateSizeBackend({
+            id: targetId,
+            length: Number(data.length),
+            width: Number(data.width),
+            unit: data.unit === 'inch' ? 'in' : data.unit,
+            displayLabel: data.displayLabel.trim(),
+            status: data.status.toUpperCase(),
+          }).unwrap()) as unknown as MattressSize;
+        } else {
+          savedSize = (await createSizeBackend({
+            length: Number(data.length),
+            width: Number(data.width),
+            unit: data.unit === 'inch' ? 'in' : data.unit,
+            displayLabel: data.displayLabel.trim(),
+            status: data.status.toUpperCase(),
+          }).unwrap()) as unknown as MattressSize;
+        }
+
+        // Non-blockingly sync demo-db
+        try {
+          if (isEdit && size) {
+            await updateSizeDemo({
+              id: size.id,
+              length: Number(data.length),
+              width: Number(data.width),
+              unit: data.unit,
+              displayLabel: data.displayLabel.trim(),
+              status: data.status,
+            }).unwrap();
+          } else {
+            await createSizeDemo({
+              length: Number(data.length),
+              width: Number(data.width),
+              unit: data.unit,
+              displayLabel: data.displayLabel.trim(),
+              status: data.status,
+            }).unwrap();
+          }
+        } catch {
+          // ignore demo sync
+        }
       } else {
-        const result = await createSize({
-          length: Number(data.length),
-          width: Number(data.width),
-          unit: data.unit,
-          displayLabel: data.displayLabel.trim(),
-          status: data.status,
-        }).unwrap();
-        onSuccess(result);
+        if (isEdit && size) {
+          savedSize = await updateSizeDemo({
+            id: size.id,
+            length: Number(data.length),
+            width: Number(data.width),
+            unit: data.unit,
+            displayLabel: data.displayLabel.trim(),
+            status: data.status,
+          }).unwrap();
+        } else {
+          savedSize = await createSizeDemo({
+            length: Number(data.length),
+            width: Number(data.width),
+            unit: data.unit,
+            displayLabel: data.displayLabel.trim(),
+            status: data.status,
+          }).unwrap();
+        }
       }
+
+      onSuccess(savedSize);
       onClose();
     } catch (err: unknown) {
       const e = err as { data?: { message?: string } | string; message?: string };
@@ -138,10 +209,12 @@ export default function SizeModal({
             </div>
             <div>
               <h2 id="size-modal-title" className="text-lg font-semibold text-gray-900 tracking-tight">
-                {isEdit ? 'Edit Mattress Size' : 'Add Mattress Size'}
+                {isEdit ? 'Edit Size' : 'Add Standard Size'}
               </h2>
               <p className="text-xs text-gray-500">
-                {isEdit ? 'Update dimension specifications' : 'Define new length & width dimension'}
+                {isEdit
+                  ? 'Update dimension specifications'
+                  : 'Define new length and width configuration'}
               </p>
             </div>
           </div>
@@ -167,14 +240,15 @@ export default function SizeModal({
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
                 Length *
               </label>
-              <input
-                type="number"
-                step="any"
-                {...register('length', { valueAsNumber: true })}
-                onBlur={handleAutoLabel}
-                placeholder="78"
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-normal text-gray-900 placeholder-gray-400 focus:outline-hidden focus:border-brand-blue focus:bg-white"
-              />
+              <div className="relative">
+                <input
+                  type="number"
+                  step="any"
+                  {...register('length', { valueAsNumber: true })}
+                  placeholder="e.g. 78"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-normal text-gray-900 placeholder-gray-400 focus:outline-hidden focus:border-brand-blue focus:bg-white"
+                />
+              </div>
               {errors.length && (
                 <p className="text-xs text-red-600 mt-1">{errors.length.message}</p>
               )}
@@ -184,14 +258,15 @@ export default function SizeModal({
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
                 Width *
               </label>
-              <input
-                type="number"
-                step="any"
-                {...register('width', { valueAsNumber: true })}
-                onBlur={handleAutoLabel}
-                placeholder="72"
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-normal text-gray-900 placeholder-gray-400 focus:outline-hidden focus:border-brand-blue focus:bg-white"
-              />
+              <div className="relative">
+                <input
+                  type="number"
+                  step="any"
+                  {...register('width', { valueAsNumber: true })}
+                  placeholder="e.g. 72"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-normal text-gray-900 placeholder-gray-400 focus:outline-hidden focus:border-brand-blue focus:bg-white"
+                />
+              </div>
               {errors.width && (
                 <p className="text-xs text-red-600 mt-1">{errors.width.message}</p>
               )}
@@ -201,7 +276,7 @@ export default function SizeModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-                Measurement Unit *
+                Unit
               </label>
               <select
                 {...register('unit')}
@@ -237,17 +312,20 @@ export default function SizeModal({
                 onClick={handleAutoLabel}
                 className="text-[11px] text-brand-blue hover:underline cursor-pointer"
               >
-                Auto Generate
+                Auto-generate
               </button>
             </div>
             <input
               {...register('displayLabel')}
-              placeholder="e.g. 78×72 (King Size)"
+              placeholder="e.g. 78×72 (King)"
               className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-normal text-gray-900 placeholder-gray-400 focus:outline-hidden focus:border-brand-blue focus:bg-white"
             />
             {errors.displayLabel && (
               <p className="text-xs text-red-600 mt-1">{errors.displayLabel.message}</p>
             )}
+            <p className="text-[11px] text-gray-400 mt-1">
+              Common labels: 78×72 (King), 78×66 (Queen), 78×60 (Double), 78×42 (Single)
+            </p>
           </div>
 
           {/* Footer */}

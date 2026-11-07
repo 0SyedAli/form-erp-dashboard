@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import StoreProvider from '@/store/StoreProvider';
+import ServiceWorkerRegister from '@/components/common/ServiceWorkerRegister';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,7 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: 'Molty Foam ERP — Retail & Wholesale Management System',
   description: 'Enterprise resource planning and multi-branch intelligence dashboard for Molty Foam Pakistan.',
+  manifest: '/manifest.json',
   icons: {
     icon: '/favicon.ico',
   },
@@ -29,6 +31,7 @@ export default function RootLayout({
     <html lang="en" className={`${plusJakartaSans.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-canvas text-gray-900 font-sans">
         <StoreProvider>
+          <ServiceWorkerRegister />
           {children}
         </StoreProvider>
       </body>

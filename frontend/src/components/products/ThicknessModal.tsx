@@ -5,8 +5,24 @@ import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { MattressThickness } from '@/types';
-import { useCreateThicknessMutation, useUpdateThicknessMutation } from '@/store/services/apiSlice';
+import {
+  useCreateThicknessMutation as useCreateThicknessDemoMutation,
+  useUpdateThicknessMutation as useUpdateThicknessDemoMutation,
+} from '@/store/services/apiSlice';
+import {
+  useCreateThicknessMutation as useCreateThicknessBackendMutation,
+  useUpdateThicknessMutation as useUpdateThicknessBackendMutation,
+} from '@/store/services/catalogueApi';
 import { X, Sliders } from 'lucide-react';
+
+const normalizeUnitToForm = (u?: string): 'inch' | 'cm' | 'mm' => {
+  if (!u) return 'inch';
+  const s = String(u).toLowerCase().trim();
+  if (s === 'in' || s === 'inch' || s === 'inches' || s === '"') return 'inch';
+  if (s === 'cm') return 'cm';
+  if (s === 'mm') return 'mm';
+  return 'inch';
+};
 
 const thicknessSchema = z.object({
   value: z.number().positive('Thickness value must be greater than 0'),
@@ -30,8 +46,15 @@ export default function ThicknessModal({
   thickness,
   onSuccess,
 }: ThicknessModalProps) {
-  const [createThickness, { isLoading: isCreating }] = useCreateThicknessMutation();
-  const [updateThickness, { isLoading: isUpdating }] = useUpdateThicknessMutation();
+  const isBackendMode = process.env.NEXT_PUBLIC_USE_BACKEND !== 'false';
+
+  const [createThicknessBackend, { isLoading: isCreatingBackend }] = useCreateThicknessBackendMutation();
+  const [updateThicknessBackend, { isLoading: isUpdatingBackend }] = useUpdateThicknessBackendMutation();
+  const [createThicknessDemo, { isLoading: isCreatingDemo }] = useCreateThicknessDemoMutation();
+  const [updateThicknessDemo, { isLoading: isUpdatingDemo }] = useUpdateThicknessDemoMutation();
+
+  const isCreating = isBackendMode ? isCreatingBackend : isCreatingDemo;
+  const isUpdating = isBackendMode ? isUpdatingBackend : isUpdatingDemo;
   const [apiError, setApiError] = useState<string | null>(null);
 
   const isEdit = !!thickness;
@@ -67,7 +90,7 @@ export default function ThicknessModal({
     if (thickness) {
       reset({
         value: thickness.value,
-        unit: (thickness.unit as 'inch' | 'cm' | 'mm') || 'inch',
+        unit: normalizeUnitToForm(thickness.unit),
         displayLabel: thickness.displayLabel,
         status: (thickness.status.toLowerCase() as 'active' | 'inactive') || 'active',
       });
@@ -91,24 +114,68 @@ export default function ThicknessModal({
   const onSubmit = async (data: ThicknessFormData) => {
     setApiError(null);
     try {
-      if (isEdit && thickness) {
-        const result = await updateThickness({
-          id: thickness.id,
-          value: Number(data.value),
-          unit: data.unit,
-          displayLabel: data.displayLabel.trim(),
-          status: data.status,
-        }).unwrap();
-        onSuccess(result);
+      let savedThickness: MattressThickness;
+
+      if (isBackendMode) {
+        if (isEdit && thickness) {
+          const targetId = (thickness as any)._id || thickness.id;
+          savedThickness = (await updateThicknessBackend({
+            id: targetId,
+            value: Number(data.value),
+            unit: data.unit === 'inch' ? 'in' : data.unit,
+            displayLabel: data.displayLabel.trim(),
+            status: data.status.toUpperCase(),
+          }).unwrap()) as unknown as MattressThickness;
+        } else {
+          savedThickness = (await createThicknessBackend({
+            value: Number(data.value),
+            unit: data.unit === 'inch' ? 'in' : data.unit,
+            displayLabel: data.displayLabel.trim(),
+            status: data.status.toUpperCase(),
+          }).unwrap()) as unknown as MattressThickness;
+        }
+
+        // Non-blockingly sync demo-db
+        try {
+          if (isEdit && thickness) {
+            await updateThicknessDemo({
+              id: thickness.id,
+              value: Number(data.value),
+              unit: data.unit,
+              displayLabel: data.displayLabel.trim(),
+              status: data.status,
+            }).unwrap();
+          } else {
+            await createThicknessDemo({
+              value: Number(data.value),
+              unit: data.unit,
+              displayLabel: data.displayLabel.trim(),
+              status: data.status,
+            }).unwrap();
+          }
+        } catch {
+          // ignore demo sync
+        }
       } else {
-        const result = await createThickness({
-          value: Number(data.value),
-          unit: data.unit,
-          displayLabel: data.displayLabel.trim(),
-          status: data.status,
-        }).unwrap();
-        onSuccess(result);
+        if (isEdit && thickness) {
+          savedThickness = await updateThicknessDemo({
+            id: thickness.id,
+            value: Number(data.value),
+            unit: data.unit,
+            displayLabel: data.displayLabel.trim(),
+            status: data.status,
+          }).unwrap();
+        } else {
+          savedThickness = await createThicknessDemo({
+            value: Number(data.value),
+            unit: data.unit,
+            displayLabel: data.displayLabel.trim(),
+            status: data.status,
+          }).unwrap();
+        }
       }
+
+      onSuccess(savedThickness);
       onClose();
     } catch (err: unknown) {
       const e = err as { data?: { message?: string } | string; message?: string };

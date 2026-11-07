@@ -89,7 +89,7 @@ export default function BrandModal({
         name: brand.name,
         code: brand.code,
         description: brand.description || '',
-        logo: brand.logo || '',
+        logo: (brand as any).logoUrl || brand.logo || '',
         status: (brand.status.toLowerCase() as 'active' | 'inactive') || 'active',
       });
     } else {

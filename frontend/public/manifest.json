@@ -1,0 +1,18 @@
+{
+  "name": "Foam Shop POS",
+  "short_name": "Foam POS",
+  "description": "Retail & Wholesale POS Management System with Offline Support",
+  "start_url": "/pos",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f9d58",
+  "icons": [
+    {
+      "src": "/assets/brands/molty.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
+

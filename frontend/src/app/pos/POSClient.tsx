@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { ShoppingCart } from 'lucide-react';
-import { useAppSelector } from '@/store';
+import { useAppSelector, useAppDispatch } from '@/store';
 import {
+  erpApi,
   useGetBranchesQuery,
   useGetBrandsQuery,
   useGetCategoriesQuery,
@@ -21,6 +22,7 @@ import {
   useCompletePOSCheckoutMutation,
 } from '@/store/services/apiSlice';
 import {
+  posApi,
   useGetBranchesQuery as useGetBackendBranchesQuery,
   useGetPOSCatalogueQuery as useGetBackendPOSCatalogueQuery,
   useGetHeldSalesQuery as useGetBackendHeldSalesQuery,
@@ -29,6 +31,7 @@ import {
   useCompleteCheckoutMutation as useCompleteBackendCheckoutMutation,
 } from '@/store/services/posApi';
 import {
+  catalogueApi,
   useGetBrandsQuery as useGetBackendBrandsQuery,
   useGetCategoriesQuery as useGetBackendCategoriesQuery,
   useGetSizesQuery as useGetBackendSizesQuery,
@@ -37,8 +40,16 @@ import {
   useGetSkusQuery as useGetBackendSkusQuery,
 } from '@/store/services/catalogueApi';
 import {
+  inventoryApi,
   useGetStockBalancesQuery as useGetBackendStockBalancesQuery,
 } from '@/store/services/inventoryApi';
+import {
+  saveMasterSnapshot,
+  getMasterSnapshot,
+  queueOfflineSale,
+  POSMasterSnapshot,
+} from '@/lib/offline/posOfflineDb';
+import { usePOSOfflineSync, SyncResult } from '@/lib/offline/posOfflineSync';
 import {
   CatalogueProduct,
   POSCartItem,
@@ -82,10 +93,17 @@ function computeDefaultDueDate(days: number = 30): string {
 
 function POSContent() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const currentUser = useAppSelector((state) => state.auth.currentUser);
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
   const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
+
+  // Optimistic tracking for smooth instant stock updates after checkout
+  const [soldQuantitiesBySku, setSoldQuantitiesBySku] = useState<Record<string, number>>({});
+
+  // Offline Resilience & Synchronization
+  const [offlineSnapshot, setOfflineSnapshot] = useState<POSMasterSnapshot | null>(null);
 
   // Demo Queries
   const { data: demoBranches = [] } = useGetBranchesQuery(undefined, { skip: isBackendMode });
@@ -93,9 +111,9 @@ function POSContent() {
   const { data: demoCategories = [] } = useGetCategoriesQuery(undefined, { skip: isBackendMode });
   const { data: demoSizes = [] } = useGetSizesQuery(undefined, { skip: isBackendMode });
   const { data: demoThicknesses = [] } = useGetThicknessesQuery(undefined, { skip: isBackendMode });
-  const { data: demoProducts = [] } = useGetCatalogueProductsQuery(undefined, { skip: isBackendMode });
-  const { data: demoVariants = [] } = useGetProductVariantsQuery(undefined, { skip: isBackendMode });
-  const { data: demoInventoryBalances = [] } = useGetInventoryBalancesQuery(undefined, { skip: isBackendMode });
+  const { data: demoProducts = [], refetch: refetchDemoProducts } = useGetCatalogueProductsQuery(undefined, { skip: isBackendMode });
+  const { data: demoVariants = [], refetch: refetchDemoVariants } = useGetProductVariantsQuery(undefined, { skip: isBackendMode });
+  const { data: demoInventoryBalances = [], refetch: refetchDemoInventory } = useGetInventoryBalancesQuery(undefined, { skip: isBackendMode });
   const { data: posSettings } = useGetPOSSettingsQuery();
   const { data: demoHeldSales = [] } = useGetHeldSalesQuery(undefined, { skip: isBackendMode });
 
@@ -105,9 +123,9 @@ function POSContent() {
   const { data: backendCategories = [] } = useGetBackendCategoriesQuery(undefined, { skip: !isBackendMode });
   const { data: backendSizes = [] } = useGetBackendSizesQuery(undefined, { skip: !isBackendMode });
   const { data: backendThicknesses = [] } = useGetBackendThicknessesQuery(undefined, { skip: !isBackendMode });
-  const { data: backendProducts = [] } = useGetBackendProductsQuery(undefined, { skip: !isBackendMode });
-  const { data: backendSkusResponse } = useGetBackendSkusQuery(undefined, { skip: !isBackendMode });
-  const { data: backendStockBalances = [] } = useGetBackendStockBalancesQuery(undefined, { skip: !isBackendMode });
+  const { data: backendProducts = [], refetch: refetchProducts } = useGetBackendProductsQuery(undefined, { skip: !isBackendMode });
+  const { data: backendSkusResponse, refetch: refetchSkus } = useGetBackendSkusQuery(undefined, { skip: !isBackendMode });
+  const { data: backendStockBalances = [], refetch: refetchStockBalances } = useGetBackendStockBalancesQuery(undefined, { skip: !isBackendMode });
   const { data: backendHeldSales = [] } = useGetBackendHeldSalesQuery(undefined, { skip: !isBackendMode });
 
   // Mutations
@@ -124,53 +142,100 @@ function POSContent() {
 
   const isCheckingOut = isBackendMode ? isBackendCheckingOut : isDemoCheckingOut;
 
-  // Unified Data
+  // Sync manager hook
+  const {
+    isOnline,
+    pendingCount,
+    isSyncing,
+    triggerSync,
+    refreshPendingCount,
+  } = usePOSOfflineSync(
+    useCallback(
+      async (payload) => {
+        return await completeCheckoutBackendMutation(payload).unwrap();
+      },
+      [completeCheckoutBackendMutation]
+    ),
+    useCallback(
+      (result: SyncResult) => {
+        dispatch(inventoryApi.util.invalidateTags(['StockBalance', 'InventorySummary', 'StockMovement']));
+        dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
+        refetchStockBalances();
+        refetchSkus();
+      },
+      [dispatch, refetchStockBalances, refetchSkus]
+    )
+  );
+
+  // Load offline snapshot on mount
+  useEffect(() => {
+    getMasterSnapshot().then((snap) => {
+      if (snap) setOfflineSnapshot(snap);
+    });
+  }, []);
+
+  // Unified Data (Online Primary with Offline Snapshot Fallback)
   const branches: Branch[] = useMemo(() => {
-    const raw = Array.isArray(backendBranches) ? backendBranches : (backendBranches as any)?.data || demoBranches || [];
-    return (Array.isArray(raw) ? raw : []).map((b: any) => ({
+    const raw = Array.isArray(backendBranches) && backendBranches.length > 0
+      ? backendBranches
+      : (backendBranches as any)?.data || demoBranches || [];
+    const list = Array.isArray(raw) && raw.length > 0 ? raw : (offlineSnapshot?.activeBranch ? [offlineSnapshot.activeBranch] : []);
+    return list.map((b: any) => ({
       ...b,
       id: String(b.id || b._id || ''),
     })) as Branch[];
-  }, [backendBranches]);
+  }, [backendBranches, demoBranches, offlineSnapshot]);
 
   const brands: Brand[] = useMemo(() => {
-    const raw = Array.isArray(backendBrands) ? backendBrands : (backendBrands as any)?.data || demoBrands || [];
-    return (Array.isArray(raw) ? raw : []).map((b: any) => ({
+    const raw = Array.isArray(backendBrands) && backendBrands.length > 0
+      ? backendBrands
+      : (backendBrands as any)?.data || demoBrands || [];
+    const list = Array.isArray(raw) && raw.length > 0 ? raw : (offlineSnapshot?.brands || []);
+    return list.map((b: any) => ({
       ...b,
       id: String(b.id || b._id || ''),
     })) as Brand[];
-  }, [backendBrands]);
+  }, [backendBrands, demoBrands, offlineSnapshot]);
 
   const categories: Category[] = useMemo(() => {
-    const raw = Array.isArray(backendCategories) ? backendCategories : (backendCategories as any)?.data || demoCategories || [];
-    return (Array.isArray(raw) ? raw : []).map((c: any) => ({
+    const raw = Array.isArray(backendCategories) && backendCategories.length > 0
+      ? backendCategories
+      : (backendCategories as any)?.data || demoCategories || [];
+    const list = Array.isArray(raw) && raw.length > 0 ? raw : (offlineSnapshot?.categories || []);
+    return list.map((c: any) => ({
       ...c,
       id: String(c.id || c._id || ''),
       brandId: String(c.brandId?._id || c.brandId || c.brand?._id || c.brand?.id || ''),
     })) as Category[];
-  }, [backendCategories]);
+  }, [backendCategories, demoCategories, offlineSnapshot]);
 
   const sizes: MattressSize[] = useMemo(() => {
-    const raw = Array.isArray(backendSizes) ? backendSizes : (backendSizes as any)?.data || demoSizes || [];
-    return (Array.isArray(raw) ? raw : []).map((s: any) => ({
+    const raw = Array.isArray(backendSizes) && backendSizes.length > 0
+      ? backendSizes
+      : (backendSizes as any)?.data || demoSizes || [];
+    const list = Array.isArray(raw) && raw.length > 0 ? raw : (offlineSnapshot?.sizes || []);
+    return list.map((s: any) => ({
       ...s,
       id: String(s.id || s._id || ''),
     })) as MattressSize[];
-  }, [backendSizes]);
+  }, [backendSizes, demoSizes, offlineSnapshot]);
 
   const thicknesses: MattressThickness[] = useMemo(() => {
-    const raw = Array.isArray(backendThicknesses) ? backendThicknesses : (backendThicknesses as any)?.data || demoThicknesses || [];
-    return (Array.isArray(raw) ? raw : []).map((t: any) => ({
+    const raw = Array.isArray(backendThicknesses) && backendThicknesses.length > 0
+      ? backendThicknesses
+      : (backendThicknesses as any)?.data || demoThicknesses || [];
+    const list = Array.isArray(raw) && raw.length > 0 ? raw : (offlineSnapshot?.thicknesses || []);
+    return list.map((t: any) => ({
       ...t,
       id: String(t.id || t._id || ''),
     })) as MattressThickness[];
-  }, [backendThicknesses]);
+  }, [backendThicknesses, demoThicknesses, offlineSnapshot]);
   
   const rawProducts = isBackendMode
-    ? (Array.isArray(backendProducts)
+    ? (Array.isArray(backendProducts) && backendProducts.length > 0
         ? backendProducts
-        : (backendProducts as any)?.data || (backendProducts as any)?.items || [])
-    : demoProducts;
+        : (backendProducts as any)?.data || (backendProducts as any)?.items || offlineSnapshot?.products || [])
+    : demoProducts.length > 0 ? demoProducts : (offlineSnapshot?.products || []);
   const products: CatalogueProduct[] = useMemo(() => {
     const list = Array.isArray(rawProducts) ? rawProducts : [];
     return list.map((p: any) => ({
@@ -185,10 +250,10 @@ function POSContent() {
   }, [rawProducts]);
 
   const rawVariants = isBackendMode
-    ? (Array.isArray(backendSkusResponse)
+    ? (Array.isArray(backendSkusResponse) && (backendSkusResponse as any).length > 0
         ? backendSkusResponse
-        : (backendSkusResponse as any)?.data || (backendSkusResponse as any)?.items || [])
-    : demoVariants;
+        : (backendSkusResponse as any)?.data || (backendSkusResponse as any)?.items || offlineSnapshot?.variants || [])
+    : demoVariants.length > 0 ? demoVariants : (offlineSnapshot?.variants || []);
   const variants: ProductVariant[] = useMemo(() => {
     const list = Array.isArray(rawVariants) ? rawVariants : [];
     return list.map((v: any) => {
@@ -235,58 +300,67 @@ function POSContent() {
   const isRetailAllowed = activeBranch?.settings?.allowRetailSales ?? true;
 
   const rawStock = isBackendMode
-    ? (Array.isArray(backendStockBalances)
+    ? (Array.isArray(backendStockBalances) && backendStockBalances.length > 0
         ? backendStockBalances
-        : (backendStockBalances as any)?.items || (backendStockBalances as any)?.data || [])
-    : demoInventoryBalances;
+        : (backendStockBalances as any)?.items || (backendStockBalances as any)?.data || offlineSnapshot?.inventoryBalances || [])
+    : demoInventoryBalances.length > 0 ? demoInventoryBalances : (offlineSnapshot?.inventoryBalances || []);
+
   const inventoryBalances: InventoryBalance[] = useMemo(() => {
     const list = Array.isArray(rawStock) ? rawStock : [];
-    const directBalances: InventoryBalance[] = list.map((b: any) => ({
-      id: String(b.id || b._id || ''),
-      sku: b.sku || '',
-      branchId: String(b.branchId?._id || b.branchId || ''),
-      stockLocationId: String(b.stockLocationId?._id || b.stockLocationId || 'LOC-FLOOR'),
-      productId: String(b.variant?.productId?._id || b.variant?.productId || b.productId || ''),
-      variantId: String(b.variantId?._id || b.variantId || b.variant?._id || b.variant?.id || b.sku || ''),
-      productName: b.variant?.productId?.name || b.productName || '',
-      brandName: b.variant?.productId?.brandId?.name || b.brandName || '',
-      categoryName: b.variant?.productId?.categoryId?.name || b.categoryName || '',
-      sizeLabel: b.variant?.sizeId?.displayLabel || b.sizeLabel || '',
-      thicknessInches: Number(b.variant?.thicknessId?.value || b.thicknessInches || 0),
-      onHand: Number(b.onHand || 0),
-      reserved: Number(b.reserved || 0),
-      available: Number(b.available || 0),
-      reorderLevel: Number(b.reorderLevel || 5),
-      stockStatus: (Number(b.available || 0) > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK') as any,
-      updatedAt: b.updatedAt || new Date().toISOString(),
-    }));
+    const directBalances: InventoryBalance[] = list.map((b: any) => {
+      const soldQty = soldQuantitiesBySku[b.sku] || 0;
+      const av = Math.max(0, Number(b.available || 0) - soldQty);
+      return {
+        id: String(b.id || b._id || ''),
+        sku: b.sku || '',
+        branchId: String(b.branchId?._id || b.branchId || ''),
+        stockLocationId: String(b.stockLocationId?._id || b.stockLocationId || 'LOC-FLOOR'),
+        productId: String(b.variant?.productId?._id || b.variant?.productId || b.productId || ''),
+        variantId: String(b.variantId?._id || b.variantId || b.variant?._id || b.variant?.id || b.sku || ''),
+        productName: b.variant?.productId?.name || b.productName || '',
+        brandName: b.variant?.productId?.brandId?.name || b.brandName || '',
+        categoryName: b.variant?.productId?.categoryId?.name || b.categoryName || '',
+        sizeLabel: b.variant?.sizeId?.displayLabel || b.sizeLabel || '',
+        thicknessInches: Number(b.variant?.thicknessId?.value || b.thicknessInches || 0),
+        onHand: Math.max(0, Number(b.onHand || 0) - soldQty),
+        reserved: Number(b.reserved || 0),
+        available: av,
+        reorderLevel: Number(b.reorderLevel || 5),
+        stockStatus: (av > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK') as any,
+        updatedAt: b.updatedAt || new Date().toISOString(),
+      };
+    });
 
     // Ensure all variants have a balance entry even if stock API didn't report them
     const variantIdSet = new Set(directBalances.map((b) => b.variantId));
     const fallbackBalances: InventoryBalance[] = variants
       .filter((v) => !variantIdSet.has(v.id))
-      .map((v) => ({
-        id: `synth-${v.id}`,
-        sku: v.sku,
-        branchId: activeBranch?.id || '',
-        stockLocationId: 'LOC-FLOOR',
-        productId: v.productId,
-        variantId: v.id,
-        productName: v.productName || '',
-        brandName: v.brandName || '',
-        categoryName: v.categoryName || '',
-        sizeLabel: v.sizeLabel || '',
-        thicknessInches: 0,
-        onHand: Number(v.stock ?? (v as any).onHand ?? 0),
-        reserved: 0,
-        available: Number(v.stock ?? (v as any).onHand ?? 0),
-        reorderLevel: 5,
-        stockStatus: (Number(v.stock ?? (v as any).onHand ?? 0) > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK') as any,
-        updatedAt: new Date().toISOString(),
-      }));
+      .map((v) => {
+        const soldQty = soldQuantitiesBySku[v.sku] || 0;
+        const total = Math.max(0, Number(v.stock ?? (v as any).onHand ?? 0) - soldQty);
+        return {
+          id: `synth-${v.id}`,
+          sku: v.sku,
+          branchId: activeBranch?.id || '',
+          stockLocationId: 'LOC-FLOOR',
+          productId: v.productId,
+          variantId: v.id,
+          productName: v.productName || '',
+          brandName: v.brandName || '',
+          categoryName: v.categoryName || '',
+          sizeLabel: v.sizeLabel || '',
+          thicknessInches: 0,
+          onHand: total,
+          reserved: 0,
+          available: total,
+          reorderLevel: 5,
+          stockStatus: (total > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK') as any,
+          updatedAt: new Date().toISOString(),
+        };
+      });
 
     return [...directBalances, ...fallbackBalances];
-  }, [rawStock, variants, activeBranch?.id]);
+  }, [rawStock, variants, activeBranch?.id, soldQuantitiesBySku]);
 
   const rawHeld = isBackendMode
     ? (Array.isArray(backendHeldSales) ? backendHeldSales : (backendHeldSales as any)?.data || [])
@@ -301,20 +375,68 @@ function POSContent() {
     );
   }, [inventoryBalances, activeBranch]);
 
+  // Variant Stock Map
+  const variantStockMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    variants.forEach((v) => {
+      const balance = branchBalances.find((b) => b.variantId === v.id || b.sku === v.sku);
+      const soldQty = soldQuantitiesBySku[v.sku] || 0;
+      const baseStock = balance?.available ?? v.stock ?? (v as any).onHand ?? 0;
+      const stock = Math.max(0, baseStock - (balance ? 0 : soldQty));
+      map[v.id] = stock;
+    });
+    return map;
+  }, [variants, branchBalances, soldQuantitiesBySku]);
+
+  // Brand Stock Map (sum of variant stock for each brand)
+  const brandStockMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    products.forEach((p) => {
+      if ((p.status && p.status !== 'ACTIVE') || !p.brandId) return;
+      const pVariants = variants.filter((v) => String(v.productId) === String(p.id) && (v.status === 'ACTIVE' || !v.status));
+      const pStock = pVariants.reduce((sum, v) => sum + (variantStockMap[v.id] || 0), 0);
+      map[p.brandId] = (map[p.brandId] || 0) + pStock;
+    });
+    return map;
+  }, [products, variants, variantStockMap]);
+
+  // Auto-save snapshot to IndexedDB when live data is loaded online
+  useEffect(() => {
+    if (brands.length > 0 && products.length > 0 && isOnline) {
+      saveMasterSnapshot({
+        brands,
+        categories,
+        sizes,
+        thicknesses,
+        products,
+        variants,
+        inventoryBalances,
+        activeBranch,
+        lastUpdated: new Date().toISOString(),
+      });
+    }
+  }, [brands, categories, sizes, thicknesses, products, variants, inventoryBalances, activeBranch, isOnline]);
+
   // Selected Brand and Category States
-  // Selected Brand and Category States (Only Created Real Data)
   const [chosenBrandId, setChosenBrandId] = useState<string | null>(null);
   const selectedBrandId = useMemo(() => {
-    if (chosenBrandId && brands.some((b) => b.id === chosenBrandId)) {
+    if (chosenBrandId && brands.some((b) => String(b.id) === String(chosenBrandId))) {
       return chosenBrandId;
     }
-    // Prefer first brand that has active products
+
+    // 1. High priority: First brand that has available stock (> 0) e.g. Molty
+    const brandInStock = brands.find((b) => (brandStockMap[b.id] || 0) > 0);
+    if (brandInStock) return brandInStock.id;
+
+    // 2. Second priority: First brand that has active products
     const brandWithProducts = brands.find((b) =>
-      products.some((p) => p.brandId === b.id && p.status === 'ACTIVE')
+      products.some((p) => String(p.brandId) === String(b.id) && (p.status === 'ACTIVE' || !p.status))
     );
     if (brandWithProducts) return brandWithProducts.id;
+
+    // 3. Fallback: First brand
     return brands[0]?.id || '';
-  }, [chosenBrandId, brands, products]);
+  }, [chosenBrandId, brands, products, brandStockMap]);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -373,29 +495,6 @@ function POSContent() {
     }
     return counts;
   }, [products]);
-
-  // Variant Stock Map
-  const variantStockMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    variants.forEach((v) => {
-      const balance = branchBalances.find((b) => b.variantId === v.id);
-      const stock = balance?.available ?? v.stock ?? (v as any).onHand ?? 0;
-      map[v.id] = Math.max(0, stock);
-    });
-    return map;
-  }, [variants, branchBalances]);
-
-  // Brand Stock Map (sum of variant stock for each brand)
-  const brandStockMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    products.forEach((p) => {
-      if (p.status !== 'ACTIVE' || !p.brandId) return;
-      const pVariants = variants.filter((v) => v.productId === p.id && v.status === 'ACTIVE');
-      const pStock = pVariants.reduce((sum, v) => sum + (variantStockMap[v.id] || 0), 0);
-      map[p.brandId] = (map[p.brandId] || 0) + pStock;
-    });
-    return map;
-  }, [products, variants, variantStockMap]);
 
   // Category Stock Map (sum of variant stock for each category within active brand)
   const categoryStockMap = useMemo(() => {
@@ -625,7 +724,117 @@ function POSContent() {
       }
     }
 
+    const executeOfflineSale = async () => {
+      const offlineId = `OFF-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      const offlineInvNumber = `OFF-${activeBranch?.code || 'POS'}-${Date.now().toString().slice(-6)}`;
+
+      const checkoutPayload: any = {
+        branchId: activeBranch?.id || (activeBranch as any)?._id || 'MAIN',
+        customerId: selectedCustomer?.id || (selectedCustomer as any)?._id,
+        customerName: selectedCustomer ? selectedCustomer.name : 'Walk-in Retail Customer',
+        customerPhone: selectedCustomer ? selectedCustomer.phone : '0300-1234567',
+        customerType: selectedCustomer?.customerType || (saleType === 'WALK_IN' ? 'WALK_IN' : saleType),
+        saleType,
+        paymentArrangement,
+        paymentMethod: paymentArrangement === 'CREDIT' ? 'CREDIT_30D' : (paymentMethod as any),
+        discountAmount,
+        amountReceived: effectivePaid,
+        cashReceived: effectivePaid,
+        dueDate: outstanding > 0 ? dueDate : undefined,
+        creditOverride,
+        creditApprovedBy: creditOverride ? (currentUser?.name || 'Supervisor') : undefined,
+        overrideReason: creditOverride ? 'Supervisor override' : undefined,
+        items: cartItems.map((item) => ({
+          sku: item.sku,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+        })),
+        notes: `${saleType} Sale (Offline Mode - Light/Internet Outage)`,
+        idempotencyKey: offlineId,
+      };
+
+      const offlineInvoice: Invoice = {
+        id: offlineId,
+        invoiceNumber: offlineInvNumber,
+        branchId: String(activeBranch?.id || 'MAIN'),
+        branchName: activeBranch?.name || 'Main Branch',
+        customerType: (selectedCustomer?.customerType || (saleType === 'WALK_IN' ? 'WALK_IN' : saleType)) as any,
+        customerName: selectedCustomer ? selectedCustomer.name : 'Walk-in Retail Customer',
+        customerPhone: selectedCustomer ? selectedCustomer.phone : '0300-1234567',
+        grossAmount: subtotal,
+        subtotal,
+        discountAmount,
+        returnAmount: 0,
+        taxAmount: 0,
+        netAmount: grandTotal,
+        grandTotal,
+        amountPaid: effectivePaid,
+        amountReceived: effectivePaid,
+        amountDue: outstanding,
+        changeAmount,
+        paymentStatus: outstanding <= 0 ? 'PAID' : effectivePaid > 0 ? 'PARTIAL' : 'UNPAID',
+        paymentMethod: (paymentArrangement === 'CREDIT' ? 'CREDIT_30D' : paymentMethod) as any,
+        status: 'COMPLETED' as any,
+        date: new Date().toISOString(),
+        salesPerson: currentUser?.name || 'Cashier',
+        items: cartItems.map((it) => ({
+          productId: it.productId,
+          productName: it.productName,
+          sku: it.sku,
+          quantity: it.quantity,
+          unitPrice: it.unitPrice,
+          discount: (it as any).discount || 0,
+          total: it.unitPrice * it.quantity,
+          lineTotal: it.unitPrice * it.quantity,
+          sizeLabel: it.sizeLabel || '',
+          thicknessLabel: it.thicknessLabel || '',
+        })),
+      };
+
+      // 1. Queue into local IndexedDB
+      await queueOfflineSale({
+        id: offlineId,
+        idempotencyKey: offlineId,
+        checkoutPayload,
+        invoice: offlineInvoice,
+        status: 'PENDING',
+        retryCount: 0,
+        createdAt: new Date().toISOString(),
+      });
+
+      // 2. Immediate local stock decrement
+      const soldMap: Record<string, number> = {};
+      cartItems.forEach((item) => {
+        soldMap[item.sku] = (soldMap[item.sku] || 0) + item.quantity;
+      });
+      setSoldQuantitiesBySku((prev) => {
+        const next = { ...prev };
+        Object.entries(soldMap).forEach(([sku, qty]) => {
+          next[sku] = (next[sku] || 0) + qty;
+        });
+        return next;
+      });
+
+      await refreshPendingCount();
+
+      // 3. Open receipt modal and clear cart
+      setCompletedInvoice(offlineInvoice);
+      setIsReceiptModalOpen(true);
+      handleClearCart();
+
+      if (posSettings?.autoPrintReceipt) {
+        setTimeout(() => {
+          window.print();
+        }, 300);
+      }
+    };
+
     try {
+      if (!isOnline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        await executeOfflineSale();
+        return;
+      }
+
       if (isBackendMode) {
         const result = await completeCheckoutBackendMutation({
           branchId: activeBranch.id || (activeBranch as any)._id,
@@ -692,6 +901,34 @@ function POSContent() {
         setIsReceiptModalOpen(true);
         handleClearCart();
 
+        // 1. Instantly reduce UI stock smoothly in 0ms
+        const soldMap: Record<string, number> = {};
+        cartItems.forEach((item) => {
+          soldMap[item.sku] = (soldMap[item.sku] || 0) + item.quantity;
+        });
+        setSoldQuantitiesBySku((prev) => {
+          const next = { ...prev };
+          Object.entries(soldMap).forEach(([sku, qty]) => {
+            next[sku] = (next[sku] || 0) + qty;
+          });
+          return next;
+        });
+
+        // 2. Cross-slice tag invalidations across inventory and catalogue stores
+        dispatch(inventoryApi.util.invalidateTags(['StockBalance', 'InventorySummary', 'StockMovement']));
+        dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
+        dispatch(posApi.util.invalidateTags(['POSAvailability', 'POSCatalogue', 'StockBalance']));
+        dispatch(erpApi.util.invalidateTags(['InventoryBalances', 'Variants', 'Products']));
+
+        // 3. Trigger background refetches to sync authoritative DB balances smoothly
+        Promise.allSettled([
+          refetchStockBalances(),
+          refetchSkus(),
+          refetchProducts(),
+        ]).then(() => {
+          setSoldQuantitiesBySku({});
+        });
+
         if (posSettings?.autoPrintReceipt) {
           setTimeout(() => {
             window.print();
@@ -735,6 +972,31 @@ function POSContent() {
       setIsReceiptModalOpen(true);
       handleClearCart();
 
+      // 1. Instantly reduce UI stock in demo mode
+      const soldMapDemo: Record<string, number> = {};
+      cartItems.forEach((item) => {
+        soldMapDemo[item.sku] = (soldMapDemo[item.sku] || 0) + item.quantity;
+      });
+      setSoldQuantitiesBySku((prev) => {
+        const next = { ...prev };
+        Object.entries(soldMapDemo).forEach(([sku, qty]) => {
+          next[sku] = (next[sku] || 0) + qty;
+        });
+        return next;
+      });
+
+      // 2. Dispatch demo tag invalidation
+      dispatch(erpApi.util.invalidateTags(['InventoryBalances', 'Variants', 'Products']));
+
+      // 3. Trigger refetches
+      Promise.allSettled([
+        refetchDemoInventory(),
+        refetchDemoVariants(),
+        refetchDemoProducts(),
+      ]).then(() => {
+        setSoldQuantitiesBySku({});
+      });
+
       // Auto-prompt print if enabled in settings
       if (posSettings?.autoPrintReceipt) {
         setTimeout(() => {
@@ -742,6 +1004,22 @@ function POSContent() {
         }, 300);
       }
     } catch (err: any) {
+      // If error is network-related (connection lost, timeout, fetch error), seamlessly save offline
+      const isNetworkError =
+        typeof navigator !== 'undefined' &&
+        (!navigator.onLine ||
+          err?.status === 'FETCH_ERROR' ||
+          err?.status === 'PARSING_ERROR' ||
+          err?.name === 'TypeError' ||
+          !err?.status ||
+          err?.message?.includes('Failed to fetch') ||
+          err?.message?.includes('NetworkError'));
+
+      if (isNetworkError) {
+        await executeOfflineSale();
+        return;
+      }
+
       const errorMsg =
         err?.data?.message ||
         err?.error ||
@@ -962,6 +1240,62 @@ function POSContent() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // 1. Auto-refresh page once internet is restored (switching from offline to online)
+  useEffect(() => {
+    let wasOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+
+    const handleOffline = () => {
+      wasOffline = true;
+    };
+
+    const handleOnline = () => {
+      if (wasOffline) {
+        // Automatically refresh once when online connection returns
+        window.location.reload();
+      }
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
+
+  // 2. Block accidental refresh (F5, Ctrl+R, reload dialog) while offline
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        e.preventDefault();
+        e.returnValue = 'Offline Mode Active. Data is safe in memory.';
+        return e.returnValue;
+      }
+    };
+
+    const handlePreventReloadKeys = (e: KeyboardEvent) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        if (
+          (e.ctrlKey && (e.key === 'r' || e.key === 'R')) ||
+          (e.metaKey && (e.key === 'r' || e.key === 'R')) ||
+          (e.key === 'F5' && cartItems.length === 0)
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('keydown', handlePreventReloadKeys, { capture: true });
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('keydown', handlePreventReloadKeys, { capture: true });
+    };
+  }, [cartItems.length]);
+
   return (
     <div className="flex flex-col h-screen w-full bg-[#f4f6fa] overflow-hidden font-sans select-none">
       {/* 1. Top Header */}
@@ -986,6 +1320,10 @@ function POSContent() {
         }}
         saleType={saleType}
         onChangeSaleType={handleRequestSaleTypeChange}
+        isOnline={isOnline}
+        pendingOfflineCount={pendingCount}
+        isSyncing={isSyncing}
+        onSyncClick={triggerSync}
       />
 
       {/* 3. Main Workspace Area: Left Area (Brands + Categories + Products) and Right Cart (Full Height aligned with Brands top) */}
@@ -1092,6 +1430,8 @@ function POSContent() {
         cashierName={currentUser?.name || 'Admin'}
         shiftName={posSettings?.shiftName || 'Morning'}
         version="1.0.0"
+        isOnline={isOnline}
+        pendingOfflineCount={pendingCount}
       />
 
       {/* 5. Product Configuration Popup Modal */}

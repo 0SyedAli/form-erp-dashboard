@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Search,
@@ -8,7 +8,8 @@ import {
   FileText,
   Clock,
   Settings,
-  ChevronDown,
+  WifiOff,
+  RefreshCw,
 } from 'lucide-react';
 import { Branch, SaleType } from '@/types';
 
@@ -25,6 +26,10 @@ interface POSHeaderProps {
   isSuperAdmin?: boolean;
   saleType?: SaleType;
   onChangeSaleType?: (newType: SaleType) => void;
+  isOnline?: boolean;
+  pendingOfflineCount?: number;
+  isSyncing?: boolean;
+  onSyncClick?: () => void;
 }
 
 export default function POSHeader({
@@ -38,12 +43,25 @@ export default function POSHeader({
   isSuperAdmin = false,
   saleType = 'WALK_IN',
   onChangeSaleType,
+  isOnline = true,
+  pendingOfflineCount = 0,
+  isSyncing = false,
+  onSyncClick,
 }: POSHeaderProps) {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const displayOnline = isMounted ? isOnline : true;
+  const targetDashboardHref = isMounted && isSuperAdmin ? '/admin/dashboard' : '/branch/dashboard';
+
   return (
     <header className="bg-white border-b border-slate-200/90 px-4 py-2 flex items-center justify-between gap-4 select-none shrink-0 shadow-xs">
       {/* Left: Branding matching reference screenshot */}
       <div className="flex items-center gap-3 shrink-0">
-        <Link href={isSuperAdmin ? '/admin/dashboard' : '/branch/dashboard'} className="flex items-center gap-3 group">
+        <Link href={targetDashboardHref} suppressHydrationWarning className="flex items-center gap-3 group">
           <div className="w-11 h-11 rounded-xl bg-[#0f9d58] flex items-center justify-center text-white shadow-xs group-hover:bg-[#0b8043] transition-colors shrink-0">
             {/* White Mattress / Bed Icon */}
             <svg
@@ -89,6 +107,34 @@ export default function POSHeader({
 
       {/* Right: Quick Action Buttons matching reference screenshot */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        {/* Offline / Online Status Badge */}
+        {!displayOnline ? (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs font-semibold select-none shadow-2xs" suppressHydrationWarning>
+            <WifiOff className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+            <span>Offline Mode</span>
+            {pendingOfflineCount > 0 && (
+              <span className="bg-amber-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                {pendingOfflineCount}
+              </span>
+            )}
+          </div>
+        ) : pendingOfflineCount > 0 ? (
+          <button
+            onClick={onSyncClick}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl text-xs font-semibold cursor-pointer transition-colors shadow-2xs"
+            title="Click to sync offline sales to server"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Syncing...' : `Sync ${pendingOfflineCount} Sale${pendingOfflineCount > 1 ? 's' : ''}`}</span>
+          </button>
+        ) : (
+          <div className="hidden lg:flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-lg text-[11px] font-medium select-none" suppressHydrationWarning>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Online</span>
+          </div>
+        )}
+
         {/* F2: New Sale */}
         <button
           onClick={onNewSaleClick}

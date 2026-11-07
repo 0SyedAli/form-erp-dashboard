@@ -1,15 +1,20 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Category } from '@/types';
 import {
-  useCreateCategoryMutation,
-  useUpdateCategoryMutation,
-  useGetBrandsQuery,
+  useCreateCategoryMutation as useCreateCategoryDemoMutation,
+  useUpdateCategoryMutation as useUpdateCategoryDemoMutation,
+  useGetBrandsQuery as useGetDemoBrandsQuery,
 } from '@/store/services/apiSlice';
+import {
+  useCreateCategoryMutation as useCreateCategoryBackendMutation,
+  useUpdateCategoryMutation as useUpdateCategoryBackendMutation,
+  useGetBrandsQuery as useGetBackendBrandsQuery,
+} from '@/store/services/catalogueApi';
 import { X, Layers } from 'lucide-react';
 
 const categorySchema = z.object({
@@ -26,11 +31,19 @@ const categorySchema = z.object({
 
 type CategoryFormData = z.infer<typeof categorySchema>;
 
+interface BrandOption {
+  id: string;
+  name: string;
+  code: string;
+  status?: string;
+}
+
 interface CategoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   category?: Category | null;
   defaultBrandId?: string;
+  brands?: BrandOption[];
   onSuccess: (cat: Category) => void;
 }
 
@@ -39,14 +52,35 @@ export default function CategoryModal({
   onClose,
   category,
   defaultBrandId,
+  brands: propBrands,
   onSuccess,
 }: CategoryModalProps) {
-  const { data: brands = [] } = useGetBrandsQuery();
-  const [createCategory, { isLoading: isCreating }] = useCreateCategoryMutation();
-  const [updateCategory, { isLoading: isUpdating }] = useUpdateCategoryMutation();
+  const isBackendMode = process.env.NEXT_PUBLIC_USE_BACKEND !== 'false';
+
+  const { data: demoBrands = [] } = useGetDemoBrandsQuery(undefined, { skip: isBackendMode });
+  const { data: backendBrands = [] } = useGetBackendBrandsQuery(undefined, { skip: !isBackendMode });
+
+  const [createCategoryBackend, { isLoading: isCreatingBackend }] = useCreateCategoryBackendMutation();
+  const [updateCategoryBackend, { isLoading: isUpdatingBackend }] = useUpdateCategoryBackendMutation();
+  const [createCategoryDemo, { isLoading: isCreatingDemo }] = useCreateCategoryDemoMutation();
+  const [updateCategoryDemo, { isLoading: isUpdatingDemo }] = useUpdateCategoryDemoMutation();
+
+  const isCreating = isBackendMode ? isCreatingBackend : isCreatingDemo;
+  const isUpdating = isBackendMode ? isUpdatingBackend : isUpdatingDemo;
   const [apiError, setApiError] = useState<string | null>(null);
 
   const isEdit = !!category;
+
+  const brands: BrandOption[] = useMemo(() => {
+    if (propBrands && propBrands.length > 0) return propBrands;
+    const raw = isBackendMode ? backendBrands : demoBrands;
+    return (Array.isArray(raw) ? raw : (raw as any)?.data || []).map((b: any) => ({
+      id: String(b.id || b._id || ''),
+      name: b.name || '',
+      code: b.code || '',
+      status: b.status || 'ACTIVE',
+    }));
+  }, [propBrands, isBackendMode, backendBrands, demoBrands]);
 
   const {
     register,
@@ -66,8 +100,12 @@ export default function CategoryModal({
 
   useEffect(() => {
     if (category) {
+      const parentBrandId = typeof (category as any).brandId === 'object' && (category as any).brandId !== null
+        ? (((category as any).brandId._id || (category as any).brandId.id || '').toString())
+        : String(category.brandId || '');
+
       reset({
-        brandId: category.brandId,
+        brandId: parentBrandId,
         name: category.name,
         code: category.code,
         description: category.description || '',
@@ -89,26 +127,74 @@ export default function CategoryModal({
   const onSubmit = async (data: CategoryFormData) => {
     setApiError(null);
     try {
-      if (isEdit && category) {
-        const result = await updateCategory({
-          id: category.id,
-          brandId: data.brandId,
-          name: data.name.trim(),
-          code: data.code.trim().toUpperCase(),
-          description: data.description?.trim(),
-          status: data.status,
-        }).unwrap();
-        onSuccess(result);
+      let savedCategory: Category;
+
+      if (isBackendMode) {
+        if (isEdit && category) {
+          const targetId = (category as any)._id || category.id;
+          savedCategory = (await updateCategoryBackend({
+            id: targetId,
+            brandId: data.brandId,
+            name: data.name.trim(),
+            code: data.code.trim().toUpperCase(),
+            description: data.description?.trim(),
+            status: data.status.toUpperCase(),
+          }).unwrap()) as unknown as Category;
+        } else {
+          savedCategory = (await createCategoryBackend({
+            brandId: data.brandId,
+            name: data.name.trim(),
+            code: data.code.trim().toUpperCase(),
+            description: data.description?.trim(),
+            status: data.status.toUpperCase(),
+          }).unwrap()) as unknown as Category;
+        }
+
+        // Non-blockingly sync demo-db
+        try {
+          if (isEdit && category) {
+            await updateCategoryDemo({
+              id: category.id,
+              brandId: data.brandId,
+              name: data.name.trim(),
+              code: data.code.trim().toUpperCase(),
+              description: data.description?.trim(),
+              status: data.status,
+            }).unwrap();
+          } else {
+            await createCategoryDemo({
+              brandId: data.brandId,
+              name: data.name.trim(),
+              code: data.code.trim().toUpperCase(),
+              description: data.description?.trim(),
+              status: data.status,
+            }).unwrap();
+          }
+        } catch {
+          // ignore demo sync
+        }
       } else {
-        const result = await createCategory({
-          brandId: data.brandId,
-          name: data.name.trim(),
-          code: data.code.trim().toUpperCase(),
-          description: data.description?.trim(),
-          status: data.status,
-        }).unwrap();
-        onSuccess(result);
+        if (isEdit && category) {
+          savedCategory = await updateCategoryDemo({
+            id: category.id,
+            brandId: data.brandId,
+            name: data.name.trim(),
+            code: data.code.trim().toUpperCase(),
+            description: data.description?.trim(),
+            status: data.status,
+          }).unwrap();
+        } else {
+          savedCategory = await createCategoryDemo({
+            brandId: data.brandId,
+            name: data.name.trim(),
+            code: data.code.trim().toUpperCase(),
+            description: data.description?.trim(),
+            status: data.status,
+          }).unwrap();
+        }
       }
+
+      onSuccess(savedCategory);
       onClose();
     } catch (err: unknown) {
       const e = err as { data?: { message?: string } | string; message?: string };
@@ -168,7 +254,7 @@ export default function CategoryModal({
               className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-normal text-gray-900 focus:outline-hidden focus:border-brand-blue focus:bg-white disabled:opacity-60"
             >
               <option value="">Select Brand</option>
-              {brands.map((b) => (
+              {brands.map((b: BrandOption) => (
                 <option key={b.id} value={b.id}>
                   {b.name} ({b.code})
                 </option>

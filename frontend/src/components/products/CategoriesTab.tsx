@@ -245,7 +245,7 @@ export default function CategoriesTab({ canManage, onToast }: CategoriesTabProps
                           </div>
                           <div>
                             <div className="text-sm font-semibold text-gray-900">{cat.name}</div>
-                            <span className="text-xs text-gray-400">ID: {cat.id}</span>
+                            {/* <span className="text-xs text-gray-400">ID: {cat.id}</span> */}
                           </div>
                         </div>
                       </td>
@@ -270,11 +270,10 @@ export default function CategoriesTab({ canManage, onToast }: CategoriesTabProps
                       </td>
                       <td className="py-4 px-4 text-center">
                         <span
-                          className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            cat.status.toLowerCase() === 'active'
+                          className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${cat.status.toLowerCase() === 'active'
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                               : 'bg-gray-100 text-gray-600 border border-gray-200'
-                          }`}
+                            }`}
                         >
                           {cat.status.toLowerCase() === 'active' ? 'Active' : 'Inactive'}
                         </span>
@@ -292,11 +291,10 @@ export default function CategoriesTab({ canManage, onToast }: CategoriesTabProps
                               </button>
                               <button
                                 onClick={() => handleStatusToggle(cat)}
-                                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-                                  cat.status.toLowerCase() === 'active'
+                                className={`p-1.5 rounded-md transition-colors cursor-pointer ${cat.status.toLowerCase() === 'active'
                                     ? 'hover:text-amber-600 hover:bg-amber-50'
                                     : 'hover:text-emerald-600 hover:bg-emerald-50'
-                                }`}
+                                  }`}
                                 title={cat.status.toLowerCase() === 'active' ? 'Deactivate Category' : 'Activate Category'}
                               >
                                 <Power className="w-3.5 h-3.5" />
@@ -332,6 +330,7 @@ export default function CategoriesTab({ canManage, onToast }: CategoriesTabProps
       <CategoryModal
         isOpen={isModalOpen}
         category={selectedCategory}
+        brands={brands}
         defaultBrandId={brandFilter !== 'all' ? brandFilter : undefined}
         onClose={() => {
           setIsModalOpen(false);

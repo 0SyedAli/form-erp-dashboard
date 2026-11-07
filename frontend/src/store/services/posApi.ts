@@ -1,4 +1,6 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import { inventoryApi } from './inventoryApi';
+import { catalogueApi } from './catalogueApi';
 
 export interface PaginationMeta {
   total: number;
@@ -321,6 +323,15 @@ export const posApi = createApi({
       transformResponse: (
         response: ApiResponse<{ invoice: SalesInvoice; stockMovements: any[]; ledgerEntry?: any }>
       ) => response.data,
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch(inventoryApi.util.invalidateTags(['StockBalance', 'InventorySummary', 'StockMovement']));
+          dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
+        } catch {
+          // ignore error
+        }
+      },
       invalidatesTags: [
         'SalesInvoice',
         'StockBalance',

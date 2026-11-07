@@ -208,7 +208,7 @@ export default function SizesTab({ canManage, onToast }: SizesTabProps) {
                             <div className="text-sm font-semibold text-gray-900">
                               {size.displayLabel}
                             </div>
-                            <span className="text-xs text-gray-400">ID: {size.id}</span>
+                            {/* <span className="text-xs text-gray-400">ID: {size.id}</span> */}
                           </div>
                         </div>
                       </td>
@@ -231,11 +231,10 @@ export default function SizesTab({ canManage, onToast }: SizesTabProps) {
                       </td>
                       <td className="py-4 px-4 text-center">
                         <span
-                          className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            size.status.toLowerCase() === 'active'
+                          className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${size.status.toLowerCase() === 'active'
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                               : 'bg-gray-100 text-gray-600 border border-gray-200'
-                          }`}
+                            }`}
                         >
                           {size.status.toLowerCase() === 'active' ? 'Active' : 'Inactive'}
                         </span>
@@ -253,11 +252,10 @@ export default function SizesTab({ canManage, onToast }: SizesTabProps) {
                               </button>
                               <button
                                 onClick={() => handleStatusToggle(size)}
-                                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-                                  size.status.toLowerCase() === 'active'
+                                className={`p-1.5 rounded-md transition-colors cursor-pointer ${size.status.toLowerCase() === 'active'
                                     ? 'hover:text-amber-600 hover:bg-amber-50'
                                     : 'hover:text-emerald-600 hover:bg-emerald-50'
-                                }`}
+                                  }`}
                                 title={size.status.toLowerCase() === 'active' ? 'Deactivate Size' : 'Activate Size'}
                               >
                                 <Power className="w-3.5 h-3.5" />
