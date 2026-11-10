@@ -5,6 +5,11 @@ export const salesQuerySchema = z.object({
   query: z.object({
     branchId: z.string().optional(),
     customerId: z.string().optional(),
+    scope: z.enum(['sales', 'dispatches', 'all']).optional(),
+    isInterBranch: z
+      .enum(['true', 'false'])
+      .transform((v) => v === 'true')
+      .optional(),
     saleType: z.enum([SALE_TYPES.WALK_IN, SALE_TYPES.WHOLESALE, SALE_TYPES.DISTRIBUTOR]).optional(),
     paymentStatus: z
       .enum([PAYMENT_STATUSES.PAID, PAYMENT_STATUSES.PARTIAL, PAYMENT_STATUSES.UNPAID])

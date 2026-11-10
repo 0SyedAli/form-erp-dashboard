@@ -28,6 +28,7 @@ import {
   FileSpreadsheet,
   Receipt,
   AlertCircle,
+  AlertTriangle,
   X,
   CheckCircle2,
 } from 'lucide-react';
@@ -100,6 +101,7 @@ function CustomersContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [onlyExceededFilter, setOnlyExceededFilter] = useState<boolean>(false);
 
   // Drawer / Modal States
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -273,6 +275,10 @@ function CustomersContent() {
     return customers.filter((c) => {
       if (typeFilter !== 'ALL' && c.customerType !== typeFilter) return false;
       if (statusFilter !== 'ALL' && c.status !== statusFilter) return false;
+      if (onlyExceededFilter) {
+        const isExceeded = (c.creditLimit || 0) > 0 && (c.currentOutstanding || 0) >= c.creditLimit;
+        if (!isExceeded) return false;
+      }
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -284,7 +290,7 @@ function CustomersContent() {
       }
       return true;
     });
-  }, [customers, typeFilter, statusFilter, searchQuery]);
+  }, [customers, typeFilter, statusFilter, onlyExceededFilter, searchQuery]);
 
   // Overall KPIs
   const totalReceivables = useMemo(() => {
@@ -297,6 +303,12 @@ function CustomersContent() {
 
   const distributorCount = useMemo(() => {
     return customers.filter((c) => c.customerType === 'DISTRIBUTOR').length;
+  }, [customers]);
+
+  const exceededCount = useMemo(() => {
+    return customers.filter(
+      (c) => (c.creditLimit || 0) > 0 && (c.currentOutstanding || 0) >= (c.creditLimit || 0)
+    ).length;
   }, [customers]);
 
   return (
@@ -349,7 +361,7 @@ function CustomersContent() {
         {/* Main Content Area */}
         <div className="space-y-6">
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
             <div>
               <p className="text-xs text-slate-500 font-semibold font-sans">Total Customers</p>
@@ -389,6 +401,34 @@ function CustomersContent() {
             </div>
           </div>
 
+          {/* DANGER: Credit Limit Exceeded Metric Card */}
+          <div
+            onClick={() => setOnlyExceededFilter(!onlyExceededFilter)}
+            className={`p-4 rounded-2xl border shadow-2xs flex items-center justify-between cursor-pointer transition-all ${
+              onlyExceededFilter
+                ? 'bg-rose-600 border-rose-700 text-white shadow-md'
+                : exceededCount > 0
+                ? 'bg-rose-50 border-rose-200 hover:bg-rose-100/80 text-rose-900'
+                : 'bg-white border-slate-200 text-slate-900'
+            }`}
+            title="Click to toggle filter for over-limit accounts"
+          >
+            <div>
+              <p className={`text-xs font-semibold font-sans ${onlyExceededFilter ? 'text-rose-100' : 'text-rose-700'}`}>
+                Limit Exceeded (خطرہ)
+              </p>
+              <h3 className={`text-2xl font-black mt-1 font-sans ${onlyExceededFilter ? 'text-white' : 'text-rose-700'}`}>
+                {exceededCount}
+              </h3>
+              <p className={`text-[11px] mt-0.5 font-medium ${onlyExceededFilter ? 'text-rose-200' : 'text-rose-600'}`}>
+                {onlyExceededFilter ? 'Showing Over-Limit Only' : 'Click to view accounts'}
+              </p>
+            </div>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${onlyExceededFilter ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-600'}`}>
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+          </div>
+
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
             <div>
               <p className="text-xs text-slate-500 font-semibold font-sans">Total Receivables</p>
@@ -416,6 +456,20 @@ function CustomersContent() {
               className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
             />
           </div>
+
+          {/* Quick Danger Filter Pill */}
+          <button
+            type="button"
+            onClick={() => setOnlyExceededFilter(!onlyExceededFilter)}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+              onlyExceededFilter
+                ? 'bg-rose-600 border-rose-700 text-white shadow-xs'
+                : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>Over-Limit ({exceededCount})</span>
+          </button>
 
           {/* Type Filter */}
           <div className="flex items-center gap-1.5">
@@ -480,17 +534,33 @@ function CustomersContent() {
                 ) : (
                   filteredCustomers.map((c) => {
                     const availableCredit = Math.max(0, c.creditLimit - c.currentOutstanding);
-                    const isExceeded = c.currentOutstanding >= c.creditLimit;
+                    const isExceeded = (c.creditLimit || 0) > 0 && (c.currentOutstanding || 0) >= c.creditLimit;
+                    const overAmount = Math.max(0, (c.currentOutstanding || 0) - (c.creditLimit || 0));
 
                     return (
-                      <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
+                      <tr
+                        key={c.id}
+                        className={`transition-colors ${
+                          isExceeded
+                            ? 'bg-rose-50/90 hover:bg-rose-100/90 border-l-4 border-l-rose-600'
+                            : 'hover:bg-slate-50/80'
+                        }`}
+                      >
                         <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
                           {c.customerCode}
                         </td>
                         <td className="py-3.5 px-4">
-                          <span className="font-bold text-slate-900 block font-sans">
-                            {c.name}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`font-bold font-sans ${isExceeded ? 'text-rose-950 font-black' : 'text-slate-900'}`}>
+                              {c.name}
+                            </span>
+                            {isExceeded && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-600 text-white font-extrabold text-[9px] tracking-tight shadow-xs animate-pulse">
+                                <AlertTriangle className="w-2.5 h-2.5" />
+                                LIMIT EXCEEDED
+                              </span>
+                            )}
+                          </div>
                           {c.businessName && (
                             <span className="text-[11px] text-slate-500 block">
                               {c.businessName}
@@ -525,7 +595,7 @@ function CustomersContent() {
                         </td>
                         <td className="py-3.5 px-4 text-right font-black text-slate-900 font-sans">
                           {c.currentOutstanding > 0 ? (
-                            <span className="text-purple-800 font-bold">
+                            <span className={`font-bold ${isExceeded ? 'text-rose-700 font-black' : 'text-purple-800'}`}>
                               Rs. {c.currentOutstanding.toLocaleString()}
                             </span>
                           ) : (
@@ -533,11 +603,18 @@ function CustomersContent() {
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-right font-bold font-sans">
-                          <span
-                            className={isExceeded ? 'text-rose-600' : 'text-emerald-700'}
-                          >
-                            Rs. {availableCredit.toLocaleString()}
-                          </span>
+                          {isExceeded ? (
+                            <div className="flex flex-col items-end">
+                              <span className="text-rose-700 font-black text-xs">Rs. 0</span>
+                              <span className="text-[9px] font-extrabold text-rose-700 bg-rose-100/90 px-1.5 py-0.5 rounded border border-rose-300">
+                                Over: Rs. {overAmount.toLocaleString()}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-emerald-700 font-bold">
+                              Rs. {availableCredit.toLocaleString()}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <span

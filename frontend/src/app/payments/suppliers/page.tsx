@@ -18,6 +18,7 @@ import {
 } from '@/store/services/purchasesApi';
 import { hasPermission } from '@/lib/permissions';
 import { SupplierPayment, SupplierPaymentMethod } from '@/types';
+import { formatDate } from '@/utils/formatters';
 import {
   Plus,
   Search,
@@ -347,7 +348,7 @@ function SupplierPaymentsContent() {
                       <td className="py-3.5 px-4 text-slate-600 text-xs">{p.branchName}</td>
 
                       <td className="py-3.5 px-4 text-slate-600 text-xs whitespace-nowrap">
-                        {p.paymentDate}
+                        {formatDate(p.paymentDate)}
                       </td>
 
                       <td className="py-3.5 px-4 text-xs">
@@ -547,7 +548,7 @@ function SupplierPaymentsContent() {
                           >
                             <div>
                               <span className="font-semibold text-slate-800">{b.billNumber}</span>
-                              <span className="text-slate-500 ml-2">Due: {b.dueDate}</span>
+                              <span className="text-slate-500 ml-2">Due: {formatDate(b.dueDate)}</span>
                               <span className="text-rose-600 font-semibold block text-[11px]">
                                 Amount Due: Rs. {b.amountDue.toLocaleString()}
                               </span>
@@ -652,7 +653,7 @@ function SupplierPaymentsContent() {
               </div>
               <div>
                 <span className="text-slate-400 block">Payment Date:</span>
-                <span className="font-semibold text-slate-800">{viewingPayment.paymentDate}</span>
+                <span className="font-semibold text-slate-800">{formatDate(viewingPayment.paymentDate)}</span>
               </div>
               <div>
                 <span className="text-slate-400 block">Payment Method:</span>

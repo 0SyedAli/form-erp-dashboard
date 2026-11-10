@@ -193,6 +193,30 @@ export const catalogueApi = createApi({
       invalidatesTags: ['Branch'],
     }),
 
+    resetBranchPassword: builder.mutation<
+      { success: boolean; message: string },
+      { id: string; password?: string; newPassword?: string }
+    >({
+      query: ({ id, password, newPassword }) => ({
+        url: `/admin/branches/${id}/reset-password`,
+        method: 'POST',
+        body: { newPassword: newPassword || password, password: newPassword || password },
+      }),
+      invalidatesTags: ['Branch'],
+    }),
+
+    updateBranchPermissions: builder.mutation<
+      any,
+      { id: string; permissions: Record<string, boolean> }
+    >({
+      query: ({ id, permissions }) => ({
+        url: `/admin/branches/${id}/permissions`,
+        method: 'PATCH',
+        body: { permissions },
+      }),
+      invalidatesTags: ['Branch'],
+    }),
+
     getBrands: builder.query<Brand[], void>({
       query: () => '/brands',
       transformResponse: (response: ApiResponse<Brand[]>) =>
@@ -419,13 +443,14 @@ export const catalogueApi = createApi({
 
     getProducts: builder.query<
       PaginatedResponse<Product>,
-      { brandId?: string; categoryId?: string; search?: string; page?: number; limit?: number } | void
+      { brandId?: string; categoryId?: string; search?: string; branchId?: string; page?: number; limit?: number } | void
     >({
       query: (params) => {
         const queryParams = new URLSearchParams();
         if (params?.brandId) queryParams.append('brandId', params.brandId);
         if (params?.categoryId) queryParams.append('categoryId', params.categoryId);
         if (params?.search) queryParams.append('search', params.search);
+        if (params?.branchId) queryParams.append('branchId', params.branchId);
         if (params?.page) queryParams.append('page', params.page.toString());
         if (params?.limit) queryParams.append('limit', params.limit.toString());
         const queryStr = queryParams.toString();
@@ -480,13 +505,14 @@ export const catalogueApi = createApi({
 
     getSkus: builder.query<
       PaginatedResponse<ProductVariant>,
-      { productId?: string; search?: string; status?: string; page?: number; limit?: number } | void
+      { productId?: string; search?: string; status?: string; branchId?: string; page?: number; limit?: number } | void
     >({
       query: (params) => {
         const queryParams = new URLSearchParams();
         if (params?.productId) queryParams.append('productId', params.productId);
         if (params?.search) queryParams.append('search', params.search);
         if (params?.status) queryParams.append('status', params.status);
+        if (params?.branchId) queryParams.append('branchId', params.branchId);
         if (params?.page) queryParams.append('page', params.page.toString());
         if (params?.limit) queryParams.append('limit', params.limit.toString());
         const queryStr = queryParams.toString();
@@ -588,6 +614,8 @@ export const catalogueApi = createApi({
 export const {
   useGetBranchesQuery,
   useCreateBranchMutation,
+  useResetBranchPasswordMutation,
+  useUpdateBranchPermissionsMutation,
   useGetBrandsQuery,
   useCreateBrandMutation,
   useUpdateBrandMutation,

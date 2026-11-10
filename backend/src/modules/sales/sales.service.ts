@@ -22,11 +22,23 @@ export class SalesService {
 
     const filter: Record<string, unknown> = {};
 
-    // Branch isolation: Branch accounts only see their own branch invoices
-    if (userContext.role !== 'SUPER_ADMIN') {
-      filter.branchId = new mongoose.Types.ObjectId(userContext.branchId);
-    } else if (query.branchId && query.branchId !== 'ALL') {
-      filter.branchId = new mongoose.Types.ObjectId(query.branchId);
+    const isDispatchesTab = query.scope === 'dispatches';
+
+    if (isDispatchesTab) {
+      // Dispatches view: Invoices where stock was fulfilled from this branch for another terminal
+      filter.isInterBranch = true;
+      if (userContext.role !== 'SUPER_ADMIN') {
+        filter.sourceBranchId = new mongoose.Types.ObjectId(userContext.branchId);
+      } else if (query.branchId && query.branchId !== 'ALL') {
+        filter.sourceBranchId = new mongoose.Types.ObjectId(query.branchId);
+      }
+    } else {
+      // Standard sales view: Invoices issued at this terminal
+      if (userContext.role !== 'SUPER_ADMIN') {
+        filter.branchId = new mongoose.Types.ObjectId(userContext.branchId);
+      } else if (query.branchId && query.branchId !== 'ALL') {
+        filter.branchId = new mongoose.Types.ObjectId(query.branchId);
+      }
     }
 
     if (query.customerId && query.customerId !== 'ALL') {
@@ -65,6 +77,7 @@ export class SalesService {
       SalesInvoice.countDocuments(filter),
       SalesInvoice.find(filter)
         .populate('branchId', 'name code shopNumber address city phone')
+        .populate('sourceBranchId', 'name code shopNumber address city phone')
         .populate('customerId', 'name phone customerType outstandingBalance creditLimit')
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -89,6 +102,7 @@ export class SalesService {
   public static async getInvoiceById(id: string, userContext: UserContext) {
     const invoice = await SalesInvoice.findById(id)
       .populate('branchId', 'name code shopNumber address city phone email')
+      .populate('sourceBranchId', 'name code shopNumber address city phone email')
       .populate('customerId', 'name phone customerType businessName address outstandingBalance creditLimit')
       .lean();
 
@@ -96,10 +110,13 @@ export class SalesService {
       throw new AppError('Invoice not found.', 404, 'INVOICE_NOT_FOUND');
     }
 
+    const sellingBranchId = (invoice.branchId as any)?._id?.toString() || invoice.branchId?.toString();
+    const sourceBranchId = (invoice.sourceBranchId as any)?._id?.toString() || invoice.sourceBranchId?.toString();
+
     if (
       userContext.role !== 'SUPER_ADMIN' &&
-      invoice.branchId?._id?.toString() !== userContext.branchId &&
-      invoice.branchId?.toString() !== userContext.branchId
+      sellingBranchId !== userContext.branchId &&
+      sourceBranchId !== userContext.branchId
     ) {
       throw new AppError('Unauthorized access to invoice of another branch.', 403, 'FORBIDDEN_BRANCH');
     }
@@ -117,6 +134,14 @@ export class SalesService {
     return {
       invoiceNumber: invoice.invoiceNumber,
       date: invoice.createdAt,
+      isInterBranch: invoice.isInterBranch || false,
+      sourceBranch: invoice.sourceBranchId
+        ? {
+            name: invoice.sourceBranchId.name,
+            code: invoice.sourceBranchId.code,
+            shopNumber: invoice.sourceBranchId.shopNumber,
+          }
+        : undefined,
       branch: {
         name: branch?.name || 'Molty Foam Branch',
         code: branch?.code || 'SHOP',

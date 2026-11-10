@@ -16,6 +16,7 @@ import UserStatusModal from '@/components/users/UserStatusModal';
 import RoleManagementModal from '@/components/users/RoleManagementModal';
 import PermissionsMatrix from '@/components/users/PermissionsMatrix';
 import Toast, { ToastMessage } from '@/components/common/Toast';
+import { formatDate } from '@/utils/formatters';
 import {
   Plus,
   Edit2,
@@ -523,7 +524,7 @@ export default function UsersManagementPage() {
                     {selectedUser.designation}
                   </span>
                   <span className="text-xs font-mono text-gray-400 block mt-1 font-normal">
-                    Registered: {selectedUser.createdAt ? new Date(selectedUser.createdAt).toLocaleDateString() : 'Verified Account'}
+                    Registered: {selectedUser.createdAt ? formatDate(selectedUser.createdAt) : 'Verified Account'}
                   </span>
                 </div>
               </div>

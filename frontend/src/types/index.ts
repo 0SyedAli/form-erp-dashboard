@@ -54,6 +54,7 @@ export interface User {
   isActive?: boolean;
   status?: 'ACTIVE' | 'INACTIVE';
   customPermissions?: string[]; // explicit permission overrides
+  permissions?: Partial<BranchAccessPermissions>;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -285,6 +286,8 @@ export interface InvoiceItem {
   discount: number;
   total: number;
   lineTotal?: number; // alias for total
+  sizeLabel?: string;
+  thicknessLabel?: string;
 }
 
 export interface Invoice {
@@ -292,6 +295,9 @@ export interface Invoice {
   invoiceNumber: string;
   branchId: string;
   branchName: string;
+  sourceBranchId?: string;
+  sourceBranchName?: string;
+  isInterBranch?: boolean;
   customerType: CustomerType;
   customerName: string;
   customerPhone: string;

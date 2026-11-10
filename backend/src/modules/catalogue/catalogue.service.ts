@@ -442,6 +442,7 @@ export class CatalogueService {
     brandId?: string;
     categoryId?: string;
     status?: string;
+    branchId?: string;
   }) {
     const page = Math.max(1, query.page || 1);
     const limit = Math.max(1, Math.min(100, query.limit || 20));
@@ -460,11 +461,22 @@ export class CatalogueService {
     if (query.search) {
       filter.name = { $regex: query.search, $options: 'i' };
     }
+    if (query.branchId) {
+      const branchStock = await StockBalance.find({ branchId: query.branchId }).select('variantId');
+      const stockedVariantIds = branchStock.map((s) => s.variantId).filter(Boolean);
+      const stockedVariants = await Variant.find({ _id: { $in: stockedVariantIds } }).select('productId');
+      const stockedProdIds = stockedVariants.map((v) => v.productId).filter(Boolean);
+      filter.$or = [
+        { branchId: query.branchId },
+        { _id: { $in: stockedProdIds } },
+      ];
+    }
 
     const [products, total] = await Promise.all([
       Product.find(filter)
         .populate('brandId', 'name code logoUrl')
         .populate('categoryId', 'name code')
+        .populate('branchId', 'name code shopNumber city')
         .sort({ name: 1 })
         .skip(skip)
         .limit(limit),
@@ -517,6 +529,8 @@ export class CatalogueService {
         code,
         brandId: bId,
         categoryId: cId,
+        branchId: p.branchId?._id ? p.branchId._id.toString() : p.branchId?.toString() || undefined,
+        branch: p.branchId,
         brand: b,
         category: c,
         status: p.status,
@@ -660,13 +674,18 @@ export class CatalogueService {
       throw new AppError('Thickness not found or inactive.', 400, 'INVALID_THICKNESS');
     }
 
-    // 2. Generate Product Name: Brand Name + Category Name
+    // 2. Resolve primary branch and location for opening stock & product association
+    const branchAndLoc = await this.resolvePrimaryBranchAndLocation(callerBranchId, input.destinationBranchId);
+    const targetBranch = branchAndLoc?.branch;
+
+    // Generate Product Name: Brand Name + Category Name
     const productName = `${brand.name} - ${category.name}`;
 
-    // Find or create base Product
+    // Find or create base Product (scoped to target branch if specified)
     let product = await Product.findOne({
       brandId: brand._id,
       categoryId: category._id,
+      ...(targetBranch ? { branchId: targetBranch._id } : {}),
     });
 
     if (!product) {
@@ -674,6 +693,7 @@ export class CatalogueService {
         brandId: brand._id,
         categoryId: category._id,
         name: productName,
+        branchId: targetBranch?._id,
         status: 'ACTIVE',
       });
     }
@@ -821,8 +841,6 @@ export class CatalogueService {
     // 7. Initial Stock Balance Handling
     const stockQty = Math.max(0, input.stock || 0);
     const minStockQty = input.minimumStock !== undefined ? Math.max(0, input.minimumStock) : 5;
-
-    const branchAndLoc = await this.resolvePrimaryBranchAndLocation(callerBranchId, input.destinationBranchId);
     let initialStockCreated = false;
 
     if (branchAndLoc) {
@@ -903,7 +921,7 @@ export class CatalogueService {
   // ==========================================
 
   public static async getSkus(
-    query: { search?: string; productId?: string; status?: string },
+    query: { search?: string; productId?: string; status?: string; branchId?: string },
     isSuperAdmin = false
   ) {
     const filter: any = {};
@@ -916,6 +934,21 @@ export class CatalogueService {
     }
     if (query.search) {
       filter.sku = { $regex: query.search, $options: 'i' };
+    }
+
+    if (query.branchId) {
+      const branchProducts = await Product.find({ branchId: query.branchId }).select('_id');
+      const branchProductIds = branchProducts.map((p) => p._id);
+
+      const branchStock = await StockBalance.find({ branchId: query.branchId }).select('variantId sku');
+      const stockedVariantIds = branchStock.map((s) => s.variantId).filter(Boolean);
+      const stockedSkus = branchStock.map((s) => s.sku).filter(Boolean);
+
+      filter.$or = [
+        { productId: { $in: branchProductIds } },
+        { _id: { $in: stockedVariantIds } },
+        { sku: { $in: stockedSkus } },
+      ];
     }
 
     const variants = await Variant.find(filter)
@@ -931,9 +964,13 @@ export class CatalogueService {
       .sort({ sku: 1 });
 
     const variantIds = variants.map((v) => v._id);
-    const stockBalances = await StockBalance.find({
+    const stockQuery: any = {
       $or: [{ variantId: { $in: variantIds } }, { sku: { $in: variants.map((v) => v.sku) } }],
-    });
+    };
+    if (query.branchId) {
+      stockQuery.branchId = query.branchId;
+    }
+    const stockBalances = await StockBalance.find(stockQuery);
     const stockMap = new Map<string, { onHand: number; reorderLevel: number }>();
     stockBalances.forEach((sb) => {
       const existing = stockMap.get(sb.sku) || { onHand: 0, reorderLevel: sb.reorderLevel ?? 5 };
@@ -958,6 +995,7 @@ export class CatalogueService {
         productName: p?.name || 'Mattress',
         productId: pId,
         brandId: bId,
+        branchId: p?.branchId?.toString() || '',
         categoryId: cId,
         sizeId: sId,
         thicknessId: tId,

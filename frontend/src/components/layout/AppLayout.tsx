@@ -7,12 +7,26 @@ import Sidebar from './Sidebar';
 import Header from './Header';
 import RoleSwitcherModal from './RoleSwitcherModal';
 import InvoiceDetailDrawer from '../dashboard/InvoiceDetailDrawer';
+import { hasPermission } from '@/lib/permissions';
 
 interface AppLayoutProps {
   children: React.ReactNode;
   title?: string;
   subtitle?: string;
 }
+
+const ROUTE_PERMISSIONS: { prefix: string; permission: string }[] = [
+  { prefix: '/pos/history', permission: 'sales:view' },
+  { prefix: '/products', permission: 'catalogue:view' },
+  { prefix: '/settings/products', permission: 'catalogue:manage' },
+  { prefix: '/inventory', permission: 'inventory:view' },
+  { prefix: '/customers', permission: 'customers:view' },
+  { prefix: '/payments/collections', permission: 'payments.collect' },
+  { prefix: '/purchases', permission: 'purchases.view' },
+  { prefix: '/suppliers', permission: 'suppliers.view' },
+  { prefix: '/payments/suppliers', permission: 'payments.suppliers.create' },
+  { prefix: '/reports', permission: 'reports:view' },
+];
 
 const emptySubscribe = () => () => {};
 
@@ -43,6 +57,16 @@ export default function AppLayout({
     // Role Guard: Branch managers cannot access Super Admin dashboard
     if (currentUser.role === 'BRANCH_MANAGER' && pathname.startsWith('/admin')) {
       router.push('/unauthorized');
+      return;
+    }
+
+    // Permission Guard for branch users navigating directly to unauthorized pages
+    if (currentUser.role !== 'SUPER_ADMIN') {
+      const matched = ROUTE_PERMISSIONS.find((r) => pathname.startsWith(r.prefix));
+      if (matched && !hasPermission(currentUser, matched.permission)) {
+        router.push('/unauthorized');
+        return;
+      }
     }
   }, [isAuthenticated, currentUser, pathname, router, isClient]);
 

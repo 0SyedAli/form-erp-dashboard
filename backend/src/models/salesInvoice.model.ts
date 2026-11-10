@@ -26,6 +26,8 @@ export interface IInvoiceLineItem {
 export interface ISalesInvoice extends Document {
   invoiceNumber: string;
   branchId: mongoose.Types.ObjectId;
+  sourceBranchId?: mongoose.Types.ObjectId;
+  isInterBranch?: boolean;
   customerId?: mongoose.Types.ObjectId;
   customerName: string;
   customerPhone?: string;
@@ -82,6 +84,16 @@ const SalesInvoiceSchema = new Schema<ISalesInvoice>(
       type: Schema.Types.ObjectId,
       ref: 'Branch',
       required: true,
+      index: true,
+    },
+    sourceBranchId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Branch',
+      index: true,
+    },
+    isInterBranch: {
+      type: Boolean,
+      default: false,
       index: true,
     },
     customerId: {

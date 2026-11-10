@@ -58,20 +58,20 @@ export class InventoryService {
     userContext: UserContext
   ) {
     const page = Math.max(1, query.page || 1);
-    const limit = Math.max(1, Math.min(100, query.limit || 20));
+    const limit = Math.max(1, Math.min(1000, query.limit || 100));
     const skip = (page - 1) * limit;
 
     const filter: Record<string, unknown> = {};
 
-    // Branch Isolation
-    if (userContext.role !== 'SUPER_ADMIN') {
+    // Branch Isolation: Allow branch query if explicitly requested (e.g., POS cross-branch stock view)
+    if (query.branchId) {
+      const bId = await resolveBranchObjectId(query.branchId);
+      if (bId) filter.branchId = bId;
+    } else if (userContext.role !== 'SUPER_ADMIN') {
       if (!userContext.branchId) {
         throw new AppError('Branch user is not bound to a valid branch.', 403, 'UNBOUND_BRANCH');
       }
       const bId = await resolveBranchObjectId(userContext.branchId);
-      if (bId) filter.branchId = bId;
-    } else if (query.branchId) {
-      const bId = await resolveBranchObjectId(query.branchId);
       if (bId) filter.branchId = bId;
     }
 
@@ -578,7 +578,7 @@ export class InventoryService {
     userContext: UserContext
   ) {
     const page = Math.max(1, query.page || 1);
-    const limit = Math.max(1, Math.min(100, query.limit || 20));
+    const limit = Math.max(1, Math.min(1000, query.limit || 100));
     const skip = (page - 1) * limit;
 
     const filter: Record<string, unknown> = {};
@@ -824,7 +824,7 @@ export class InventoryService {
     userContext: UserContext
   ) {
     const page = Math.max(1, query.page || 1);
-    const limit = Math.max(1, Math.min(100, query.limit || 20));
+    const limit = Math.max(1, Math.min(1000, query.limit || 100));
     const skip = (page - 1) * limit;
 
     const filter: Record<string, unknown> = {};
@@ -1231,7 +1231,7 @@ export class InventoryService {
     userContext: UserContext
   ) {
     const page = Math.max(1, query.page || 1);
-    const limit = Math.max(1, Math.min(100, query.limit || 20));
+    const limit = Math.max(1, Math.min(1000, query.limit || 100));
     const skip = (page - 1) * limit;
 
     const filter: Record<string, unknown> = {};
@@ -1310,7 +1310,7 @@ export class InventoryService {
     userContext: UserContext
   ) {
     const page = Math.max(1, query.page || 1);
-    const limit = Math.max(1, Math.min(100, query.limit || 20));
+    const limit = Math.max(1, Math.min(1000, query.limit || 100));
     const skip = (page - 1) * limit;
 
     const filter: Record<string, unknown> = {};

@@ -23,6 +23,9 @@ import {
 
 function ProductsPageContent() {
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const assignedBranchId = currentUser?.assignedBranchId;
+  const effectiveBranchId = !isSuperAdmin ? assignedBranchId : undefined;
 
   // Access control
   const canManageCatalogue = hasPermission(currentUser, 'catalogue:manage');
@@ -34,8 +37,13 @@ function ProductsPageContent() {
   // Query high-level counts
   const { data: demoProducts = [] } = useGetProductsQuery();
   const { data: demoVariants = [] } = useGetVariantsQuery();
-  const { data: backendProductsData } = useGetBackendProductsQuery();
-  const { data: backendSkusData } = useGetBackendSkusQuery({ status: 'ALL' });
+  const { data: backendProductsData } = useGetBackendProductsQuery(
+    effectiveBranchId ? { branchId: effectiveBranchId } : undefined
+  );
+  const { data: backendSkusData } = useGetBackendSkusQuery({
+    status: 'ALL',
+    ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+  });
 
   const totalProducts = backendProductsData?.pagination?.total ?? demoProducts.length;
   const totalVariants = backendSkusData?.pagination?.total ?? demoVariants.length;

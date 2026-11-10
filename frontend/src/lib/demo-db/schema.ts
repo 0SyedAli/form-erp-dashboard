@@ -149,7 +149,7 @@ export const DEFAULT_BRANCH_SETTINGS: BranchSettings = {
 
 export const DEFAULT_BRANCH_PERMISSIONS: BranchAccessPermissions = {
   pos: true,
-  viewOwnSales: false,
+  viewOwnSales: true,
   viewOwnRevenue: false,
   viewProducts: false,
   addEditProducts: false,

@@ -11,6 +11,7 @@ export const checkoutItemSchema = z.object({
 export const checkoutSchema = z.object({
   body: z.object({
     branchId: z.string().optional(), // Super Admin only; for Branch, server session branchId is always enforced
+    sourceBranchId: z.string().optional(), // Cross-branch fulfillment source branch ID
     stockLocationId: z.string().optional(), // Defaults to branch default stockroom
     customerId: z.string().optional(),
     customerName: z.string().optional().default('Walk-in Customer'),

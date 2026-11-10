@@ -36,35 +36,31 @@ export function hasPermission(user: User | null | undefined, permissionKey: stri
     return true;
   }
 
-  // Branch permission checks for assigned branch (if branch disables module, user cannot access)
-  if (user.assignedBranchId) {
-    const branch = branchesRepository.getById(user.assignedBranchId);
-    if (branch && branch.permissions) {
-      const perms = branch.permissions;
-      if ((permissionKey === 'pos:view' || permissionKey === 'pos:create') && perms.pos === false) return false;
-      if (permissionKey === 'sales:view' && perms.viewOwnSales === false) return false;
-      if (permissionKey === 'revenue:view' && perms.viewOwnRevenue === false) return false;
-      if ((permissionKey === 'catalogue:view' || permissionKey === 'products:view') && perms.viewProducts === false) return false;
-      if ((permissionKey === 'catalogue:manage' || permissionKey === 'pricing:manage') && perms.addEditProducts === false) return false;
-      if (permissionKey === 'inventory:view' && perms.viewStock === false && perms.manageStock === false) return false;
-      if (permissionKey === 'inventory:manage' && perms.manageStock === false) return false;
-      if (permissionKey === 'inventory:transfer' && perms.stockTransfers === false) return false;
-      if ((permissionKey === 'customers:view' || permissionKey === 'customers:manage') && perms.customers === false) return false;
-      if (
-        (permissionKey.startsWith('sales.credit') ||
-          permissionKey.startsWith('customers.credit') ||
-          permissionKey === 'payments.collect' ||
-          permissionKey === 'ledger.view') &&
-        perms.customerCredit === false
-      ) {
-        return false;
-      }
-      if ((permissionKey.startsWith('purchases.') || permissionKey.startsWith('bills.')) && perms.purchases === false) return false;
-      if ((permissionKey.startsWith('suppliers.') || permissionKey.startsWith('payments.suppliers')) && perms.suppliers === false) return false;
-      if (permissionKey.startsWith('reports') && perms.reports === false) return false;
-      if (permissionKey.includes('return') && perms.returns === false) return false;
-      if (permissionKey.includes('override') && perms.discountsOverrides === false) return false;
+  // Branch permission checks for assigned branch or current user
+  const perms = (user as any).permissions || (user.assignedBranchId ? branchesRepository.getById(user.assignedBranchId)?.permissions : undefined);
+  if (perms) {
+    if (permissionKey === 'pos:view' || permissionKey === 'pos:create') return !!perms.pos;
+    if (permissionKey === 'sales:view') return !!perms.viewOwnSales;
+    if (permissionKey === 'revenue:view') return !!perms.viewOwnRevenue;
+    if (permissionKey === 'catalogue:view' || permissionKey === 'products:view') return !!perms.viewProducts;
+    if (permissionKey === 'catalogue:manage' || permissionKey === 'pricing:manage') return !!perms.addEditProducts;
+    if (permissionKey === 'inventory:view') return !!(perms.viewStock || perms.manageStock);
+    if (permissionKey === 'inventory:manage') return !!perms.manageStock;
+    if (permissionKey === 'inventory:transfer') return !!perms.stockTransfers;
+    if (permissionKey === 'customers:view' || permissionKey === 'customers:manage') return !!perms.customers;
+    if (
+      permissionKey === 'payments.collect' ||
+      permissionKey.startsWith('sales.credit') ||
+      permissionKey.startsWith('customers.credit') ||
+      permissionKey === 'ledger.view'
+    ) {
+      return !!(perms.customerCredit || perms.customers);
     }
+    if (permissionKey.startsWith('purchases.') || permissionKey.startsWith('bills.')) return !!perms.purchases;
+    if (permissionKey.startsWith('suppliers.') || permissionKey.startsWith('payments.suppliers')) return !!perms.suppliers;
+    if (permissionKey.startsWith('reports') || permissionKey === 'reports:view') return !!perms.reports;
+    if (permissionKey.includes('return')) return !!perms.returns;
+    if (permissionKey.includes('override')) return !!perms.discountsOverrides;
   }
 
   // Check custom permission overrides first

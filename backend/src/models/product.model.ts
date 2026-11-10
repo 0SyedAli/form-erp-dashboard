@@ -5,6 +5,7 @@ export interface IProduct extends Document {
   categoryId: mongoose.Types.ObjectId;
   name: string;
   description?: string;
+  branchId?: mongoose.Types.ObjectId;
   status: 'ACTIVE' | 'INACTIVE';
   createdAt: Date;
   updatedAt: Date;
@@ -22,6 +23,11 @@ const ProductSchema = new Schema<IProduct>(
       type: Schema.Types.ObjectId,
       ref: 'Category',
       required: true,
+      index: true,
+    },
+    branchId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Branch',
       index: true,
     },
     name: {

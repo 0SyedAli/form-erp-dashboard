@@ -15,11 +15,13 @@ import {
   useGetCategoriesQuery as useGetBackendCategoriesQuery,
   useGetSizesQuery as useGetBackendSizesQuery,
   useGetThicknessesQuery as useGetBackendThicknessesQuery,
+  useGetBranchesQuery,
   useCreateProductWithVariantMutation,
   useGetSkuByIdQuery,
   useUpdateSkuPricesMutation,
   useUpdateSkuMutation,
 } from '@/store/services/catalogueApi';
+import { useAppSelector } from '@/store';
 import {
   productsRepository,
   variantsRepository,
@@ -114,6 +116,11 @@ function NewProductContent() {
   }, [editingVariant]);
 
   // Selected Step Overrides
+  const currentUser = useAppSelector((state) => state.auth.currentUser);
+  const { data: branches = [] } = useGetBranchesQuery();
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(
+    currentUser?.assignedBranchId || currentUser?.branchId || ''
+  );
   const [selectedBrandIdOverride, setSelectedBrandId] = useState<string>('');
   const [selectedCategoryIdOverride, setSelectedCategoryId] = useState<string>('');
   const [selectedSizeIdOverride, setSelectedSizeId] = useState<string>('');
@@ -467,6 +474,8 @@ function NewProductContent() {
           categoryId: selectedCategoryId,
           sizeId: selectedSizeId,
           thicknessId: selectedThicknessId,
+          destinationBranchId: selectedBranchId || undefined,
+          targetBranchId: selectedBranchId || undefined,
           listPrice,
           purchasePercent: purchasePct,
           purchasePrice,
@@ -656,6 +665,32 @@ function NewProductContent() {
                 </span>
               </div>
             )}
+            {/* Target Branch Assignment */}
+            {branches && branches.length > 0 && !isEditMode && (
+              <div className="space-y-2 pb-1 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-gray-900">Destination Branch</span>
+                  <span className="text-xs text-gray-400 font-normal">
+                    (Branch catalogue and initial opening stock location)
+                  </span>
+                </div>
+                <div>
+                  <select
+                    value={selectedBranchId}
+                    onChange={(e) => setSelectedBranchId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-blue-50/50 border border-blue-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-brand-blue cursor-pointer"
+                  >
+                    <option value="">-- All Branches / Primary HQ --</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.code || b.shopNumber})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
             {/* Step 1: Brand */}
             <div className="space-y-2">
               <div className="flex items-center gap-2.5">

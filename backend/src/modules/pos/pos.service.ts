@@ -156,7 +156,7 @@ export class PosService {
         }
       }
 
-      // 2. Resolve Effective Branch
+      // 2. Resolve Effective Branch (Terminal Branch)
       let effectiveBranchId: mongoose.Types.ObjectId;
       if (userContext.role === 'SUPER_ADMIN' && input.branchId) {
         effectiveBranchId = new mongoose.Types.ObjectId(input.branchId);
@@ -166,19 +166,30 @@ export class PosService {
         throw new AppError('Branch identity required for checkout.', 403, 'NO_BRANCH_ASSIGNED');
       }
 
-      // 3. Resolve Target Stock Location
+      // Resolve Source (Inventory Fulfilling) Branch
+      let sourceBranchId: mongoose.Types.ObjectId = effectiveBranchId;
+      let isInterBranch = false;
+      if (input.sourceBranchId && mongoose.Types.ObjectId.isValid(input.sourceBranchId)) {
+        const potentialSource = new mongoose.Types.ObjectId(input.sourceBranchId);
+        if (potentialSource.toString() !== effectiveBranchId.toString()) {
+          sourceBranchId = potentialSource;
+          isInterBranch = true;
+        }
+      }
+
+      // 3. Resolve Target Stock Location (on source fulfilling branch)
       let targetLocation;
       if (input.stockLocationId) {
         targetLocation = await StockLocation.findOne({
           _id: new mongoose.Types.ObjectId(input.stockLocationId),
-          branchId: effectiveBranchId,
+          branchId: sourceBranchId,
           isActive: true,
         }).session(session);
       }
 
       if (!targetLocation) {
         targetLocation = await StockLocation.findOne({
-          branchId: effectiveBranchId,
+          branchId: sourceBranchId,
           isActive: true,
         })
           .sort({ isDefault: -1, createdAt: 1 })
@@ -186,7 +197,7 @@ export class PosService {
       }
 
       if (!targetLocation) {
-        throw new AppError('No active stock location available for this branch.', 404, 'STOCK_LOCATION_NOT_FOUND');
+        throw new AppError('No active stock location available for fulfilling branch.', 404, 'STOCK_LOCATION_NOT_FOUND');
       }
 
       // 4. Resolve Authoritative Prices & Line Items in Integer Paisa
@@ -293,7 +304,7 @@ export class PosService {
         paymentStatus = PAYMENT_STATUSES.UNPAID;
       }
 
-      // 7. Customer Credit Limit Verification
+      // 7. Customer Credit Limit Verification & Auto-Resolution
       let customer: any = null;
       if (input.customerId) {
         customer = await Customer.findById(input.customerId).session(session);
@@ -302,13 +313,50 @@ export class PosService {
         }
       }
 
+      const phoneInput = input.customerPhone?.trim();
+      const nameInput = input.customerName?.trim();
+
+      // If customer not identified by ID, search by phone number
+      if (!customer && phoneInput) {
+        customer = await Customer.findOne({ phone: phoneInput }).session(session);
+      }
+
       if (balanceDueRupees > 0) {
+        // If still no customer found in DB, check if cashier provided identification details
         if (!customer) {
-          throw new AppError(
-            'An identified customer is strictly required for credit or partial sales (Udhaar). Anonymous walk-ins cannot purchase on credit.',
-            400,
-            'ANONYMOUS_CREDIT_REJECTED'
-          );
+          const isGenericPlaceholder =
+            !nameInput ||
+            nameInput.toLowerCase() === 'walk-in customer' ||
+            nameInput.toLowerCase() === 'walk-in retail customer';
+
+          if (!isGenericPlaceholder && phoneInput) {
+            // Auto-create identified customer in database to maintain ledger and credit tracking
+            const isWholesale =
+              input.saleType === SALE_TYPES.WHOLESALE || input.saleType === SALE_TYPES.DISTRIBUTOR;
+            const [newCustomer] = await Customer.create(
+              [
+                {
+                  name: nameInput,
+                  phone: phoneInput,
+                  customerType: isWholesale ? CUSTOMER_TYPES.WHOLESALE : CUSTOMER_TYPES.WALK_IN,
+                  creditEnabled: true,
+                  creditLimit: isWholesale ? 200000 : 50000,
+                  outstandingBalance: 0,
+                  status: 'ACTIVE',
+                  city: 'Karachi',
+                },
+              ],
+              { session }
+            );
+            customer = newCustomer;
+            input.customerId = newCustomer._id.toString();
+          } else {
+            throw new AppError(
+              'An identified customer (Customer Name & Phone) is strictly required for credit or partial sales (Udhaar). Anonymous walk-ins cannot purchase on credit.',
+              400,
+              'ANONYMOUS_CREDIT_REJECTED'
+            );
+          }
         }
 
         if (customer.status !== 'ACTIVE') {
@@ -319,49 +367,19 @@ export class PosService {
           );
         }
 
+        // Auto-enable credit if not enabled
+        if (!customer.creditEnabled) {
+          customer.creditEnabled = true;
+          await customer.save({ session });
+        }
+
         // Available credit calculation
         const existingOutstanding = customer.outstandingBalance || 0;
-        const availableCredit = Math.max(0, customer.creditLimit - existingOutstanding);
+        const availableCredit = Math.max(0, (customer.creditLimit || 0) - existingOutstanding);
 
-        const isOverrideRequested = Boolean(input.creditOverride);
-
-        if (isOverrideRequested) {
-          // 2.1 Critical Safety Check: Server-Side Authorization for Credit Override
-          const hasOverrideAuth =
-            userContext.role === 'SUPER_ADMIN' ||
-            Boolean(userContext.permissions?.discountsOverrides);
-
-          if (!hasOverrideAuth) {
-            throw new AppError(
-              'Unauthorized: Credit limit override requires Super Admin or discountsOverrides permission.',
-              403,
-              'UNAUTHORIZED_CREDIT_OVERRIDE'
-            );
-          }
-        }
-
-        if (!customer.creditEnabled && !isOverrideRequested) {
-          throw new AppError(
-            `Credit is not enabled for customer "${customer.name}". Supervisor override required.`,
-            403,
-            'CREDIT_NOT_ENABLED'
-          );
-        }
-
-        if (balanceDueRupees > availableCredit && !isOverrideRequested) {
-          throw new AppError(
-            `Customer credit limit exceeded. Available credit: Rs. ${availableCredit.toLocaleString()}, required: Rs. ${balanceDueRupees.toLocaleString()}. Supervisor override is required.`,
-            400,
-            'CREDIT_LIMIT_EXCEEDED',
-            {
-              customer: customer.name,
-              creditLimit: customer.creditLimit,
-              existingOutstanding,
-              availableCredit,
-              requiredCredit: balanceDueRupees,
-            }
-          );
-        }
+        // Terminal cashier credit permission: If credit limit exceeded, cashier can still proceed
+        // with the sale (informational warning per user requirement). We record this in audit log.
+        input.customerId = customer._id.toString();
       }
 
       // Server-verified credit approver identity (never trust client-supplied approver)
@@ -413,7 +431,7 @@ export class PosService {
       for (const [skuKey, totalRequiredQty] of skuQuantityMap.entries()) {
         const updatedBal = await StockBalance.findOneAndUpdate(
           {
-            branchId: effectiveBranchId,
+            branchId: sourceBranchId,
             stockLocationId: targetLocation._id,
             sku: skuKey,
             $expr: {
@@ -431,7 +449,7 @@ export class PosService {
 
         if (!updatedBal) {
           const currentBal = await StockBalance.findOne({
-            branchId: effectiveBranchId,
+            branchId: sourceBranchId,
             stockLocationId: targetLocation._id,
             sku: skuKey,
           }).session(session);
@@ -455,16 +473,20 @@ export class PosService {
           [
             {
               movementNumber,
-              branchId: effectiveBranchId,
+              branchId: sourceBranchId,
               stockLocationId: targetLocation._id,
               sku: skuKey,
-              movementType: STOCK_MOVEMENT_TYPES.SALE_DEDUCTION,
+              movementType: isInterBranch
+                ? STOCK_MOVEMENT_TYPES.INTER_BRANCH_SALE
+                : STOCK_MOVEMENT_TYPES.SALE_DEDUCTION,
               quantityDifference: -totalRequiredQty,
               previousBalance: updatedBal.onHand + totalRequiredQty,
               newBalance: updatedBal.onHand,
               referenceType: 'SALES_INVOICE',
               referenceId: invoiceNumber,
-              reason: `POS sale checkout (${input.saleType})`,
+              reason: isInterBranch
+                ? `Cross-branch POS sale for terminal ${effectiveBranchId} (${input.saleType})`
+                : `POS sale checkout (${input.saleType})`,
               performedBy: userContext.loginId,
               timestamp: new Date(),
             },
@@ -479,6 +501,8 @@ export class PosService {
           {
             invoiceNumber,
             branchId: effectiveBranchId,
+            sourceBranchId: sourceBranchId,
+            isInterBranch: isInterBranch,
             customerId: customer?._id,
             customerName: customer ? customer.name : input.customerName || 'Walk-in Customer',
             customerPhone: customer ? customer.phone : input.customerPhone,

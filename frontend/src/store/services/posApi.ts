@@ -55,6 +55,7 @@ export interface CheckoutItemInput {
 
 export interface POSCheckoutInput {
   branchId?: string;
+  sourceBranchId?: string;
   stockLocationId?: string;
   customerId?: string;
   customerName?: string;
@@ -124,6 +125,9 @@ export interface SalesInvoice {
   invoiceNumber: string;
   branchId: string;
   branch?: { _id: string; name: string; code: string; address?: string; phone?: string };
+  sourceBranchId?: string;
+  sourceBranch?: { _id: string; name: string; code: string; shopNumber?: string; address?: string; phone?: string };
+  isInterBranch?: boolean;
   customerId?: string;
   customer?: { _id: string; name: string; phone: string; address?: string; currentOutstanding?: number };
   customerName: string;
@@ -386,6 +390,8 @@ export const posApi = createApi({
       {
         branchId?: string;
         customerId?: string;
+        scope?: 'sales' | 'dispatches' | 'all';
+        isInterBranch?: boolean;
         saleType?: string;
         paymentStatus?: string;
         search?: string;

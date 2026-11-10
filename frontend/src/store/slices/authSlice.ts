@@ -23,6 +23,7 @@ export function accountToUser(account: AuthenticatedAccount): User {
     customPermissions: Object.entries(account.permissions || {})
       .filter(([, v]) => Boolean(v))
       .map(([k]) => k),
+    permissions: account.permissions,
   };
 }
 

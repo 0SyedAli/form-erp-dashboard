@@ -15,6 +15,7 @@ import { useGetBranchesQuery } from '@/store/services/catalogueApi';
 import { getUserAuthorizedBranches } from '@/lib/permissions';
 import { InventoryBalance, StockStatus } from '@/types';
 import Toast, { ToastMessage } from '@/components/common/Toast';
+import { formatDateTime } from '@/utils/formatters';
 import {
   Boxes,
   Search,
@@ -541,7 +542,7 @@ export default function StockBalancesPage() {
               </div>
 
               <div className="pt-2 flex justify-between items-center text-xs text-gray-500 border-t border-gray-100">
-                <span>Last updated: {new Date(selectedItemForDetails.updatedAt).toLocaleDateString()}</span>
+                <span>Last updated: {formatDateTime(selectedItemForDetails.updatedAt)}</span>
                 <Link
                   href={`/inventory/movements?sku=${encodeURIComponent(selectedItemForDetails.sku)}`}
                   className="font-semibold text-brand-blue hover:underline"

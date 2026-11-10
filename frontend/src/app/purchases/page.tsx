@@ -18,6 +18,7 @@ import {
   useGetSuppliersQuery as useGetBackendSuppliersQuery,
 } from '@/store/services/purchasesApi';
 import { getUserAuthorizedBranches } from '@/lib/permissions';
+import { formatDate } from '@/utils/formatters';
 import {
   ShoppingCart,
   Receipt,
@@ -556,7 +557,7 @@ function PurchasesOverviewContent() {
                         <p className="text-xs text-slate-600 mt-1 font-medium">{bill.supplierName}</p>
                         <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
                           <Clock className="w-3 h-3 text-slate-400" />
-                          <span>Due: {bill.dueDate}</span>
+                          <span>Due: {formatDate(bill.dueDate)}</span>
                         </div>
                       </div>
 

@@ -277,9 +277,9 @@ export default function ProductGrid({
       {products.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
           <Package className="w-12 h-12 text-slate-300 mb-3" />
-          <p className="text-base font-semibold text-slate-600">No products found</p>
+          <p className="text-base font-semibold text-slate-600">No products found in this branch</p>
           <p className="text-xs text-slate-400 mt-1 max-w-sm">
-            Try choosing a different category or clearing your search query.
+            This branch does not have stock or catalogue products assigned yet. Use the <strong>Stock Branch</strong> switcher in the header to view or sell products from sister branches.
           </p>
         </div>
       ) : (

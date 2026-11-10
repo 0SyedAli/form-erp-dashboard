@@ -37,7 +37,7 @@ export default function POSFooter({
   }, []);
 
   const displayOnline = isMounted ? isOnline : true;
-  const displayCashier = isMounted ? cashierName : 'Admin';
+  const displayCashier = cashierName || 'Admin';
 
   return (
     <footer className="bg-white border-t border-slate-200 px-5 py-2 flex items-center justify-between text-xs text-slate-500 font-medium select-none shrink-0">
@@ -45,7 +45,7 @@ export default function POSFooter({
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-1.5 text-slate-700">
           <User className="w-3.5 h-3.5 text-slate-400" />
-          <span>
+          <span suppressHydrationWarning>
             Cashier:{' '}
             <strong className="text-slate-900 font-bold" suppressHydrationWarning>
               {displayCashier}
@@ -55,7 +55,7 @@ export default function POSFooter({
 
         <div className="flex items-center gap-1.5 text-slate-700">
           <Calendar className="w-3.5 h-3.5 text-slate-400" />
-          <span>
+          <span suppressHydrationWarning>
             Date:{' '}
             <span className="text-slate-800" suppressHydrationWarning>
               {formattedDate}

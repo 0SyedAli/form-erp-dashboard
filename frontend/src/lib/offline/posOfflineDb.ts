@@ -22,6 +22,7 @@ export interface POSMasterSnapshot {
   inventoryBalances: InventoryBalance[];
   customers?: Customer[];
   activeBranch?: Branch | null;
+  branches?: Branch[];
   lastUpdated: string;
 }
 

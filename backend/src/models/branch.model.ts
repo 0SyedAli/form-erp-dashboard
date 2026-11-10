@@ -48,11 +48,11 @@ const BranchSchema = new Schema<IBranch>(
     },
     address: {
       type: String,
-      required: true,
+      default: 'Commercial Market',
     },
     phone: {
       type: String,
-      required: true,
+      default: 'N/A',
     },
     loginId: {
       type: String,

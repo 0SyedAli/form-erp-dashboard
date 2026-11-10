@@ -203,14 +203,34 @@ export class BranchAccountService {
     adminAccountId?: string
   ) {
     const branch = await this.findBranch(branchIdentifier);
-    const account = await Account.findOne({ branchId: branch._id });
+    let account = await Account.findOne({ branchId: branch._id });
 
-    if (!account) {
-      throw new AppError(`No account found for branch '${branch.name}'.`, 404, 'ACCOUNT_NOT_FOUND');
+    const rawPassword = input.newPassword || input.password;
+    if (!rawPassword) {
+      throw new AppError('Password is required.', 400, 'PASSWORD_REQUIRED');
     }
 
-    account.passwordHash = await bcrypt.hash(input.newPassword, 10);
-    await account.save();
+    const passwordHash = await bcrypt.hash(rawPassword, 10);
+
+    if (!account) {
+      // Auto-create branch account if missing
+      const loginId = (branch.loginId || branch.code || `branch_${branch.shopNumber}`).toLowerCase();
+      account = await Account.create({
+        loginId,
+        name: branch.name,
+        email: (branch as any).email || `${loginId}@moltyfoam.local`,
+        passwordHash,
+        role: ACCOUNT_ROLES.BRANCH,
+        branchId: branch._id,
+        permissions: branch.permissions || STANDARD_BRANCH_PERMISSIONS,
+        isActive: true,
+      });
+      branch.loginId = loginId;
+      await branch.save();
+    } else {
+      account.passwordHash = passwordHash;
+      await account.save();
+    }
 
     // Invalidate all active sessions for this account immediately
     await Session.updateMany({ accountId: account._id }, { isValid: false });
@@ -239,19 +259,31 @@ export class BranchAccountService {
     adminAccountId?: string
   ) {
     const branch = await this.findBranch(branchIdentifier);
-    const account = await Account.findOne({ branchId: branch._id });
-
-    if (!account) {
-      throw new AppError(`No account found for branch '${branch.name}'.`, 404, 'ACCOUNT_NOT_FOUND');
-    }
+    let account = await Account.findOne({ branchId: branch._id });
 
     const mergedPermissions: BranchPermissions = {
-      ...account.permissions,
+      ...STANDARD_BRANCH_PERMISSIONS,
+      ...(account ? account.permissions : (branch.permissions || {})),
       ...input.permissions,
     };
 
-    account.permissions = mergedPermissions;
-    await account.save();
+    if (!account) {
+      const loginId = (branch.loginId || branch.code || `branch_${branch.shopNumber}`).toLowerCase();
+      account = await Account.create({
+        loginId,
+        name: branch.name,
+        email: (branch as any).email || `${loginId}@moltyfoam.local`,
+        passwordHash: await bcrypt.hash('password123', 10),
+        role: ACCOUNT_ROLES.BRANCH,
+        branchId: branch._id,
+        permissions: mergedPermissions,
+        isActive: true,
+      });
+      branch.loginId = loginId;
+    } else {
+      account.permissions = mergedPermissions;
+      await account.save();
+    }
 
     branch.permissions = mergedPermissions;
     await branch.save();
@@ -304,7 +336,21 @@ export class BranchAccountService {
    * Creates a brand new Branch, default StockLocation, and Branch Account atomically.
    */
   public static async createBranch(input: CreateBranchInput, adminAccountId?: string) {
-    const code = input.code.trim().toUpperCase();
+    const shopNum = (input.shopNumber || '').trim();
+    const cleanShop = shopNum.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || '01';
+
+    // Auto-generate code if not explicitly provided or empty
+    let code = (input.code || '').trim().toUpperCase();
+    if (!code) {
+      let candidate = `SHOP-${cleanShop}`;
+      let counter = 1;
+      while (await Branch.findOne({ code: candidate })) {
+        counter++;
+        candidate = `SHOP-${cleanShop}-${counter}`;
+      }
+      code = candidate;
+    }
+
     const loginId = input.loginId.trim().toLowerCase();
 
     // Check if code or loginId already in use
@@ -325,20 +371,25 @@ export class BranchAccountService {
       throw new AppError(`Account with login ID or email already exists.`, 409, 'ACCOUNT_EXISTS');
     }
 
+    // Default permissions: ONLY pos and viewOwnSales enabled by default
     const permissions: BranchPermissions = {
       ...STANDARD_BRANCH_PERMISSIONS,
+      pos: true,
+      viewOwnSales: true,
       ...(input.settings?.manageOwnInventory ? { manageStock: true } : {}),
       ...(input.settings?.allowWholesaleSales ? { customerCredit: true } : {}),
     };
 
+    const branchName = input.name?.trim() || `Shop #${shopNum}`;
+
     const branch = await Branch.create({
-      name: input.name.trim(),
+      name: branchName,
       code,
-      shopNumber: input.shopNumber.trim(),
+      shopNumber: shopNum,
       type: input.type || 'RETAIL_STORE',
-      city: input.city || 'Karachi',
-      address: input.address.trim(),
-      phone: input.phone.trim(),
+      city: input.city?.trim() || 'Karachi',
+      address: input.address?.trim() || 'Commercial Market',
+      phone: input.phone?.trim() || 'N/A',
       loginId,
       targetMonthlySales: input.targetMonthlySales || 0,
       permissions,
@@ -359,8 +410,8 @@ export class BranchAccountService {
     const passwordHash = await bcrypt.hash(rawPassword, 10);
     const account = await Account.create({
       loginId,
-      name: input.name.trim(),
-      email: input.email || (loginId.includes('@') ? loginId : `${loginId}@moltyfoam.local`),
+      name: branchName,
+      email: input.email?.trim().toLowerCase() || `${loginId}@moltyfoam.local`,
       passwordHash,
       role: ACCOUNT_ROLES.BRANCH,
       branchId: branch._id,

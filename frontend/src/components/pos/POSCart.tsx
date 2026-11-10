@@ -28,8 +28,8 @@ interface POSCartProps {
   onClearCart: () => void;
   discountAmount: number;
   onDiscountChange: (amount: number) => void;
-  amountReceived: number;
-  onAmountReceivedChange: (amount: number) => void;
+  amountReceived?: number;
+  onAmountReceivedChange?: (amount: number) => void;
   paymentMethod: PaymentMethod;
   onPaymentMethodChange: (method: PaymentMethod) => void;
   onCompleteSale: () => void;
@@ -79,14 +79,13 @@ export default function POSCart({
   canApproveCredit = true,
 }: POSCartProps) {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [discountMode, setDiscountMode] = useState<'RS' | 'PERCENT'>('RS');
+  const [percentValue, setPercentValue] = useState<number>(0);
 
   // Calculations
   const totalItemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
   const totalAmount = Math.max(0, subtotal - discountAmount);
-
-  // Effective payment calculation
-  const changeAmount = Math.max(0, amountReceived - totalAmount);
 
   const canCheckout =
     items.length > 0 &&
@@ -255,47 +254,87 @@ export default function POSCart({
           <span className="font-bold text-slate-900">Rs. {subtotal.toLocaleString()}</span>
         </div>
 
-        {/* Discount (Rs.) */}
+        {/* Discount (Rs. vs % Switch) */}
         <div className="flex items-center justify-between text-xs text-slate-700">
-          <span className="font-semibold text-slate-600">Discount (Rs.)</span>
-          <input
-            type="number"
-            min={0}
-            max={subtotal}
-            value={discountAmount || ''}
-            onChange={(e) => onDiscountChange(Math.max(0, parseInt(e.target.value) || 0))}
-            placeholder="0"
-            className="w-24 px-2 py-0.5 text-right text-xs font-bold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
-          />
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-slate-600">Discount</span>
+            <div className="inline-flex rounded-md p-0.5 bg-slate-200 text-[10px] font-bold">
+              <button
+                type="button"
+                onClick={() => {
+                  setDiscountMode('RS');
+                }}
+                className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${
+                  discountMode === 'RS'
+                    ? 'bg-white text-emerald-700 shadow-2xs font-extrabold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Rs.
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDiscountMode('PERCENT');
+                  const p = subtotal > 0 ? Math.min(100, Math.round((discountAmount / subtotal) * 100)) : 0;
+                  setPercentValue(p);
+                }}
+                className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${
+                  discountMode === 'PERCENT'
+                    ? 'bg-white text-emerald-700 shadow-2xs font-extrabold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                %
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {discountMode === 'PERCENT' ? (
+              <div className="relative">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={percentValue || ''}
+                  onChange={(e) => {
+                    const p = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                    setPercentValue(p);
+                    onDiscountChange(Math.round((subtotal * p) / 100));
+                  }}
+                  placeholder="0"
+                  className="w-20 px-2 py-0.5 text-right text-xs font-bold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-1 focus:ring-emerald-500 pr-5"
+                />
+                <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none">
+                  %
+                </span>
+              </div>
+            ) : (
+              <input
+                type="number"
+                min={0}
+                max={subtotal}
+                value={discountAmount || ''}
+                onChange={(e) => onDiscountChange(Math.max(0, parseInt(e.target.value) || 0))}
+                placeholder="0"
+                className="w-24 px-2 py-0.5 text-right text-xs font-bold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
+              />
+            )}
+          </div>
         </div>
+
+        {discountMode === 'PERCENT' && percentValue > 0 && (
+          <div className="flex justify-end text-[11px] text-emerald-700 font-semibold -mt-1.5">
+            ({percentValue}% = Rs. {discountAmount.toLocaleString()} off)
+          </div>
+        )}
 
         {/* Total Amount Banner matching reference screenshot */}
         <div className="bg-[#e6f4ea] border border-[#ceead6] rounded-xl px-4 py-3 flex items-center justify-between shadow-2xs">
           <span className="text-sm font-bold text-[#137333] font-sans">Total Amount</span>
           <span className="text-xl font-black text-[#137333] font-sans tracking-tight">
             Rs. {totalAmount.toLocaleString()}
-          </span>
-        </div>
-
-        {/* Amount Received (Rs.) */}
-        <div className="flex items-center justify-between text-xs text-slate-700">
-          <span className="font-semibold">Amount Received (Rs.)</span>
-          <input
-            id="pos-amount-received"
-            type="number"
-            min={0}
-            value={amountReceived || ''}
-            onChange={(e) => onAmountReceivedChange(Math.max(0, parseInt(e.target.value) || 0))}
-            placeholder={totalAmount > 0 ? totalAmount.toString() : '0'}
-            className="w-32 px-2.5 py-1 text-right text-xs font-black border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-          />
-        </div>
-
-        {/* Change (Rs.) */}
-        <div className="bg-[#e6f4ea] rounded-xl px-4 py-2 flex items-center justify-between text-xs">
-          <span className="font-semibold text-[#137333]">Change (Rs.)</span>
-          <span className="font-black text-[#137333] text-sm">
-            Rs. {changeAmount.toLocaleString()}
           </span>
         </div>
 

@@ -233,6 +233,11 @@ export class CatalogueController {
   // PRODUCTS
   public static async getProducts(req: Request, res: Response): Promise<void> {
     try {
+      const isSuperAdmin = req.account?.role === 'SUPER_ADMIN';
+      const effectiveBranchId = isSuperAdmin
+        ? (req.query.branchId as string)
+        : (((req.account as any)?.assignedBranchId || (req.account as any)?.branchId)?.toString() || (req.query.branchId as string));
+
       const data = await CatalogueService.getProducts({
         page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
         limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
@@ -240,6 +245,7 @@ export class CatalogueController {
         brandId: req.query.brandId as string,
         categoryId: req.query.categoryId as string,
         status: req.query.status as string,
+        branchId: effectiveBranchId,
       });
       sendSuccess(res, data);
     } catch (error) {
@@ -279,11 +285,16 @@ export class CatalogueController {
       const isSuperAdmin = req.account?.role === 'SUPER_ADMIN';
       const canManageProducts =
         isSuperAdmin || Boolean((req.account?.permissions as any)?.addEditProducts);
+      const effectiveBranchId = isSuperAdmin
+        ? (req.query.branchId as string)
+        : (((req.account as any)?.assignedBranchId || (req.account as any)?.branchId)?.toString() || (req.query.branchId as string));
+
       const data = await CatalogueService.getSkus(
         {
           search: req.query.search as string,
           productId: req.query.productId as string,
           status: (req.query.status as string) || (canManageProducts ? 'ALL' : 'ACTIVE'),
+          branchId: effectiveBranchId,
         },
         canManageProducts
       );

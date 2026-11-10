@@ -90,7 +90,7 @@ export default function Sidebar({
       title: 'Sales History',
       href: '/pos/history',
       icon: Receipt,
-      requiredPermission: 'pos:view',
+      requiredPermission: 'sales:view',
     },
     {
       title: 'Products',

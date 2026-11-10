@@ -19,6 +19,7 @@ import {
   useCancelPurchaseOrderMutation as useCancelBackendPOMutation,
 } from '@/store/services/purchasesApi';
 import { hasPermission } from '@/lib/permissions';
+import { formatDate } from '@/utils/formatters';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -197,7 +198,7 @@ function PurchaseOrderDetailsContent() {
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1">
-                Created on {new Date(po.createdAt).toLocaleDateString()} by {po.createdBy}
+                Created on {formatDate(po.createdAt)} by {po.createdBy}
               </p>
             </div>
           </div>
@@ -484,7 +485,7 @@ function PurchaseOrderDetailsContent() {
                     <div>
                       <span className="font-semibold text-slate-800 block">{b.billNumber}</span>
                       <span className="text-slate-400">
-                        Due: {b.dueDate} • {b.paymentStatus}
+                        Due: {formatDate(b.dueDate)} • {b.paymentStatus}
                       </span>
                     </div>
                     <span className="font-bold text-slate-900">

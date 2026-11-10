@@ -358,7 +358,22 @@ export const erpApi = createApi({
       { id: string; permissions: Partial<BranchAccessPermissions> }
     >({
       async queryFn({ id, permissions }) {
-        await delay(80);
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
+          const res = await fetch(`${apiUrl}/admin/branches/${id}/permissions`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ permissions }),
+          });
+          const json = await res.json();
+          if (res.ok && json.data) {
+            try {
+              branchesRepository.updatePermissions(id, permissions);
+            } catch {}
+            return { data: json.data };
+          }
+        } catch {}
         try {
           const updated = branchesRepository.updatePermissions(id, permissions);
           return { data: updated };
@@ -373,11 +388,29 @@ export const erpApi = createApi({
     }),
 
     resetBranchPassword: builder.mutation<
-      Branch,
+      any,
       { id: string; password: string }
     >({
       async queryFn({ id, password }) {
-        await delay(80);
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
+          const res = await fetch(`${apiUrl}/admin/branches/${id}/reset-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ newPassword: password, password }),
+          });
+          const json = await res.json();
+          if (res.ok) {
+            try {
+              branchesRepository.resetBranchPassword(id, password);
+            } catch {}
+            return { data: json.data || { success: true, message: 'Password reset successfully' } };
+          }
+          if (json?.error?.message || json?.message) {
+            return { error: { status: res.status, data: json.error?.message || json.message } };
+          }
+        } catch {}
         try {
           const updated = branchesRepository.resetBranchPassword(id, password);
           return { data: updated };

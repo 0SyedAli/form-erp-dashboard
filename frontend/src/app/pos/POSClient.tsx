@@ -50,6 +50,7 @@ import {
   POSMasterSnapshot,
 } from '@/lib/offline/posOfflineDb';
 import { usePOSOfflineSync, SyncResult } from '@/lib/offline/posOfflineSync';
+import { hasPermission } from '@/lib/permissions';
 import {
   CatalogueProduct,
   POSCartItem,
@@ -84,6 +85,7 @@ import InvoiceReceiptModal from '@/components/pos/InvoiceReceiptModal';
 import HeldSalesModal from '@/components/pos/HeldSalesModal';
 import POSSettingsModal from '@/components/pos/POSSettingsModal';
 import NewSaleConfirmModal from '@/components/pos/NewSaleConfirmModal';
+import PaymentCheckoutModal, { CheckoutSubmitData } from '@/components/pos/PaymentCheckoutModal';
 
 function computeDefaultDueDate(days: number = 30): string {
   const d = new Date();
@@ -99,8 +101,16 @@ function POSContent() {
 
   const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
 
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   // Optimistic tracking for smooth instant stock updates after checkout
   const [soldQuantitiesBySku, setSoldQuantitiesBySku] = useState<Record<string, number>>({});
+
+  // Selected fulfilling branch for cross-branch stock viewing & selling
+  const [selectedStockBranchId, setSelectedStockBranchId] = useState<string | null>(null);
 
   // Offline Resilience & Synchronization
   const [offlineSnapshot, setOfflineSnapshot] = useState<POSMasterSnapshot | null>(null);
@@ -125,7 +135,66 @@ function POSContent() {
   const { data: backendThicknesses = [] } = useGetBackendThicknessesQuery(undefined, { skip: !isBackendMode });
   const { data: backendProducts = [], refetch: refetchProducts } = useGetBackendProductsQuery(undefined, { skip: !isBackendMode });
   const { data: backendSkusResponse, refetch: refetchSkus } = useGetBackendSkusQuery(undefined, { skip: !isBackendMode });
-  const { data: backendStockBalances = [], refetch: refetchStockBalances } = useGetBackendStockBalancesQuery(undefined, { skip: !isBackendMode });
+
+  // Unified Branches
+  const branches: Branch[] = useMemo(() => {
+    const backendList = Array.isArray(backendBranches)
+      ? backendBranches
+      : (backendBranches as any)?.data || [];
+    const offlineList = offlineSnapshot?.branches || (offlineSnapshot?.activeBranch ? [offlineSnapshot.activeBranch] : []);
+    const demoList = demoBranches || [];
+
+    const list = backendList.length > 0
+      ? backendList
+      : offlineList.length > 0
+      ? offlineList
+      : demoList;
+
+    return list.map((b: any) => ({
+      ...b,
+      id: String(b.id || b._id || ''),
+    })) as Branch[];
+  }, [backendBranches, demoBranches, offlineSnapshot]);
+
+  // Active Terminal Branch
+  const activeBranch = useMemo(() => {
+    const userBranchId = currentUser?.assignedBranchId || currentUser?.branchId;
+    if (userBranchId && !isSuperAdmin) {
+      const found = branches.find(
+        (b) =>
+          String(b.id) === String(userBranchId) ||
+          String((b as any)._id) === String(userBranchId) ||
+          String(b.code).toLowerCase() === String(userBranchId).toLowerCase()
+      );
+      if (found) return found;
+    }
+
+    if (isSuperAdmin && (posSettings?.selectedBranchId || posSettings?.branchId)) {
+      const targetId = posSettings?.selectedBranchId || posSettings?.branchId;
+      const found = branches.find((b) => b.id === targetId || (b as any)._id === targetId);
+      if (found) return found;
+    }
+
+    if (userBranchId) {
+      const found = branches.find(
+        (b) =>
+          String(b.id) === String(userBranchId) ||
+          String((b as any)._id) === String(userBranchId) ||
+          String(b.code).toLowerCase() === String(userBranchId).toLowerCase()
+      );
+      if (found) return found;
+    }
+
+    return branches[0] || null;
+  }, [branches, currentUser, posSettings, isSuperAdmin]);
+
+  // Effective stock branch (switched in header or own terminal branch)
+  const effectiveStockBranchId = selectedStockBranchId || activeBranch?.id;
+
+  const { data: backendStockBalances = [], refetch: refetchStockBalances } = useGetBackendStockBalancesQuery(
+    effectiveStockBranchId ? { branchId: effectiveStockBranchId, limit: 1000 } : undefined,
+    { skip: !isBackendMode }
+  );
   const { data: backendHeldSales = [] } = useGetBackendHeldSalesQuery(undefined, { skip: !isBackendMode });
 
   // Mutations
@@ -174,23 +243,27 @@ function POSContent() {
     });
   }, []);
 
-  // Unified Data (Online Primary with Offline Snapshot Fallback)
-  const branches: Branch[] = useMemo(() => {
-    const raw = Array.isArray(backendBranches) && backendBranches.length > 0
-      ? backendBranches
-      : (backendBranches as any)?.data || demoBranches || [];
-    const list = Array.isArray(raw) && raw.length > 0 ? raw : (offlineSnapshot?.activeBranch ? [offlineSnapshot.activeBranch] : []);
-    return list.map((b: any) => ({
-      ...b,
-      id: String(b.id || b._id || ''),
-    })) as Branch[];
-  }, [backendBranches, demoBranches, offlineSnapshot]);
+  // Permission guard: If branch has POS permission disabled, redirect to unauthorized
+  useEffect(() => {
+    if (currentUser && currentUser.role !== 'SUPER_ADMIN' && !hasPermission(currentUser, 'pos:view')) {
+      router.push('/unauthorized');
+    }
+  }, [currentUser, router]);
 
+  // Unified Data (Online Primary with Offline Snapshot Fallback)
   const brands: Brand[] = useMemo(() => {
-    const raw = Array.isArray(backendBrands) && backendBrands.length > 0
+    const backendList = Array.isArray(backendBrands)
       ? backendBrands
-      : (backendBrands as any)?.data || demoBrands || [];
-    const list = Array.isArray(raw) && raw.length > 0 ? raw : (offlineSnapshot?.brands || []);
+      : (backendBrands as any)?.data || [];
+    const offlineList = offlineSnapshot?.brands || [];
+    const demoList = demoBrands || [];
+
+    const list = backendList.length > 0
+      ? backendList
+      : offlineList.length > 0
+      ? offlineList
+      : demoList;
+
     return list.map((b: any) => ({
       ...b,
       id: String(b.id || b._id || ''),
@@ -198,10 +271,18 @@ function POSContent() {
   }, [backendBrands, demoBrands, offlineSnapshot]);
 
   const categories: Category[] = useMemo(() => {
-    const raw = Array.isArray(backendCategories) && backendCategories.length > 0
+    const backendList = Array.isArray(backendCategories)
       ? backendCategories
-      : (backendCategories as any)?.data || demoCategories || [];
-    const list = Array.isArray(raw) && raw.length > 0 ? raw : (offlineSnapshot?.categories || []);
+      : (backendCategories as any)?.data || [];
+    const offlineList = offlineSnapshot?.categories || [];
+    const demoList = demoCategories || [];
+
+    const list = backendList.length > 0
+      ? backendList
+      : offlineList.length > 0
+      ? offlineList
+      : demoList;
+
     return list.map((c: any) => ({
       ...c,
       id: String(c.id || c._id || ''),
@@ -210,10 +291,18 @@ function POSContent() {
   }, [backendCategories, demoCategories, offlineSnapshot]);
 
   const sizes: MattressSize[] = useMemo(() => {
-    const raw = Array.isArray(backendSizes) && backendSizes.length > 0
+    const backendList = Array.isArray(backendSizes)
       ? backendSizes
-      : (backendSizes as any)?.data || demoSizes || [];
-    const list = Array.isArray(raw) && raw.length > 0 ? raw : (offlineSnapshot?.sizes || []);
+      : (backendSizes as any)?.data || [];
+    const offlineList = offlineSnapshot?.sizes || [];
+    const demoList = demoSizes || [];
+
+    const list = backendList.length > 0
+      ? backendList
+      : offlineList.length > 0
+      ? offlineList
+      : demoList;
+
     return list.map((s: any) => ({
       ...s,
       id: String(s.id || s._id || ''),
@@ -221,23 +310,37 @@ function POSContent() {
   }, [backendSizes, demoSizes, offlineSnapshot]);
 
   const thicknesses: MattressThickness[] = useMemo(() => {
-    const raw = Array.isArray(backendThicknesses) && backendThicknesses.length > 0
+    const backendList = Array.isArray(backendThicknesses)
       ? backendThicknesses
-      : (backendThicknesses as any)?.data || demoThicknesses || [];
-    const list = Array.isArray(raw) && raw.length > 0 ? raw : (offlineSnapshot?.thicknesses || []);
+      : (backendThicknesses as any)?.data || [];
+    const offlineList = offlineSnapshot?.thicknesses || [];
+    const demoList = demoThicknesses || [];
+
+    const list = backendList.length > 0
+      ? backendList
+      : offlineList.length > 0
+      ? offlineList
+      : demoList;
+
     return list.map((t: any) => ({
       ...t,
       id: String(t.id || t._id || ''),
     })) as MattressThickness[];
   }, [backendThicknesses, demoThicknesses, offlineSnapshot]);
-  
-  const rawProducts = isBackendMode
-    ? (Array.isArray(backendProducts) && backendProducts.length > 0
-        ? backendProducts
-        : (backendProducts as any)?.data || (backendProducts as any)?.items || offlineSnapshot?.products || [])
-    : demoProducts.length > 0 ? demoProducts : (offlineSnapshot?.products || []);
+
   const products: CatalogueProduct[] = useMemo(() => {
-    const list = Array.isArray(rawProducts) ? rawProducts : [];
+    const backendList = Array.isArray(backendProducts)
+      ? backendProducts
+      : (backendProducts as any)?.data || (backendProducts as any)?.items || [];
+    const offlineList = offlineSnapshot?.products || [];
+    const demoList = demoProducts || [];
+
+    const list = backendList.length > 0
+      ? backendList
+      : offlineList.length > 0
+      ? offlineList
+      : demoList;
+
     return list.map((p: any) => ({
       ...p,
       id: String(p.id || p._id || ''),
@@ -247,15 +350,21 @@ function POSContent() {
       name: p.name || 'Unnamed Product',
       status: p.status || 'ACTIVE',
     })) as CatalogueProduct[];
-  }, [rawProducts]);
+  }, [backendProducts, demoProducts, offlineSnapshot]);
 
-  const rawVariants = isBackendMode
-    ? (Array.isArray(backendSkusResponse) && (backendSkusResponse as any).length > 0
-        ? backendSkusResponse
-        : (backendSkusResponse as any)?.data || (backendSkusResponse as any)?.items || offlineSnapshot?.variants || [])
-    : demoVariants.length > 0 ? demoVariants : (offlineSnapshot?.variants || []);
   const variants: ProductVariant[] = useMemo(() => {
-    const list = Array.isArray(rawVariants) ? rawVariants : [];
+    const backendList = Array.isArray(backendSkusResponse)
+      ? backendSkusResponse
+      : (backendSkusResponse as any)?.data || (backendSkusResponse as any)?.items || [];
+    const offlineList = offlineSnapshot?.variants || [];
+    const demoList = demoVariants || [];
+
+    const list = backendList.length > 0
+      ? backendList
+      : offlineList.length > 0
+      ? offlineList
+      : demoList;
+
     return list.map((v: any) => {
       const pId = String(v.productId?._id || v.productId || v.product?._id || v.product?.id || '');
       const bId = String(v.brandId?._id || v.brandId || v.brand?._id || v.brand?.id || '');
@@ -280,40 +389,33 @@ function POSContent() {
         status: v.status || 'ACTIVE',
       };
     }) as ProductVariant[];
-  }, [rawVariants]);
-
-  // Active Branch Resolution
-  const activeBranch = useMemo(() => {
-    if (isSuperAdmin && (posSettings?.selectedBranchId || posSettings?.branchId)) {
-      const targetId = posSettings?.selectedBranchId || posSettings?.branchId;
-      const found = branches.find((b) => b.id === targetId);
-      if (found) return found;
-    }
-    const userBranchId = currentUser?.assignedBranchId || currentUser?.branchId;
-    if (userBranchId) {
-      const found = branches.find((b) => b.id === userBranchId);
-      if (found) return found;
-    }
-    return branches[0] || null;
-  }, [branches, currentUser, posSettings, isSuperAdmin]);
+  }, [backendSkusResponse, demoVariants, offlineSnapshot]);
 
   const isRetailAllowed = activeBranch?.settings?.allowRetailSales ?? true;
 
-  const rawStock = isBackendMode
-    ? (Array.isArray(backendStockBalances) && backendStockBalances.length > 0
-        ? backendStockBalances
-        : (backendStockBalances as any)?.items || (backendStockBalances as any)?.data || offlineSnapshot?.inventoryBalances || [])
-    : demoInventoryBalances.length > 0 ? demoInventoryBalances : (offlineSnapshot?.inventoryBalances || []);
+  const rawStock = useMemo(() => {
+    const backendList = Array.isArray(backendStockBalances)
+      ? backendStockBalances
+      : (backendStockBalances as any)?.items || (backendStockBalances as any)?.data || [];
+    const offlineList = offlineSnapshot?.inventoryBalances || [];
+    const demoList = demoInventoryBalances || [];
+
+    return backendList.length > 0
+      ? backendList
+      : offlineList.length > 0
+      ? offlineList
+      : demoList;
+  }, [backendStockBalances, offlineSnapshot, demoInventoryBalances]);
 
   const inventoryBalances: InventoryBalance[] = useMemo(() => {
     const list = Array.isArray(rawStock) ? rawStock : [];
-    const directBalances: InventoryBalance[] = list.map((b: any) => {
+    return list.map((b: any) => {
       const soldQty = soldQuantitiesBySku[b.sku] || 0;
       const av = Math.max(0, Number(b.available || 0) - soldQty);
       return {
         id: String(b.id || b._id || ''),
         sku: b.sku || '',
-        branchId: String(b.branchId?._id || b.branchId || ''),
+        branchId: String(b.branchId?._id || b.branchId?.id || b.branchId || ''),
         stockLocationId: String(b.stockLocationId?._id || b.stockLocationId || 'LOC-FLOOR'),
         productId: String(b.variant?.productId?._id || b.variant?.productId || b.productId || ''),
         variantId: String(b.variantId?._id || b.variantId || b.variant?._id || b.variant?.id || b.sku || ''),
@@ -330,75 +432,130 @@ function POSContent() {
         updatedAt: b.updatedAt || new Date().toISOString(),
       };
     });
-
-    // Ensure all variants have a balance entry even if stock API didn't report them
-    const variantIdSet = new Set(directBalances.map((b) => b.variantId));
-    const fallbackBalances: InventoryBalance[] = variants
-      .filter((v) => !variantIdSet.has(v.id))
-      .map((v) => {
-        const soldQty = soldQuantitiesBySku[v.sku] || 0;
-        const total = Math.max(0, Number(v.stock ?? (v as any).onHand ?? 0) - soldQty);
-        return {
-          id: `synth-${v.id}`,
-          sku: v.sku,
-          branchId: activeBranch?.id || '',
-          stockLocationId: 'LOC-FLOOR',
-          productId: v.productId,
-          variantId: v.id,
-          productName: v.productName || '',
-          brandName: v.brandName || '',
-          categoryName: v.categoryName || '',
-          sizeLabel: v.sizeLabel || '',
-          thicknessInches: 0,
-          onHand: total,
-          reserved: 0,
-          available: total,
-          reorderLevel: 5,
-          stockStatus: (total > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK') as any,
-          updatedAt: new Date().toISOString(),
-        };
-      });
-
-    return [...directBalances, ...fallbackBalances];
-  }, [rawStock, variants, activeBranch?.id, soldQuantitiesBySku]);
+  }, [rawStock, soldQuantitiesBySku]);
 
   const rawHeld = isBackendMode
     ? (Array.isArray(backendHeldSales) ? backendHeldSales : (backendHeldSales as any)?.data || [])
     : demoHeldSales;
   const heldSales: HeldSale[] = (Array.isArray(rawHeld) ? rawHeld : []) as HeldSale[];
 
-  // Filtered inventory balances for active branch
+  // Filtered inventory balances for effective stock branch
   const branchBalances = useMemo(() => {
-    if (!activeBranch) return inventoryBalances;
-    return inventoryBalances.filter(
-      (b) => !b.branchId || b.branchId === activeBranch.id || b.id.startsWith('synth-')
-    );
-  }, [inventoryBalances, activeBranch]);
+    if (!effectiveStockBranchId) return inventoryBalances;
+    return inventoryBalances.filter((b) => {
+      const bId = String(b.branchId || '');
+      return bId === effectiveStockBranchId;
+    });
+  }, [inventoryBalances, effectiveStockBranchId]);
 
-  // Variant Stock Map
+  // Fast O(1) balance maps to eliminate O(N*M) lookup lag
+  const { balanceByVariantId, balanceBySku } = useMemo(() => {
+    const byVariant = new Map<string, InventoryBalance>();
+    const bySku = new Map<string, InventoryBalance>();
+    for (let i = 0; i < branchBalances.length; i++) {
+      const b = branchBalances[i];
+      if (b.variantId) byVariant.set(b.variantId, b);
+      if (b.sku) bySku.set(b.sku, b);
+    }
+    return { balanceByVariantId: byVariant, balanceBySku: bySku };
+  }, [branchBalances]);
+
+  // Fast O(N) Variant Stock Map
   const variantStockMap = useMemo(() => {
     const map: Record<string, number> = {};
-    variants.forEach((v) => {
-      const balance = branchBalances.find((b) => b.variantId === v.id || b.sku === v.sku);
+    for (let i = 0; i < variants.length; i++) {
+      const v = variants[i];
+      const balance = balanceByVariantId.get(v.id) || balanceBySku.get(v.sku);
       const soldQty = soldQuantitiesBySku[v.sku] || 0;
-      const baseStock = balance?.available ?? v.stock ?? (v as any).onHand ?? 0;
-      const stock = Math.max(0, baseStock - (balance ? 0 : soldQty));
+      let baseStock = 0;
+      if (balance) {
+        baseStock = balance.available;
+      } else if (!isBackendMode && effectiveStockBranchId === 'BR-MAIN-01') {
+        baseStock = v.stock ?? (v as any).onHand ?? 0;
+      }
+      const stock = Math.max(0, baseStock - soldQty);
       map[v.id] = stock;
-    });
+    }
     return map;
-  }, [variants, branchBalances, soldQuantitiesBySku]);
+  }, [variants, balanceByVariantId, balanceBySku, soldQuantitiesBySku, isBackendMode, effectiveStockBranchId]);
 
-  // Brand Stock Map (sum of variant stock for each brand)
+  // Fast O(V) group variants by product ID
+  const variantsByProductId = useMemo(() => {
+    const map = new Map<string, ProductVariant[]>();
+    for (let i = 0; i < variants.length; i++) {
+      const v = variants[i];
+      if (v.status !== 'ACTIVE' && v.status) continue;
+      const pId = String(v.productId);
+      const list = map.get(pId);
+      if (list) {
+        list.push(v);
+      } else {
+        map.set(pId, [v]);
+      }
+    }
+    return map;
+  }, [variants]);
+
+  // Products associated with the effective stock branch
+  const branchProductIds = useMemo(() => {
+    const pIdSet = new Set<string>();
+
+    // 1. Products that have a recorded StockBalance in this branch
+    for (let i = 0; i < branchBalances.length; i++) {
+      const b = branchBalances[i];
+      if (b.productId) pIdSet.add(String(b.productId));
+      if (b.variantId) {
+        const v = variants.find((item) => item.id === b.variantId || item.sku === b.sku);
+        if (v && v.productId) pIdSet.add(String(v.productId));
+      }
+    }
+
+    // 2. Products explicitly owned by or created for this branch
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      if ((p as any).branchId && String((p as any).branchId) === String(effectiveStockBranchId)) {
+        pIdSet.add(String(p.id));
+      }
+    }
+
+    // In demo mock mode for seed branch BR-MAIN-01, fallback to all demo products if no balances yet
+    if (!isBackendMode && effectiveStockBranchId === 'BR-MAIN-01' && pIdSet.size === 0) {
+      products.forEach((p) => pIdSet.add(String(p.id)));
+    }
+
+    return pIdSet;
+  }, [branchBalances, variants, products, effectiveStockBranchId, isBackendMode]);
+
+  // Fast O(P) Brand Stock Map (sum of variant stock for each brand within this branch)
   const brandStockMap = useMemo(() => {
     const map: Record<string, number> = {};
-    products.forEach((p) => {
-      if ((p.status && p.status !== 'ACTIVE') || !p.brandId) return;
-      const pVariants = variants.filter((v) => String(v.productId) === String(p.id) && (v.status === 'ACTIVE' || !v.status));
-      const pStock = pVariants.reduce((sum, v) => sum + (variantStockMap[v.id] || 0), 0);
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      if ((p.status && p.status !== 'ACTIVE') || !p.brandId) continue;
+      if (!branchProductIds.has(String(p.id))) continue;
+      const pVariants = variantsByProductId.get(String(p.id));
+      if (!pVariants) continue;
+      let pStock = 0;
+      for (let j = 0; j < pVariants.length; j++) {
+        pStock += variantStockMap[pVariants[j].id] || 0;
+      }
       map[p.brandId] = (map[p.brandId] || 0) + pStock;
-    });
+    }
     return map;
-  }, [products, variants, variantStockMap]);
+  }, [products, branchProductIds, variantsByProductId, variantStockMap]);
+
+  // Brand products count helper (scoped to this branch)
+  const brandProductCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    if (Array.isArray(products)) {
+      products.forEach((p) => {
+        if (p.status === 'ACTIVE' && p.brandId && branchProductIds.has(String(p.id))) {
+          counts[p.brandId] = (counts[p.brandId] || 0) + 1;
+        }
+      });
+    }
+    return counts;
+  }, [products, branchProductIds]);
 
   // Auto-save snapshot to IndexedDB when live data is loaded online
   useEffect(() => {
@@ -412,34 +569,69 @@ function POSContent() {
         variants,
         inventoryBalances,
         activeBranch,
+        branches,
         lastUpdated: new Date().toISOString(),
       });
     }
-  }, [brands, categories, sizes, thicknesses, products, variants, inventoryBalances, activeBranch, isOnline]);
+  }, [brands, categories, sizes, thicknesses, products, variants, inventoryBalances, activeBranch, branches, isOnline]);
+
+  // Auto-refresh when internet is restored from offline mode
+  const wasOfflineRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (!isOnline) {
+      wasOfflineRef.current = true;
+    } else if (wasOfflineRef.current && isOnline) {
+      wasOfflineRef.current = false;
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+    }
+  }, [isOnline]);
 
   // Selected Brand and Category States
   const [chosenBrandId, setChosenBrandId] = useState<string | null>(null);
   const selectedBrandId = useMemo(() => {
-    if (chosenBrandId && brands.some((b) => String(b.id) === String(chosenBrandId))) {
+    // 1. If chosen brand has available stock (> 0) in this branch, keep it
+    if (
+      chosenBrandId &&
+      brands.some((b) => String(b.id) === String(chosenBrandId)) &&
+      (brandStockMap[chosenBrandId] || 0) > 0
+    ) {
       return chosenBrandId;
     }
 
-    // 1. High priority: First brand that has available stock (> 0) e.g. Molty
+    // 2. High priority: First brand that has available stock (> 0) in this branch
     const brandInStock = brands.find((b) => (brandStockMap[b.id] || 0) > 0);
     if (brandInStock) return brandInStock.id;
 
-    // 2. Second priority: First brand that has active products
-    const brandWithProducts = brands.find((b) =>
-      products.some((p) => String(p.brandId) === String(b.id) && (p.status === 'ACTIVE' || !p.status))
-    );
+    // 3. If chosen brand has products even if out of stock, retain it
+    if (
+      chosenBrandId &&
+      brands.some((b) => String(b.id) === String(chosenBrandId)) &&
+      (brandProductCounts[chosenBrandId] || 0) > 0
+    ) {
+      return chosenBrandId;
+    }
+
+    // 4. Second priority: First brand that has active products in this branch
+    const brandWithProducts = brands.find((b) => (brandProductCounts[b.id] || 0) > 0);
     if (brandWithProducts) return brandWithProducts.id;
 
-    // 3. Fallback: First brand
+    // 5. Fallback: First brand
     return brands[0]?.id || '';
-  }, [chosenBrandId, brands, products, brandStockMap]);
+  }, [chosenBrandId, brands, brandStockMap, brandProductCounts]);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
+
+  // Debounce search query to keep typing responsive at 60 FPS
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 150);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
   // Flow 07 Unified POS Multi-Tier & Credit States
   const [saleType, setSaleType] = useState<SaleType>('WALK_IN');
@@ -465,6 +657,7 @@ function POSContent() {
   // Modal States
   const [configModalProduct, setConfigModalProduct] = useState<CatalogueProduct | null>(null);
   const [completedInvoice, setCompletedInvoice] = useState<Invoice | null>(null);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isHeldSalesModalOpen, setIsHeldSalesModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -483,55 +676,49 @@ function POSContent() {
     );
   }, [categories, selectedBrandId]);
 
-  // Brand products count helper
-  const brandProductCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    if (Array.isArray(products)) {
-      products.forEach((p) => {
-        if (p.status === 'ACTIVE' && p.brandId) {
-          counts[p.brandId] = (counts[p.brandId] || 0) + 1;
-        }
-      });
-    }
-    return counts;
-  }, [products]);
-
-  // Category Stock Map (sum of variant stock for each category within active brand)
+  // Fast O(P) Category Stock Map (sum of variant stock for each category within active brand for this branch)
   const categoryStockMap = useMemo(() => {
     const map: Record<string, number> = {};
-    products.forEach((p) => {
-      if (p.status !== 'ACTIVE' || !p.categoryId) return;
-      if (p.brandId !== selectedBrandId) return;
-      const pVariants = variants.filter((v) => v.productId === p.id && v.status === 'ACTIVE');
-      const pStock = pVariants.reduce((sum, v) => sum + (variantStockMap[v.id] || 0), 0);
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      if (p.status !== 'ACTIVE' || !p.categoryId || p.brandId !== selectedBrandId) continue;
+      if (!branchProductIds.has(String(p.id))) continue;
+      const pVariants = variantsByProductId.get(String(p.id));
+      if (!pVariants) continue;
+      let pStock = 0;
+      for (let j = 0; j < pVariants.length; j++) {
+        pStock += variantStockMap[pVariants[j].id] || 0;
+      }
       map[p.categoryId] = (map[p.categoryId] || 0) + pStock;
-    });
+    }
     return map;
-  }, [products, variants, variantStockMap, selectedBrandId]);
+  }, [products, branchProductIds, variantsByProductId, variantStockMap, selectedBrandId]);
 
-  // Category products count helper
+  // Category products count helper (scoped to this branch)
   const categoryProductCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     if (Array.isArray(products)) {
       products.forEach((p) => {
-        if (p.brandId === selectedBrandId && p.status === 'ACTIVE' && p.categoryId) {
+        if (p.brandId === selectedBrandId && p.status === 'ACTIVE' && p.categoryId && branchProductIds.has(String(p.id))) {
           counts[p.categoryId] = (counts[p.categoryId] || 0) + 1;
         }
       });
     }
     return counts;
-  }, [products, selectedBrandId]);
+  }, [products, selectedBrandId, branchProductIds]);
 
-  // Filter products strictly by Brand, Category, and Search
+  // Filter products strictly by Branch ownership, Brand, Category, and Debounced Search
   const filteredProducts = useMemo(() => {
     if (!Array.isArray(products)) return [];
     return products.filter((p) => {
       if (p.status !== 'ACTIVE') return false;
+      // Strict branch isolation: Only show products belonging to or stocked in this branch!
+      if (!branchProductIds.has(String(p.id))) return false;
       if (p.brandId !== selectedBrandId) return false;
       if (selectedCategoryId !== 'ALL' && p.categoryId !== selectedCategoryId) return false;
 
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase().trim();
+      if (debouncedSearchQuery.trim()) {
+        const query = debouncedSearchQuery.toLowerCase().trim();
         const matchesName = (p.name || '').toLowerCase().includes(query);
         const matchesDesc = (p.description || '').toLowerCase().includes(query);
         const matchesCode = (p.code || '').toLowerCase().includes(query);
@@ -539,7 +726,7 @@ function POSContent() {
       }
       return true;
     });
-  }, [products, selectedBrandId, selectedCategoryId, searchQuery]);
+  }, [products, branchProductIds, selectedBrandId, selectedCategoryId, debouncedSearchQuery]);
 
   // Cart Calculations
   const subtotal = useMemo(() => {
@@ -660,8 +847,8 @@ function POSContent() {
     setCreditOverride(false);
   }, []);
 
-  // Complete Sale (F5) Handler
-  const handleCompleteSale = async () => {
+  // Complete Sale (F5) Handler - Validates and Opens Payment Popup Modal
+  const handleCompleteSale = () => {
     if (!activeBranch) {
       alert('Error: Please select an active branch.');
       return;
@@ -681,75 +868,69 @@ function POSContent() {
       return;
     }
 
-    // Customer requirement check:
-    // Wholesale, Distributor, or Partial/Credit arrangement MUST have an identified customer account
-    const requiresCustomer =
-      paymentArrangement !== 'FULL' ||
-      saleType === 'WHOLESALE' ||
-      saleType === 'DISTRIBUTOR';
-
-    if (requiresCustomer && !selectedCustomer) {
-      alert(
-        `${saleType} and Partial/Credit sales require an identified customer account. Please select or create a customer.`
-      );
+    // If wholesale or distributor without customer, prompt to select customer
+    if ((saleType === 'WHOLESALE' || saleType === 'DISTRIBUTOR') && !selectedCustomer) {
       setIsCustomerModalOpen(true);
       return;
     }
 
-    // Calculate effective received & outstanding
+    setIsPaymentModalOpen(true);
+  };
+
+  const handleConfirmCheckout = async (submitData: CheckoutSubmitData) => {
+    const finalDiscount = discountAmount + (submitData.discountConcession || 0);
+    const finalGrandTotal = Math.max(0, subtotal - finalDiscount);
     const effectivePaid =
-      paymentArrangement === 'FULL'
-        ? grandTotal
-        : paymentArrangement === 'CREDIT'
+      submitData.paymentArrangement === 'FULL'
+        ? finalGrandTotal
+        : submitData.paymentArrangement === 'CREDIT'
         ? 0
-        : Math.min(grandTotal, amountReceived);
+        : Math.min(finalGrandTotal, submitData.amountReceived);
 
-    const outstanding = Math.max(0, grandTotal - effectivePaid);
+    const outstanding = Math.max(0, finalGrandTotal - effectivePaid);
     const changeAmount =
-      paymentArrangement === 'FULL'
-        ? Math.max(0, amountReceived - grandTotal)
+      submitData.paymentArrangement === 'FULL'
+        ? Math.max(0, submitData.amountReceived - finalGrandTotal)
         : 0;
-
-    // Credit limit check
-    if (outstanding > 0 && selectedCustomer) {
-      const availCredit = Math.max(
-        0,
-        selectedCustomer.creditLimit - selectedCustomer.currentOutstanding
-      );
-      if (outstanding > availCredit && !creditOverride) {
-        alert(
-          `Credit limit exceeded for ${selectedCustomer.name}. Available credit: Rs. ${availCredit.toLocaleString()}, required: Rs. ${outstanding.toLocaleString()}. Please authorize supervisor override to proceed.`
-        );
-        return;
-      }
-    }
 
     const executeOfflineSale = async () => {
       const offlineId = `OFF-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
       const offlineInvNumber = `OFF-${activeBranch?.code || 'POS'}-${Date.now().toString().slice(-6)}`;
 
+      const isCrossBranch = Boolean(
+        effectiveStockBranchId && effectiveStockBranchId !== activeBranch?.id
+      );
+      const sourceBranchObj = isCrossBranch
+        ? branches.find((b) => b.id === effectiveStockBranchId)
+        : null;
+
       const checkoutPayload: any = {
         branchId: activeBranch?.id || (activeBranch as any)?._id || 'MAIN',
+        sourceBranchId: isCrossBranch ? effectiveStockBranchId : undefined,
         customerId: selectedCustomer?.id || (selectedCustomer as any)?._id,
-        customerName: selectedCustomer ? selectedCustomer.name : 'Walk-in Retail Customer',
-        customerPhone: selectedCustomer ? selectedCustomer.phone : '0300-1234567',
+        customerName: selectedCustomer
+          ? selectedCustomer.name
+          : submitData.walkInName?.trim() || 'Walk-in Customer',
+        customerPhone: selectedCustomer
+          ? selectedCustomer.phone
+          : submitData.walkInPhone?.trim() || '',
         customerType: selectedCustomer?.customerType || (saleType === 'WALK_IN' ? 'WALK_IN' : saleType),
         saleType,
-        paymentArrangement,
-        paymentMethod: paymentArrangement === 'CREDIT' ? 'CREDIT_30D' : (paymentMethod as any),
-        discountAmount,
+        paymentArrangement: submitData.paymentArrangement,
+        paymentMethod: submitData.paymentMethod,
+        discountAmount: finalDiscount,
         amountReceived: effectivePaid,
         cashReceived: effectivePaid,
-        dueDate: outstanding > 0 ? dueDate : undefined,
-        creditOverride,
-        creditApprovedBy: creditOverride ? (currentUser?.name || 'Supervisor') : undefined,
-        overrideReason: creditOverride ? 'Supervisor override' : undefined,
+        dueDate: outstanding > 0 ? submitData.dueDate || dueDate : undefined,
+        creditOverride: true,
+        creditApprovedBy: currentUser?.name || 'Cashier',
+        overrideReason: 'Approved at terminal',
         items: cartItems.map((item) => ({
           sku: item.sku,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
         })),
-        notes: `${saleType} Sale (Offline Mode - Light/Internet Outage)`,
+        notes: `${saleType} Sale (Offline Mode - Light/Internet Outage)${isCrossBranch ? ` - Dispatched from ${sourceBranchObj?.name}` : ''}`,
         idempotencyKey: offlineId,
       };
 
@@ -758,22 +939,29 @@ function POSContent() {
         invoiceNumber: offlineInvNumber,
         branchId: String(activeBranch?.id || 'MAIN'),
         branchName: activeBranch?.name || 'Main Branch',
+        sourceBranchId: isCrossBranch ? effectiveStockBranchId : undefined,
+        sourceBranchName: sourceBranchObj?.name,
+        isInterBranch: isCrossBranch,
         customerType: (selectedCustomer?.customerType || (saleType === 'WALK_IN' ? 'WALK_IN' : saleType)) as any,
-        customerName: selectedCustomer ? selectedCustomer.name : 'Walk-in Retail Customer',
-        customerPhone: selectedCustomer ? selectedCustomer.phone : '0300-1234567',
+        customerName: selectedCustomer
+          ? selectedCustomer.name
+          : submitData.walkInName?.trim() || 'Walk-in Customer',
+        customerPhone: selectedCustomer
+          ? selectedCustomer.phone
+          : submitData.walkInPhone?.trim() || '',
         grossAmount: subtotal,
         subtotal,
-        discountAmount,
+        discountAmount: finalDiscount,
         returnAmount: 0,
         taxAmount: 0,
-        netAmount: grandTotal,
-        grandTotal,
+        netAmount: finalGrandTotal,
+        grandTotal: finalGrandTotal,
         amountPaid: effectivePaid,
         amountReceived: effectivePaid,
         amountDue: outstanding,
         changeAmount,
         paymentStatus: outstanding <= 0 ? 'PAID' : effectivePaid > 0 ? 'PARTIAL' : 'UNPAID',
-        paymentMethod: (paymentArrangement === 'CREDIT' ? 'CREDIT_30D' : paymentMethod) as any,
+        paymentMethod: submitData.paymentMethod as any,
         status: 'COMPLETED' as any,
         date: new Date().toISOString(),
         salesPerson: currentUser?.name || 'Cashier',
@@ -817,7 +1005,8 @@ function POSContent() {
 
       await refreshPendingCount();
 
-      // 3. Open receipt modal and clear cart
+      // 3. Close payment modal, open receipt modal and clear cart
+      setIsPaymentModalOpen(false);
       setCompletedInvoice(offlineInvoice);
       setIsReceiptModalOpen(true);
       handleClearCart();
@@ -836,28 +1025,40 @@ function POSContent() {
       }
 
       if (isBackendMode) {
+        const isCrossBranch = Boolean(
+          effectiveStockBranchId && effectiveStockBranchId !== activeBranch?.id
+        );
+        const sourceBranchObj = isCrossBranch
+          ? branches.find((b) => b.id === effectiveStockBranchId)
+          : null;
+
         const result = await completeCheckoutBackendMutation({
           branchId: activeBranch.id || (activeBranch as any)._id,
+          sourceBranchId: isCrossBranch ? effectiveStockBranchId : undefined,
           customerId: selectedCustomer?.id || (selectedCustomer as any)?._id,
-          customerName: selectedCustomer ? selectedCustomer.name : 'Walk-in Retail Customer',
-          customerPhone: selectedCustomer ? selectedCustomer.phone : '0300-1234567',
+          customerName: selectedCustomer
+            ? selectedCustomer.name
+            : submitData.walkInName?.trim() || 'Walk-in Customer',
+          customerPhone: selectedCustomer
+            ? selectedCustomer.phone
+            : submitData.walkInPhone?.trim() || undefined,
           customerType: selectedCustomer?.customerType || (saleType === 'WALK_IN' ? 'WALK_IN' : saleType),
           saleType,
-          paymentArrangement,
-          paymentMethod: paymentArrangement === 'CREDIT' ? 'CREDIT_30D' : (paymentMethod as any),
-          discountAmount,
+          paymentArrangement: submitData.paymentArrangement,
+          paymentMethod: submitData.paymentMethod as any,
+          discountAmount: finalDiscount,
           amountReceived: effectivePaid,
           cashReceived: effectivePaid,
-          dueDate: outstanding > 0 ? dueDate : undefined,
-          creditOverride,
-          creditApprovedBy: creditOverride ? (currentUser?.name || 'Supervisor') : undefined,
-          overrideReason: creditOverride ? 'Supervisor override' : undefined,
+          dueDate: outstanding > 0 ? submitData.dueDate || dueDate : undefined,
+          creditOverride: true,
+          creditApprovedBy: currentUser?.name || 'Cashier',
+          overrideReason: 'Approved at terminal',
           items: cartItems.map((item) => ({
             sku: item.sku,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
           })),
-          notes: `${saleType} Sale - ${paymentArrangement} Arrangement`,
+          notes: `${saleType} Sale - ${submitData.paymentArrangement} Arrangement${isCrossBranch ? ` - Stock from ${sourceBranchObj?.name}` : ''}`,
         }).unwrap();
 
         const inv: any = result.invoice;
@@ -867,19 +1068,22 @@ function POSContent() {
           invoiceNumber: inv.invoiceNumber,
           branchId: String(activeBranch?.id || inv.branchId || ''),
           branchName: activeBranch?.name || inv.branchName || 'Main Branch',
+          sourceBranchId: isCrossBranch ? effectiveStockBranchId : undefined,
+          sourceBranchName: sourceBranchObj?.name,
+          isInterBranch: isCrossBranch,
           customerName: inv.customerName,
           customerPhone: inv.customerPhone,
           grossAmount: inv.subtotal ?? inv.grossAmount ?? inv.total ?? 0,
           subtotal: inv.subtotal ?? inv.grossAmount ?? inv.total ?? 0,
-          discountAmount: inv.discount ?? inv.discountAmount ?? 0,
-          netAmount: inv.total ?? inv.netAmount ?? inv.grandTotal ?? 0,
-          grandTotal: inv.total ?? inv.grandTotal ?? inv.netAmount ?? 0,
-          amountPaid: inv.paidAmount ?? inv.amountPaid ?? inv.amountReceived ?? 0,
-          amountReceived: inv.paidAmount ?? inv.amountReceived ?? 0,
-          amountDue: inv.balanceDue ?? inv.amountDue ?? 0,
-          changeAmount: inv.changeReturned ?? inv.changeAmount ?? 0,
-          paymentStatus: inv.paymentStatus || 'PAID',
-          paymentMethod: inv.paymentArrangement || inv.paymentMethod || 'CASH',
+          discountAmount: inv.discount ?? inv.discountAmount ?? finalDiscount,
+          netAmount: inv.total ?? inv.netAmount ?? inv.grandTotal ?? finalGrandTotal,
+          grandTotal: inv.total ?? inv.grandTotal ?? inv.netAmount ?? finalGrandTotal,
+          amountPaid: inv.paidAmount ?? inv.amountPaid ?? inv.amountReceived ?? effectivePaid,
+          amountReceived: inv.paidAmount ?? inv.amountReceived ?? effectivePaid,
+          amountDue: inv.balanceDue ?? inv.amountDue ?? outstanding,
+          changeAmount: inv.changeReturned ?? inv.changeAmount ?? changeAmount,
+          paymentStatus: inv.paymentStatus || (outstanding <= 0 ? 'PAID' : 'PARTIAL'),
+          paymentMethod: inv.paymentArrangement || inv.paymentMethod || submitData.paymentMethod,
           status: inv.status || 'COMPLETED',
           date: inv.createdAt || inv.date || new Date().toISOString(),
           salesPerson: inv.cashierName || currentUser?.name || 'Cashier',
@@ -897,11 +1101,12 @@ function POSContent() {
           })),
         };
 
+        setIsPaymentModalOpen(false);
         setCompletedInvoice(normalizedInvoice);
         setIsReceiptModalOpen(true);
         handleClearCart();
 
-        // 1. Instantly reduce UI stock smoothly in 0ms
+        // Immediate local stock decrement
         const soldMap: Record<string, number> = {};
         cartItems.forEach((item) => {
           soldMap[item.sku] = (soldMap[item.sku] || 0) + item.quantity;
@@ -914,13 +1119,12 @@ function POSContent() {
           return next;
         });
 
-        // 2. Cross-slice tag invalidations across inventory and catalogue stores
+        // Tag invalidations across inventory and catalogue stores
         dispatch(inventoryApi.util.invalidateTags(['StockBalance', 'InventorySummary', 'StockMovement']));
         dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
         dispatch(posApi.util.invalidateTags(['POSAvailability', 'POSCatalogue', 'StockBalance']));
         dispatch(erpApi.util.invalidateTags(['InventoryBalances', 'Variants', 'Products']));
 
-        // 3. Trigger background refetches to sync authoritative DB balances smoothly
         Promise.allSettled([
           refetchStockBalances(),
           refetchSkus(),
@@ -934,77 +1138,43 @@ function POSContent() {
             window.print();
           }, 300);
         }
-        return;
-      }
+      } else {
+        const demoResult = await completeCheckoutMutation({
+          branchId: activeBranch.id,
+          cashierId: currentUser?.id || 'USR-ADMIN-01',
+          cashierName: currentUser?.name || 'Admin',
+          customerName: selectedCustomer ? selectedCustomer.name : (submitData.walkInName || 'Walk-in Retail Customer'),
+          customerPhone: selectedCustomer ? selectedCustomer.phone : (submitData.walkInPhone || '0300-1234567'),
+          customerId: selectedCustomer?.id,
+          saleType,
+          appliedPriceList: saleType,
+          paymentArrangement: submitData.paymentArrangement,
+          dueDate: outstanding > 0 ? submitData.dueDate || dueDate : undefined,
+          creditOverride: true,
+          creditApprovedBy: currentUser?.name || 'Supervisor',
+          paymentMethod: submitData.paymentMethod as any,
+          discountAmount: finalDiscount,
+          subtotal,
+          taxAmount: 0,
+          grandTotal: finalGrandTotal,
+          amountReceived: effectivePaid,
+          changeAmount,
+          items: cartItems.map((item) => ({
+            sku: item.sku,
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+          })),
+          notes: `${saleType} Sale - ${submitData.paymentArrangement} Arrangement`,
+        }).unwrap();
 
-      const result = await completeCheckoutMutation({
-        branchId: activeBranch.id,
-        cashierId: currentUser?.id || 'USR-ADMIN-01',
-        cashierName: currentUser?.name || 'Admin',
-        customerName: selectedCustomer ? selectedCustomer.name : 'Walk-in Retail Customer',
-        customerPhone: selectedCustomer ? selectedCustomer.phone : '0300-1234567',
-        customerId: selectedCustomer?.id,
-        saleType,
-        appliedPriceList: saleType,
-        paymentArrangement,
-        dueDate: outstanding > 0 ? dueDate : undefined,
-        creditOverride,
-        creditApprovedBy: creditOverride ? (currentUser?.name || 'Supervisor') : undefined,
-        paymentMethod: paymentArrangement === 'CREDIT' ? 'CREDIT_30D' : paymentMethod,
-        discountAmount,
-        subtotal,
-        taxAmount: 0,
-        grandTotal,
-        amountReceived: effectivePaid,
-        changeAmount,
-        items: cartItems.map((item) => ({
-          sku: item.sku,
-          productId: item.productId,
-          productName: item.productName,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-        })),
-        notes: `${saleType} Sale - ${paymentArrangement} Arrangement`,
-      }).unwrap();
-
-      // Show receipt modal and clear active cart
-      setCompletedInvoice(result.invoice);
-      setIsReceiptModalOpen(true);
-      handleClearCart();
-
-      // 1. Instantly reduce UI stock in demo mode
-      const soldMapDemo: Record<string, number> = {};
-      cartItems.forEach((item) => {
-        soldMapDemo[item.sku] = (soldMapDemo[item.sku] || 0) + item.quantity;
-      });
-      setSoldQuantitiesBySku((prev) => {
-        const next = { ...prev };
-        Object.entries(soldMapDemo).forEach(([sku, qty]) => {
-          next[sku] = (next[sku] || 0) + qty;
-        });
-        return next;
-      });
-
-      // 2. Dispatch demo tag invalidation
-      dispatch(erpApi.util.invalidateTags(['InventoryBalances', 'Variants', 'Products']));
-
-      // 3. Trigger refetches
-      Promise.allSettled([
-        refetchDemoInventory(),
-        refetchDemoVariants(),
-        refetchDemoProducts(),
-      ]).then(() => {
-        setSoldQuantitiesBySku({});
-      });
-
-      // Auto-prompt print if enabled in settings
-      if (posSettings?.autoPrintReceipt) {
-        setTimeout(() => {
-          window.print();
-        }, 300);
+        setIsPaymentModalOpen(false);
+        setCompletedInvoice(demoResult.invoice);
+        setIsReceiptModalOpen(true);
+        handleClearCart();
       }
     } catch (err: any) {
-      // If error is network-related (connection lost, timeout, fetch error), seamlessly save offline
       const isNetworkError =
         typeof navigator !== 'undefined' &&
         (!navigator.onLine ||
@@ -1296,6 +1466,23 @@ function POSContent() {
     };
   }, [cartItems.length]);
 
+  const handleStockBranchChange = useCallback((branchId: string) => {
+    setSelectedStockBranchId(branchId);
+    setChosenBrandId(null);
+    setSelectedCategoryId('ALL');
+  }, []);
+
+  if (!isMounted) {
+    return (
+      <div className="h-screen w-screen bg-slate-900 flex items-center justify-center font-sans text-white text-sm select-none">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-9 h-9 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-300 text-xs font-semibold tracking-wide">Loading Unified POS Terminal...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen w-full bg-[#f4f6fa] overflow-hidden font-sans select-none">
       {/* 1. Top Header */}
@@ -1303,6 +1490,9 @@ function POSContent() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         activeBranch={activeBranch}
+        branches={branches}
+        selectedStockBranchId={effectiveStockBranchId}
+        onStockBranchChange={handleStockBranchChange}
         heldCount={heldSales.length}
         onNewSaleClick={handleNewSale}
         onHoldSaleClick={() => {
@@ -1313,7 +1503,6 @@ function POSContent() {
           }
         }}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
-        branches={branches}
         isSuperAdmin={isSuperAdmin}
         onBranchChange={(newBranchId) => {
           updateSettings({ selectedBranchId: newBranchId, branchId: newBranchId });
@@ -1325,6 +1514,27 @@ function POSContent() {
         isSyncing={isSyncing}
         onSyncClick={triggerSync}
       />
+
+      {/* Cross-Branch Stock Alert Banner */}
+      {effectiveStockBranchId && effectiveStockBranchId !== activeBranch?.id && (
+        <div className="mx-3.5 mt-2 px-3 py-1.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-center justify-between shadow-2xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            <span>
+              <strong>Cross-Branch Stock Mode:</strong> Showing and fulfilling inventory from{' '}
+              <strong>{branches.find((b) => b.id === effectiveStockBranchId)?.name || 'Supplying Branch'}</strong>.
+              Sale receipt will be recorded at terminal <strong>{activeBranch?.name}</strong>.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedStockBranchId(null)}
+            className="text-[11px] font-bold text-amber-900 hover:text-amber-950 underline px-2 py-0.5 rounded hover:bg-amber-100 transition-colors cursor-pointer"
+          >
+            Reset to My Terminal Stock
+          </button>
+        </div>
+      )}
 
       {/* 3. Main Workspace Area: Left Area (Brands + Categories + Products) and Right Cart (Full Height aligned with Brands top) */}
       <div className="flex-1 flex overflow-hidden px-3.5 pb-3 pt-2.5 gap-3.5 min-h-0 relative">
@@ -1487,7 +1697,24 @@ function POSContent() {
         }
       />
 
-      {/* 8. Sale Success & Printable Receipt Modal */}
+      {/* 8. Flow Checkout Payment Popup Modal */}
+      <PaymentCheckoutModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        subtotal={subtotal}
+        discountAmount={discountAmount}
+        totalAmount={grandTotal}
+        saleType={saleType}
+        selectedCustomer={selectedCustomer}
+        onOpenCustomerModal={() => {
+          setIsPaymentModalOpen(false);
+          setIsCustomerModalOpen(true);
+        }}
+        onConfirmSale={handleConfirmCheckout}
+        isProcessing={isCheckingOut}
+      />
+
+      {/* 9. Sale Success & Printable Receipt Modal */}
       <InvoiceReceiptModal
         isOpen={isReceiptModalOpen}
         onClose={() => setIsReceiptModalOpen(false)}

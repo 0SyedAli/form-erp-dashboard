@@ -18,6 +18,7 @@ import {
 import { useAppSelector } from '@/store';
 import { PaymentCollection, PaymentMethod } from '@/types';
 import AppLayout from '@/components/layout/AppLayout';
+import { formatDate, formatDateTime } from '@/utils/formatters';
 import {
   Receipt,
   CheckCircle2,
@@ -410,7 +411,7 @@ function CollectionsContent() {
                             <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200">
                               {inv.saleType || 'WALK_IN'}
                             </span>
-                            <span className="text-[10px] text-slate-400">{inv.date}</span>
+                            <span className="text-[10px] text-slate-400">{formatDate(inv.date)}</span>
                           </div>
 
                           <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 font-sans">
@@ -423,7 +424,7 @@ function CollectionsContent() {
 
                           {inv.dueDate && (
                             <p className="text-[11px] text-amber-700 mt-0.5 flex items-center gap-1 font-medium">
-                              <Calendar className="w-3 h-3" /> Due Date: {inv.dueDate}
+                              <Calendar className="w-3 h-3" /> Due Date: {formatDate(inv.dueDate)}
                             </p>
                           )}
                         </div>
@@ -651,10 +652,7 @@ function CollectionsContent() {
                   </tr>
                 ) : (
                   collections.map((c) => {
-                    const formattedDate = new Intl.DateTimeFormat('en-GB', {
-                      dateStyle: 'short',
-                      timeStyle: 'short',
-                    }).format(new Date(c.collectedAt));
+                    const formattedDate = formatDateTime(c.collectedAt);
 
                     return (
                       <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
@@ -740,7 +738,7 @@ function CollectionsContent() {
                 <div className="space-y-1 text-[11px] py-1 border-b border-dashed border-slate-300">
                   <div className="flex justify-between">
                     <span>Date:</span>
-                    <span>{new Date(completedCollection.collectedAt).toLocaleString()}</span>
+                    <span>{formatDateTime(completedCollection.collectedAt)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Customer:</span>

@@ -37,27 +37,17 @@ export default function BranchesManagementPage() {
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
   // Filters & Search state
-  const [activeTab, setActiveTab] = useState<'all' | 'retail' | 'warehouse'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'inactive'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   // Query branches and dynamic counts
   const { data: branches = [], isLoading } = useGetBranchesQuery({
     search: searchQuery,
-    type: activeTab,
-    status: statusFilter,
+    status: activeTab === 'all' ? undefined : activeTab,
   });
 
   const counts = useMemo(() => ({
     total: branches.length,
-    retail: branches.filter((b) => {
-      const t = (b.type as string) || '';
-      return t === 'RETAIL_STORE' || t === 'MAIN' || t === 'SHOWROOM' || t === 'STUDIO' || t === 'EXPRESS';
-    }).length,
-    warehouse: branches.filter((b) => {
-      const t = (b.type as string) || '';
-      return t === 'WAREHOUSE' || t === 'WHOLESALE_DEPOT' || t === 'DEPOT';
-    }).length,
     active: branches.filter((b) => b.isActive).length,
     inactive: branches.filter((b) => !b.isActive).length,
   }), [branches]);
@@ -206,7 +196,7 @@ export default function BranchesManagementPage() {
       return;
     }
     try {
-      await resetPassword({
+      const res: any = await resetPassword({
         id: selectedBranch.id,
         password: newPassword.trim(),
       }).unwrap();
@@ -214,10 +204,10 @@ export default function BranchesManagementPage() {
       showToast(
         'success',
         'Password Reset Successful',
-        `New password established for branch "${selectedBranch.loginId || selectedBranch.code}".`
+        res?.message || `New password established for branch "${selectedBranch.loginId || selectedBranch.code}".`
       );
-    } catch {
-      showToast('error', 'Reset Failed', 'Could not reset password.');
+    } catch (err: any) {
+      showToast('error', 'Reset Failed', err?.data || err?.message || 'Could not reset password.');
     }
   };
 
@@ -286,22 +276,22 @@ export default function BranchesManagementPage() {
             All Branches ({counts.total})
           </button>
           <button
-            onClick={() => setActiveTab('retail')}
-            className={`px-3.5 py-2 rounded-lg transition-colors cursor-pointer ${activeTab === 'retail'
+            onClick={() => setActiveTab('active')}
+            className={`px-3.5 py-2 rounded-lg transition-colors cursor-pointer ${activeTab === 'active'
               ? 'bg-brand-blue text-white shadow-xs'
               : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50'
               }`}
           >
-            Retail Stores ({counts.retail})
+            Active ({counts.active})
           </button>
           <button
-            onClick={() => setActiveTab('warehouse')}
-            className={`px-3.5 py-2 rounded-lg transition-colors cursor-pointer ${activeTab === 'warehouse'
+            onClick={() => setActiveTab('inactive')}
+            className={`px-3.5 py-2 rounded-lg transition-colors cursor-pointer ${activeTab === 'inactive'
               ? 'bg-brand-blue text-white shadow-xs'
               : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50'
               }`}
           >
-            Warehouses ({counts.warehouse})
+            Inactive ({counts.inactive})
           </button>
         </div>
 
@@ -321,8 +311,8 @@ export default function BranchesManagementPage() {
           </div>
 
           <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
+            value={activeTab}
+            onChange={(e) => setActiveTab(e.target.value as 'all' | 'active' | 'inactive')}
             className="px-3 py-2 bg-white border border-gray-200/90 rounded-lg text-sm font-medium text-gray-700 shadow-2xs focus:outline-hidden cursor-pointer"
           >
             <option value="all">All Statuses</option>
@@ -340,7 +330,6 @@ export default function BranchesManagementPage() {
               <tr className="border-b border-gray-200 text-gray-600 font-semibold text-[13px] bg-gray-50/80">
                 <th className="py-3.5 px-4 w-10">#</th>
                 <th className="py-3.5 px-4">Branch Name</th>
-                <th className="py-3.5 px-4">Type</th>
                 <th className="py-3.5 px-4">Location</th>
                 <th className="py-3.5 px-4">Contact</th>
                 {/* <th className="py-3.5 px-4">Manager</th> */}
@@ -351,7 +340,7 @@ export default function BranchesManagementPage() {
             <tbody className="divide-y divide-gray-100 text-gray-700 text-sm font-normal">
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-gray-400">
+                  <td colSpan={7} className="py-12 text-center text-gray-400">
                     <div className="flex items-center justify-center gap-2">
                       <span className="w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
                       <span>Loading branch repository...</span>
@@ -360,7 +349,7 @@ export default function BranchesManagementPage() {
                 </tr>
               ) : branches.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-10 text-center text-gray-500">
+                  <td colSpan={7} className="py-10 text-center text-gray-500">
                     <p className="font-medium text-gray-700">No branches match the selected filters.</p>
                     <p className="text-[13px] text-gray-400 mt-1 font-normal">
                       Try clearing your search term or tab filter.
@@ -398,11 +387,6 @@ export default function BranchesManagementPage() {
                             </span>
                           </div>
                         </div>
-                      </td>
-                      <td className="py-4 px-4 text-gray-600">
-                        <span className="px-2.5 py-0.5 rounded-md bg-gray-100 text-gray-700 text-xs font-medium">
-                          {getBranchTypeLabel(b.type)}
-                        </span>
                       </td>
                       <td className="py-4 px-4 text-gray-600 truncate max-w-[180px] text-sm font-normal">
                         {b.city}
@@ -547,30 +531,16 @@ export default function BranchesManagementPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-gray-600 font-semibold mb-1">
-                      Type *
-                    </label>
-                    <input
-                      type="text"
-                      value={getBranchTypeLabel(selectedBranch.type)}
-                      readOnly
-                      className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-800 font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-gray-600 font-semibold mb-1">
-                      Shop / Stall Number
-                    </label>
-                    <input
-                      type="text"
-                      value={selectedBranch.shopNumber || selectedBranch.code}
-                      readOnly
-                      className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-800 font-medium"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-gray-600 font-semibold mb-1">
+                    Shop / Stall Number
+                  </label>
+                  <input
+                    type="text"
+                    value={selectedBranch.shopNumber || selectedBranch.code}
+                    readOnly
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-800 font-medium"
+                  />
                 </div>
 
                 <div>
@@ -741,7 +711,7 @@ export default function BranchesManagementPage() {
                       onClick={() => {
                         const newPerms: Partial<BranchAccessPermissions> = {
                           pos: true,
-                          viewOwnSales: false,
+                          viewOwnSales: true,
                           viewOwnRevenue: false,
                           viewProducts: false,
                           addEditProducts: false,
@@ -763,7 +733,7 @@ export default function BranchesManagementPage() {
                       }}
                       className="text-[11px] font-semibold text-gray-600 hover:underline cursor-pointer"
                     >
-                      POS Only (Default)
+                      Default (POS + Sales History)
                     </button>
                   </div>
                 </div>

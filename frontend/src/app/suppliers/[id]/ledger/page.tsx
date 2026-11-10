@@ -19,6 +19,7 @@ import {
   Printer,
   CreditCard,
 } from 'lucide-react';
+import { formatDate } from '@/utils/formatters';
 
 function SupplierLedgerContent() {
   const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
@@ -261,7 +262,7 @@ function SupplierLedgerContent() {
                   filteredEntries.map((e: any) => (
                     <tr key={e.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-3.5 px-4 whitespace-nowrap text-xs text-slate-600">
-                        {e.date}
+                        {formatDate(e.date)}
                       </td>
 
                       <td className="py-3.5 px-4">

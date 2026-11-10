@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { ProductVariant } from '@/types';
+import { useAppSelector, RootState } from '@/store';
 import {
   useGetVariantsQuery,
   useGetBrandsQuery as useGetDemoBrandsQuery,
@@ -11,6 +12,7 @@ import {
   useGetThicknessQuery as useGetDemoThicknessQuery,
   useGetInventoryBalancesQuery,
   useToggleVariantStatusMutation,
+  useGetBranchesQuery,
 } from '@/store/services/apiSlice';
 import {
   useGetSkusQuery as useGetBackendSkusQuery,
@@ -40,8 +42,19 @@ export default function ProductsTab({
   canManage,
   onToast,
 }: ProductsTabProps) {
+  const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const assignedBranchId = currentUser?.assignedBranchId;
+
+  const [branchFilter, setBranchFilter] = useState<string>(!isSuperAdmin && assignedBranchId ? assignedBranchId : 'all');
+  const effectiveBranchId = !isSuperAdmin ? assignedBranchId : (branchFilter !== 'all' ? branchFilter : undefined);
+
+  const { data: branches = [] } = useGetBranchesQuery(undefined, { skip: !isSuperAdmin });
   const { data: demoVariants = [], isLoading: isDemoLoading } = useGetVariantsQuery();
-  const { data: backendSkusResponse, isLoading: isBackendLoading } = useGetBackendSkusQuery({ status: 'ALL' });
+  const { data: backendSkusResponse, isLoading: isBackendLoading } = useGetBackendSkusQuery({
+    status: 'ALL',
+    ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+  });
   const { data: backendBrands = [] } = useGetBackendBrandsQuery();
   const { data: demoBrands = [] } = useGetDemoBrandsQuery();
   const { data: backendCategories = [] } = useGetBackendCategoriesQuery();
@@ -84,6 +97,7 @@ export default function ProductsTab({
       return rawBackendSkus.map((v: any) => ({
         id: v.id || v._id || '',
         productId: v.productId || v._id || '',
+        branchId: v.branchId || v.product?.branchId || '',
         sku: v.sku,
         productName: v.productName || `${v.brand?.name || ''} - ${v.category?.name || ''}`,
         brandId: v.brandId || v.brand?._id || v.brand?.id || '',
@@ -166,9 +180,14 @@ export default function ProductsTab({
         (statusFilter === 'active' && isItemActive) ||
         (statusFilter === 'inactive' && !isItemActive);
 
-      return matchesSearch && matchesBrand && matchesCategory && matchesStatus;
+      const matchesBranch =
+        branchFilter === 'all' ||
+        (item as any).branchId === branchFilter ||
+        balanceMap.has(item.sku.toUpperCase());
+
+      return matchesSearch && matchesBrand && matchesCategory && matchesStatus && matchesBranch;
     });
-  }, [variants, searchQuery, brandFilter, categoryFilter, statusFilter, brands, categories]);
+  }, [variants, searchQuery, brandFilter, categoryFilter, statusFilter, branchFilter, balanceMap, brands, categories]);
 
   const handleToggleStatus = async (item: ProductVariant) => {
     const isCurrentlyActive = item.status === 'active' || item.status === 'ACTIVE';
@@ -248,16 +267,33 @@ export default function ProductsTab({
             <option value="inactive">Inactive Only</option>
           </select>
 
+          {isSuperAdmin && (
+            <select
+              value={branchFilter}
+              onChange={(e) => setBranchFilter(e.target.value)}
+              className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Branches</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name} ({b.code})
+                </option>
+              ))}
+            </select>
+          )}
+
           {(searchQuery ||
             brandFilter !== 'all' ||
             categoryFilter !== 'all' ||
-            statusFilter !== 'all') && (
+            statusFilter !== 'all' ||
+            (isSuperAdmin && branchFilter !== 'all')) && (
               <button
                 onClick={() => {
                   setSearchQuery('');
                   setBrandFilter('all');
                   setCategoryFilter('all');
                   setStatusFilter('all');
+                  if (isSuperAdmin) setBranchFilter('all');
                 }}
                 className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
               >
@@ -287,7 +323,7 @@ export default function ProductsTab({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-gray-50/70 border-b border-gray-100 text-[11px] font-bold text-gray-600">
-                <th className="py-3.5 px-3 text-center w-12">#</th>
+                <th className="py-3.5 px-3 text-center w-12">S#</th>
                 <th className="py-3.5 px-4">Product Details</th>
                 <th className="py-3.5 px-4">Specification</th>
                 <th className="py-3.5 px-3">Brand & Category</th>
@@ -392,10 +428,10 @@ export default function ProductsTab({
                       <td className="py-3.5 px-3 text-center">
                         <span
                           className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-mono font-bold ${onHandStock <= 0
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                              : onHandStock <= 5
-                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                            : onHandStock <= 5
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                             }`}
                         >
                           {onHandStock}
@@ -406,8 +442,8 @@ export default function ProductsTab({
                       <td className="py-3.5 px-3 text-center">
                         <span
                           className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isActive
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-gray-100 text-gray-600'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-gray-100 text-gray-600'
                             }`}
                         >
                           {isActive ? 'Active' : 'Inactive'}
@@ -430,8 +466,8 @@ export default function ProductsTab({
                                 type="button"
                                 onClick={() => handleToggleStatus(item)}
                                 className={`p-1.5 rounded-lg transition-colors cursor-pointer ${isActive
-                                    ? 'hover:text-amber-600 hover:bg-amber-50'
-                                    : 'hover:text-emerald-600 hover:bg-emerald-50'
+                                  ? 'hover:text-amber-600 hover:bg-amber-50'
+                                  : 'hover:text-emerald-600 hover:bg-emerald-50'
                                   }`}
                                 title={isActive ? 'Deactivate Product' : 'Activate Product'}
                               >

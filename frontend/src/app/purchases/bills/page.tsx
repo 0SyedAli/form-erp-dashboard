@@ -20,6 +20,7 @@ import {
 } from '@/store/services/purchasesApi';
 import { hasPermission } from '@/lib/permissions';
 import { SupplierBill } from '@/types';
+import { formatDate } from '@/utils/formatters';
 import {
   Plus,
   Search,
@@ -469,13 +470,13 @@ function SupplierBillsContent() {
 
                         <td className="py-3.5 px-4 text-slate-600">{b.branchName}</td>
 
-                        <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap">{b.billDate}</td>
+                        <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap">{formatDate(b.billDate)}</td>
 
                         <td className="py-3.5 px-4 whitespace-nowrap">
                           <div className="flex items-center gap-1.5">
                             <Clock className={`w-3.5 h-3.5 ${isOverdue ? 'text-rose-500' : 'text-slate-400'}`} />
                             <span className={isOverdue ? 'font-bold text-rose-600' : 'text-slate-600'}>
-                              {b.dueDate}
+                              {formatDate(b.dueDate)}
                             </span>
                           </div>
                         </td>
@@ -809,11 +810,11 @@ function SupplierBillsContent() {
             <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50 p-3.5 rounded-lg border border-slate-200">
               <div>
                 <span className="text-slate-400 block">Bill Date:</span>
-                <span className="font-semibold text-slate-800">{viewingBill.billDate}</span>
+                <span className="font-semibold text-slate-800">{formatDate(viewingBill.billDate)}</span>
               </div>
               <div>
                 <span className="text-slate-400 block">Due Date:</span>
-                <span className="font-semibold text-slate-800">{viewingBill.dueDate}</span>
+                <span className="font-semibold text-slate-800">{formatDate(viewingBill.dueDate)}</span>
               </div>
               <div>
                 <span className="text-slate-400 block">Total Amount:</span>

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Invoice, Branch } from '@/types';
 import { Printer, X, PlusCircle, CheckCircle2 } from 'lucide-react';
+import { formatDate, formatDateTime } from '@/utils/formatters';
 
 interface InvoiceReceiptModalProps {
   isOpen: boolean;
@@ -29,10 +30,8 @@ export default function InvoiceReceiptModal({
     window.print();
   };
 
-  const formattedDate = new Intl.DateTimeFormat('en-GB', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(invoice.date || invoice.createdAt || invoice.issueDate || '2024-10-25'));
+  const formattedDate = formatDateTime(invoice.date || invoice.createdAt || invoice.issueDate);
+  const formattedDueDate = formatDate(invoice.dueDate);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none animate-in fade-in duration-200">
@@ -57,21 +56,19 @@ export default function InvoiceReceiptModal({
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
             <button
               onClick={() => setFormat('THERMAL_80MM')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                format === 'THERMAL_80MM'
-                  ? 'bg-white text-emerald-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${format === 'THERMAL_80MM'
+                ? 'bg-white text-emerald-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+                }`}
             >
               Thermal 80mm
             </button>
             <button
               onClick={() => setFormat('A4')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                format === 'A4'
-                  ? 'bg-white text-emerald-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${format === 'A4'
+                ? 'bg-white text-emerald-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+                }`}
             >
               Standard A4
             </button>
@@ -82,11 +79,10 @@ export default function InvoiceReceiptModal({
         <div className="flex-1 overflow-y-auto p-4 bg-slate-100 flex justify-center">
           <div
             id="printable-pos-invoice"
-            className={`bg-white shadow-md border border-slate-200 p-6 font-mono text-slate-800 transition-all ${
-              format === 'THERMAL_80MM'
-                ? 'w-[320px] rounded-lg'
-                : 'w-[420px] rounded-xl'
-            }`}
+            className={`bg-white shadow-md border border-slate-200 p-6 font-mono text-slate-800 transition-all ${format === 'THERMAL_80MM'
+              ? 'w-[320px] rounded-lg'
+              : 'w-[420px] rounded-xl'
+              }`}
           >
             {/* Business Header */}
             <div className="text-center pb-3 border-b border-dashed border-slate-300">
@@ -128,6 +124,12 @@ export default function InvoiceReceiptModal({
                 <span>Payment:</span>
                 <span>{invoice.paymentMethod || 'CASH'} ({invoice.paymentStatus || 'PAID'})</span>
               </div>
+              {invoice.isInterBranch && invoice.sourceBranchName && (
+                <div className="flex justify-between bg-amber-50 px-1.5 py-0.5 rounded text-[10px] text-amber-900 border border-amber-200 mt-1">
+                  <span>Stock Supplied From:</span>
+                  <strong className="font-bold">{invoice.sourceBranchName}</strong>
+                </div>
+              )}
             </div>
 
             {/* Items Table */}
@@ -184,7 +186,7 @@ export default function InvoiceReceiptModal({
                   {invoice.dueDate && (
                     <div className="flex justify-between text-[10px] text-purple-700">
                       <span>Due Date:</span>
-                      <span>{invoice.dueDate}</span>
+                      <span>{formattedDueDate}</span>
                     </div>
                   )}
                 </div>

@@ -24,18 +24,25 @@ export function formatPKR(amount: number, compact: boolean = false): string {
 }
 
 export function formatPKDate(
-  dateString: string | Date,
+  dateString?: string | Date | null,
   options?: {
     includeTime?: boolean;
     short?: boolean;
   }
 ): string {
+  if (!dateString) return '-';
   try {
     const d = typeof dateString === 'string' ? new Date(dateString) : dateString;
-    if (isNaN(d.getTime())) return '-';
+    if (isNaN(d.getTime())) {
+      // In case string is formatted like "YYYY-MM-DD" or similar
+      const parsed = new Date(String(dateString).replace(' ', 'T'));
+      if (!isNaN(parsed.getTime())) {
+        return formatPKDate(parsed, options);
+      }
+      return String(dateString) || '-';
+    }
 
     const opts: Intl.DateTimeFormatOptions = {
-      timeZone: 'Asia/Karachi',
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -47,10 +54,18 @@ export function formatPKDate(
       opts.hour12 = true;
     }
 
-    return new Intl.DateTimeFormat('en-PK', opts).format(d);
+    return new Intl.DateTimeFormat('en-GB', opts).format(d);
   } catch {
-    return String(dateString);
+    return String(dateString) || '-';
   }
+}
+
+export function formatDate(dateString?: string | Date | null): string {
+  return formatPKDate(dateString);
+}
+
+export function formatDateTime(dateString?: string | Date | null): string {
+  return formatPKDate(dateString, { includeTime: true });
 }
 
 export function formatPercent(value: number): string {

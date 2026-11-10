@@ -2,16 +2,28 @@ import { z } from 'zod';
 
 export const createBranchSchema = z.object({
   body: z.object({
-    name: z.string({ required_error: 'Branch name is required' }).trim().min(2),
-    code: z.string({ required_error: 'Branch code is required' }).trim().min(2).toUpperCase(),
-    shopNumber: z.string({ required_error: 'Shop number is required' }).trim().min(1),
+    loginId: z
+      .string({ required_error: 'Username / Login ID is required' })
+      .trim()
+      .min(3, 'Username must be at least 3 characters')
+      .toLowerCase(),
+    email: z
+      .string({ required_error: 'Email is required' })
+      .trim()
+      .email('Please enter a valid email address'),
+    password: z
+      .string({ required_error: 'Password is required' })
+      .min(6, 'Password must be at least 6 characters'),
+    shopNumber: z
+      .string({ required_error: 'Shop number is required' })
+      .trim()
+      .min(1, 'Shop number is required'),
+    name: z.string().trim().optional(),
+    code: z.string().trim().optional(),
     type: z.string().optional().default('RETAIL_STORE'),
     city: z.string().optional().default('Karachi'),
-    address: z.string({ required_error: 'Address is required' }).trim().min(3),
-    phone: z.string({ required_error: 'Phone number is required' }).trim().min(5),
-    loginId: z.string({ required_error: 'Login ID is required' }).trim().min(3).toLowerCase(),
-    password: z.string().optional(),
-    email: z.string().email().optional(),
+    address: z.string().trim().optional(),
+    phone: z.string().trim().optional(),
     targetMonthlySales: z.number().optional().default(0),
     settings: z.record(z.boolean()).optional(),
   }),
@@ -51,11 +63,14 @@ export const resetPasswordSchema = z.object({
   params: z.object({
     id: z.string({ required_error: 'Branch ID or Code is required' }),
   }),
-  body: z.object({
-    newPassword: z
-      .string({ required_error: 'New password is required' })
-      .min(6, 'Password must be at least 6 characters'),
-  }),
+  body: z
+    .object({
+      newPassword: z.string().min(6, 'Password must be at least 6 characters').optional(),
+      password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+    })
+    .refine((data) => Boolean(data.newPassword || data.password), {
+      message: 'New password is required (at least 6 characters)',
+    }),
 });
 
 export const updatePermissionsSchema = z.object({

@@ -252,7 +252,8 @@ export default function POSCustomerModal({
                 filteredCustomers.map((c) => {
                   const isSelected = selectedCustomerId === c.id;
                   const availableCredit = Math.max(0, c.creditLimit - c.currentOutstanding);
-                  const isCreditExceeded = c.currentOutstanding >= c.creditLimit;
+                  const isCreditExceeded = Boolean(c.creditLimit > 0 && c.currentOutstanding >= c.creditLimit);
+                  const overLimitAmount = isCreditExceeded ? c.currentOutstanding - c.creditLimit : 0;
 
                   return (
                     <div
@@ -264,13 +265,17 @@ export default function POSCustomerModal({
                       className={`pt-2.5 first:pt-0 p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                         isSelected
                           ? 'border-blue-600 bg-blue-50/40 ring-1 ring-blue-500/20'
+                          : isCreditExceeded
+                          ? 'border-rose-300 bg-rose-50/60 hover:bg-rose-100/70'
                           : 'border-transparent hover:border-slate-200 hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-start gap-3">
                         <div
                           className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-                            c.customerType === 'DISTRIBUTOR'
+                            isCreditExceeded
+                              ? 'bg-rose-100 text-rose-700'
+                              : c.customerType === 'DISTRIBUTOR'
                               ? 'bg-purple-100 text-purple-700'
                               : c.customerType === 'WHOLESALE'
                               ? 'bg-amber-100 text-amber-700'
@@ -292,7 +297,7 @@ export default function POSCustomerModal({
                               {c.name}
                             </span>
                             <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-500 border border-slate-200">
-                              {c.customerCode}
+                              {c.customerCode || c.code}
                             </span>
                             <span
                               className={`text-[10px] font-semibold px-2 py-0.2 rounded-full ${
@@ -305,6 +310,12 @@ export default function POSCustomerModal({
                             >
                               {c.customerType}
                             </span>
+
+                            {isCreditExceeded && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-600 text-white animate-pulse">
+                                LIMIT EXCEEDED
+                              </span>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1 font-sans">
@@ -321,10 +332,12 @@ export default function POSCustomerModal({
                         </div>
                         <div
                           className={`text-[11px] font-semibold ${
-                            isCreditExceeded ? 'text-rose-600' : 'text-emerald-700'
+                            isCreditExceeded ? 'text-rose-600 font-bold' : 'text-emerald-700'
                           }`}
                         >
-                          Avail Credit: Rs. {availableCredit.toLocaleString()}
+                          {isCreditExceeded
+                            ? `Over Limit: Rs. ${overLimitAmount.toLocaleString()}`
+                            : `Avail Credit: Rs. ${availableCredit.toLocaleString()}`}
                         </div>
                         <div className="text-[10px] text-slate-400">
                           Limit: Rs. {c.creditLimit.toLocaleString()}
