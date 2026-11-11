@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
+import { useClientPagination } from '@/components/common/Pagination';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetStockLocationsQuery,
@@ -75,6 +76,10 @@ export default function StockAdjustmentsPage() {
   );
   const damagedLocIds = damagedLocs.map((l) => l.id);
   const quarantineStockItems = damagedBalances.filter((b) => damagedLocIds.includes(b.stockLocationId));
+
+  // Client Pagination for quarantine items (Hidden if <= 10 items)
+  const { paginatedItems: paginatedQuarantineItems, PaginationComponent: QuarantinePagination } =
+    useClientPagination(quarantineStockItems, 10, 'quarantine items');
 
   // Locations for current branch
   const normalLocations = stockLocations.filter(
@@ -486,54 +491,59 @@ export default function StockAdjustmentsPage() {
                 </p>
               </div>
             ) : (
-              <div className="border border-gray-200 rounded-xl overflow-hidden">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase border-b border-gray-200">
-                    <tr>
-                      <th className="py-3 px-4">SKU / Product</th>
-                      <th className="py-3 px-4">Quarantine Bay</th>
-                      <th className="py-3 px-4 text-center">Damaged Units</th>
-                      <th className="py-3 px-4">Est. Cost</th>
-                      <th className="py-3 px-4 text-right">Inspection Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {quarantineStockItems.map((item) => (
-                      <tr key={item.id} className="hover:bg-rose-50/20">
-                        <td className="py-3 px-4">
-                          <p className="font-mono font-bold text-gray-900 text-xs">{item.sku}</p>
-                          <p className="text-xs text-gray-600">{item.productName} ({item.sizeLabel})</p>
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-800 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-200">
-                            <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
-                            {stockLocations.find((l) => l.id === item.stockLocationId)?.name || item.stockLocationId}
-                          </span>
-                        </td>
-
-                        <td className="py-3 px-4 text-center">
-                          <span className="font-bold text-rose-700 text-base">{item.onHand}</span>
-                        </td>
-
-                        <td className="py-3 px-4 text-xs text-gray-600">
-                          {item.unitCost ? `PKR ${(item.unitCost * item.onHand).toLocaleString()}` : 'Unavailable'}
-                        </td>
-
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            onClick={() => handleReturnToSaleable(item)}
-                            disabled={isAdjusting}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            <span>Pass Inspection & Return to Saleable</span>
-                          </button>
-                        </td>
+              <div className="space-y-4">
+                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase border-b border-gray-200">
+                      <tr>
+                        <th className="py-3 px-4">SKU / Product</th>
+                        <th className="py-3 px-4">Quarantine Bay</th>
+                        <th className="py-3 px-4 text-center">Damaged Units</th>
+                        <th className="py-3 px-4">Est. Cost</th>
+                        <th className="py-3 px-4 text-right">Inspection Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {paginatedQuarantineItems.map((item) => (
+                        <tr key={item.id} className="hover:bg-rose-50/20">
+                          <td className="py-3 px-4">
+                            <p className="font-mono font-bold text-gray-900 text-xs">{item.sku}</p>
+                            <p className="text-xs text-gray-600">{item.productName} ({item.sizeLabel})</p>
+                          </td>
+
+                          <td className="py-3 px-4">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-800 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-200">
+                              <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                              {stockLocations.find((l) => l.id === item.stockLocationId)?.name || item.stockLocationId}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-4 text-center">
+                            <span className="font-bold text-rose-700 text-base">{item.onHand}</span>
+                          </td>
+
+                          <td className="py-3 px-4 text-xs text-gray-600">
+                            {item.unitCost ? `PKR ${(item.unitCost * item.onHand).toLocaleString()}` : 'Unavailable'}
+                          </td>
+
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => handleReturnToSaleable(item)}
+                              disabled={isAdjusting}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Pass Inspection & Return to Saleable</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Controls (Only renders when quarantine items > 10) */}
+                {QuarantinePagination}
               </div>
             )}
           </div>

@@ -24,6 +24,7 @@ import {
   PAYMENT_ARRANGEMENTS,
   STOCK_MOVEMENT_TYPES,
   CUSTOMER_TYPES,
+  INVOICE_STATUSES,
 } from '../../constants/index.js';
 import { AppError } from '../../utils/apiResponse.js';
 import { runTransaction } from '../../utils/transaction.js';
@@ -198,6 +199,46 @@ export class PosService {
 
       if (!targetLocation) {
         throw new AppError('No active stock location available for fulfilling branch.', 404, 'STOCK_LOCATION_NOT_FOUND');
+      }
+
+      // If editing an existing invoice, restore previous stock and reverse previous dues atomically
+      if (input.editingInvoiceId) {
+        const oldInv = await SalesInvoice.findById(input.editingInvoiceId).session(session);
+        if (oldInv && oldInv.status !== INVOICE_STATUSES.VOID) {
+          const oldSourceBranch = oldInv.sourceBranchId || oldInv.branchId;
+          const oldTargetLoc = await StockLocation.findOne({
+            branchId: oldSourceBranch,
+            isActive: true,
+          }).session(session);
+
+          if (oldTargetLoc && oldInv.items) {
+            for (const it of oldInv.items) {
+              await StockBalance.findOneAndUpdate(
+                { branchId: oldSourceBranch, stockLocationId: oldTargetLoc._id, sku: it.sku.toUpperCase() },
+                { $inc: { onHand: it.quantity } },
+                { session, upsert: true }
+              );
+            }
+          }
+
+          if (oldInv.balanceDue > 0 && oldInv.customerId) {
+            const oldCust = await Customer.findById(oldInv.customerId).session(session);
+            if (oldCust) {
+              oldCust.outstandingBalance = Math.max(0, (oldCust.outstandingBalance || 0) - oldInv.balanceDue);
+              await oldCust.save({ session: session || undefined });
+              await Customer.updateOne(
+                { _id: oldCust._id, 'branchBalances.branchId': oldInv.branchId },
+                { $inc: { 'branchBalances.$.outstanding': -oldInv.balanceDue } },
+                { session: session || undefined }
+              );
+            }
+          }
+
+          oldInv.status = INVOICE_STATUSES.VOID;
+          oldInv.balanceDue = 0;
+          oldInv.notes = `${oldInv.notes || ''} [EDITED & REPLACED by user ${userContext.loginId}]`.trim();
+          await oldInv.save({ session: session || undefined });
+        }
       }
 
       // 4. Resolve Authoritative Prices & Line Items in Integer Paisa

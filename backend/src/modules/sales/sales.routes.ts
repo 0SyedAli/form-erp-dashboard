@@ -3,7 +3,7 @@ import { SalesController } from './sales.controller.js';
 import { authenticate } from '../../middleware/auth.middleware.js';
 import { requireBranchPermission } from '../../middleware/branchPermission.middleware.js';
 import { validateRequest } from '../../middleware/validateRequest.middleware.js';
-import { salesQuerySchema, invoiceParamSchema } from './sales.schema.js';
+import { salesQuerySchema, invoiceParamSchema, deleteInvoiceSchema } from './sales.schema.js';
 
 export const salesRoutes = Router();
 
@@ -36,5 +36,13 @@ salesRoutes.get(
   requireBranchPermission('pos'),
   validateRequest(invoiceParamSchema),
   SalesController.getInvoiceReceipt
+);
+
+salesRoutes.delete(
+  '/invoices/:id',
+  authenticate,
+  requireBranchPermission('pos'),
+  validateRequest(deleteInvoiceSchema),
+  SalesController.deleteInvoice
 );
 

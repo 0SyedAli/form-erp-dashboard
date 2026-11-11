@@ -79,6 +79,8 @@ const CustomerLedgerEntrySchema = new Schema<ICustomerLedgerEntry>(
 );
 
 CustomerLedgerEntrySchema.index({ customerId: 1, timestamp: -1 });
+CustomerLedgerEntrySchema.index({ customerId: 1, branchId: 1, timestamp: -1 });
+CustomerLedgerEntrySchema.index({ branchId: 1, timestamp: -1 });
 
 export const CustomerLedgerEntry = mongoose.model<ICustomerLedgerEntry>(
   'CustomerLedgerEntry',

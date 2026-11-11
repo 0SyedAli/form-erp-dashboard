@@ -23,6 +23,7 @@ interface POSCustomerModalProps {
   selectedCustomerId?: string | null;
   onSelectCustomer: (customer: Customer | null) => void;
   recommendedType?: CustomerType;
+  branchId?: string;
 }
 
 export default function POSCustomerModal({
@@ -31,17 +32,18 @@ export default function POSCustomerModal({
   selectedCustomerId,
   onSelectCustomer,
   recommendedType,
+  branchId,
 }: POSCustomerModalProps) {
   const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
 
   const { data: demoCustomers = [], isLoading: isDemoLoading } = useGetCustomersQuery(undefined, {
-    skip: isBackendMode,
+    skip: !isOpen || isBackendMode,
   });
   const [createCustomerDemoMutation, { isLoading: isDemoCreating }] = useCreateCustomerMutation();
 
   const { data: backendCustomers = [], isLoading: isBackendLoading } = useGetBackendCustomersQuery(
-    undefined,
-    { skip: !isBackendMode }
+    branchId ? { branchId } : undefined,
+    { skip: !isOpen || !isBackendMode }
   );
   const [createCustomerBackendMutation, { isLoading: isBackendCreating }] =
     useCreateBackendCustomerMutation();
@@ -94,6 +96,7 @@ export default function POSCustomerModal({
           name: newName.trim(),
           phone: newPhone.trim(),
           customerType: newType as any,
+          branchId: branchId || undefined,
           creditEnabled: true,
           creditLimit: newCreditLimit,
           creditTerms: `${newDueDays} Days Net Credit`,

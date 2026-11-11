@@ -11,6 +11,7 @@ import {
   useGetSkusQuery as useGetBackendSkusQuery,
   useDeleteThicknessMutation,
 } from '@/store/services/catalogueApi';
+import { useClientPagination } from '@/components/common/Pagination';
 import ThicknessModal from './ThicknessModal';
 import ThicknessStatusModal from './ThicknessStatusModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
@@ -88,6 +89,10 @@ export default function ThicknessTab({ canManage, onToast }: ThicknessTabProps) 
       return matchesSearch && matchesStatus;
     });
   }, [thicknessList, searchQuery, statusFilter]);
+
+  // Client-Side Pagination (Only renders when thickness options > 10)
+  const { paginatedItems: paginatedThickness, PaginationComponent: ThicknessPagination } =
+    useClientPagination(filteredThickness, 10, 'thickness options');
 
   const handleEdit = (t: MattressThickness) => {
     setSelectedThickness(t);
@@ -189,7 +194,7 @@ export default function ThicknessTab({ canManage, onToast }: ThicknessTabProps) 
                   </td>
                 </tr>
               ) : (
-                filteredThickness.map((t, idx) => {
+                paginatedThickness.map((t, idx) => {
                   const thicknessVariants = variants.filter((v) => v.thicknessId === t.id);
 
                   return (
@@ -276,12 +281,14 @@ export default function ThicknessTab({ canManage, onToast }: ThicknessTabProps) 
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
-          <span>
-            Showing {filteredThickness.length} of {thicknessList.length} thickness options
-          </span>
-        </div>
+        {/* Pagination Controls (renders when thickness options > 10) */}
+        {ThicknessPagination || (
+          <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
+            <span>
+              Showing {filteredThickness.length} of {thicknessList.length} thickness options
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Add / Edit Thickness Modal */}

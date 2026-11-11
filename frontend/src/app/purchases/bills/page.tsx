@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
+import { useClientPagination } from '@/components/common/Pagination';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetSupplierBillsQuery,
@@ -231,6 +232,10 @@ function SupplierBillsContent() {
     });
   }, [bills, supplierFilter, statusFilter, searchQuery]);
 
+  // Client-Side Pagination (Only renders when bills > 10)
+  const { paginatedItems: paginatedBills, PaginationComponent: BillsPagination } =
+    useClientPagination(filteredBills, 10, 'bills');
+
   const handleSubmitBill = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -441,7 +446,7 @@ function SupplierBillsContent() {
                     </td>
                   </tr>
                 ) : filteredBills.length > 0 ? (
-                  filteredBills.map((b) => {
+                  paginatedBills.map((b) => {
                     const todayStr = new Date().toISOString().slice(0, 10);
                     const isOverdue = b.amountDue > 0 && b.dueDate < todayStr;
 
@@ -540,6 +545,9 @@ function SupplierBillsContent() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (renders when bills > 10) */}
+          {BillsPagination}
         </div>
       </div>
 

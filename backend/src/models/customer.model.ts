@@ -10,6 +10,7 @@ export interface ICustomer extends Document {
   address?: string;
   city?: string;
   taxNumber?: string;
+  branchId?: mongoose.Types.ObjectId;
   creditEnabled: boolean;
   creditLimit: number;
   creditTerms: string;
@@ -60,6 +61,11 @@ const CustomerSchema = new Schema<ICustomer>(
     },
     taxNumber: {
       type: String,
+    },
+    branchId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Branch',
+      index: true,
     },
     creditEnabled: {
       type: Boolean,

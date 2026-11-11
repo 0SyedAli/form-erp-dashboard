@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
+import { useClientPagination } from '@/components/common/Pagination';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetStockTransfersQuery,
@@ -88,6 +89,10 @@ export default function StockTransfersPage() {
   const destAvailableLocations = stockLocations.filter(
     (l) => l.branchId === destBranchId && l.isActive
   );
+
+  // Client Pagination (Hidden if <= 10 items)
+  const { paginatedItems: paginatedTransfers, PaginationComponent: TransfersPagination } =
+    useClientPagination(transfers, 10, 'transfers');
 
   // Stats calculation
   const totalTransfers = transfers.length;
@@ -403,7 +408,7 @@ export default function StockTransfersPage() {
                     </td>
                   </tr>
                 ) : (
-                  transfers.map((trf) => {
+                  paginatedTransfers.map((trf) => {
                     const sourceLoc = stockLocations.find((l) => l.id === trf.sourceLocationId);
                     const destLoc = stockLocations.find((l) => l.id === trf.destinationLocationId);
                     const totalQty = trf.items.reduce((s, i) => s + i.requestedQuantity, 0);
@@ -543,6 +548,9 @@ export default function StockTransfersPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (Only renders when transfers > 10) */}
+          {TransfersPagination}
         </div>
       </div>
 

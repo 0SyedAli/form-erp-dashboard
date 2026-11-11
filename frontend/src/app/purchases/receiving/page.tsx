@@ -4,6 +4,7 @@ import React, { useState, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
+import { useClientPagination } from '@/components/common/Pagination';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetGoodsReceiptsQuery,
@@ -136,6 +137,10 @@ function GoodsReceivingContent() {
       return true;
     });
   }, [grns, searchQuery]);
+
+  // Client Pagination (Hidden if <= 10 items)
+  const { paginatedItems: paginatedGRNs, PaginationComponent: GRNPagination } =
+    useClientPagination(filteredGRNs, 10, 'goods receipts');
 
   const handleSubmitReceiving = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -314,7 +319,7 @@ function GoodsReceivingContent() {
                     </td>
                   </tr>
                 ) : filteredGRNs.length > 0 ? (
-                  filteredGRNs.map((grn) => {
+                  paginatedGRNs.map((grn) => {
                     const totalQty = grn.items.reduce((s, i) => s + i.receivedQuantity, 0);
 
                     return (
@@ -382,6 +387,9 @@ function GoodsReceivingContent() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (Only renders when GRNs > 10) */}
+          {GRNPagination}
         </div>
       </div>
 

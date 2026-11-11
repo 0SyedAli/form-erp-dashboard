@@ -8,17 +8,20 @@ import {
   useGetInvoicesQuery,
   useGetPaymentCollectionsQuery,
   useCreatePaymentCollectionMutation,
+  useGetBranchesQuery,
 } from '@/store/services/apiSlice';
 import {
   useGetCustomersQuery as useGetBackendCustomersQuery,
-  useGetInvoicesQuery as useGetBackendInvoicesQuery,
+  useGetCustomerOutstandingInvoicesQuery as useGetBackendCustomerOutstandingQuery,
   useGetCollectionsQuery as useGetBackendCollectionsQuery,
   useCreateCollectionMutation as useCreateBackendCollectionMutation,
+  useGetBranchesQuery as useGetBackendBranchesQuery,
 } from '@/store/services/posApi';
 import { useAppSelector } from '@/store';
 import { PaymentCollection, PaymentMethod } from '@/types';
 import AppLayout from '@/components/layout/AppLayout';
 import { formatDate, formatDateTime } from '@/utils/formatters';
+import { useClientPagination } from '@/components/common/Pagination';
 import {
   Receipt,
   CheckCircle2,
@@ -31,6 +34,7 @@ import {
   CreditCard,
   Banknote,
   Building,
+  Store,
   X,
 } from 'lucide-react';
 
@@ -53,10 +57,37 @@ function CollectionsContent() {
   const [createCollectionMutation, { isLoading: isDemoPosting }] =
     useCreatePaymentCollectionMutation();
 
-  const { data: backendCustomers = [] } = useGetBackendCustomersQuery(undefined, {
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+
+  // Branches Queries
+  const { data: demoBranches = [] } = useGetBranchesQuery(undefined, { skip: isBackendMode });
+  const { data: backendBranches = [] } = useGetBackendBranchesQuery(undefined, {
     skip: !isBackendMode,
   });
-  const { data: backendInvoices = [] } = useGetBackendInvoicesQuery(undefined, {
+  const branches = useMemo(() => {
+    return isBackendMode ? backendBranches : demoBranches;
+  }, [isBackendMode, backendBranches, demoBranches]);
+
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('');
+
+  useEffect(() => {
+    if (currentUser?.assignedBranchId) {
+      setSelectedBranchId(currentUser.assignedBranchId);
+    } else if (currentUser?.branchId) {
+      setSelectedBranchId((currentUser as any).branchId);
+    }
+  }, [currentUser]);
+
+  // Scoped Customer Query: Branch users strictly query their own branch; Super Admin can filter or view all
+  const customerQueryParams = useMemo(() => {
+    if (!isSuperAdmin) {
+      const bId = currentUser?.assignedBranchId || (currentUser as any)?.branchId;
+      return bId ? { branchId: bId } : undefined;
+    }
+    return selectedBranchId ? { branchId: selectedBranchId } : undefined;
+  }, [isSuperAdmin, currentUser, selectedBranchId]);
+
+  const { data: backendCustomers = [] } = useGetBackendCustomersQuery(customerQueryParams, {
     skip: !isBackendMode,
   });
   const { data: backendCollections = [], isLoading: isBackendColLoading } =
@@ -65,11 +96,28 @@ function CollectionsContent() {
   const [createBackendCollectionMutation, { isLoading: isBackendPosting }] =
     useCreateBackendCollectionMutation();
 
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(initialCustomerId);
+
+  // Optimized On-Demand Customer Outstanding Invoices Query (Strictly for this branch)
+  const { data: customerOutstandingData, isLoading: isOutstandingLoading } =
+    useGetBackendCustomerOutstandingQuery(
+      selectedCustomerId
+        ? {
+            id: selectedCustomerId,
+            branchId: isSuperAdmin ? selectedBranchId || undefined : selectedBranchId,
+          }
+        : '',
+      { skip: !isBackendMode || !selectedCustomerId }
+    );
+
   const customers = useMemo(() => {
     if (isBackendMode) {
       return (backendCustomers || []).map((c: any) => ({
         ...c,
         id: c.id || c._id,
+        branchId: c.branchId || '',
+        branchName: c.branchName || '',
+        branchCode: c.branchCode || '',
         currentOutstanding: c.currentOutstanding || 0,
         availableCredit:
           c.availableCredit ??
@@ -79,20 +127,34 @@ function CollectionsContent() {
     return demoCustomers;
   }, [isBackendMode, backendCustomers, demoCustomers]);
 
-  const invoices = useMemo(() => {
+  const openInvoices = useMemo(() => {
+    if (!selectedCustomerId) return [];
     if (isBackendMode) {
-      return (backendInvoices || []).map((inv: any) => ({
-        ...inv,
+      const list = customerOutstandingData?.invoices || [];
+      return list.map((inv: any) => ({
         id: inv.id || inv._id,
         invoiceNumber: inv.invoiceNumber,
-        customerId: inv.customerId,
-        amountDue: inv.amountDue || 0,
-        paymentStatus: inv.paymentStatus,
-        date: inv.date || inv.createdAt,
-      })) as any[];
+        customerId: selectedCustomerId,
+        branchId: inv.branchId || inv.sourceBranchId,
+        amountDue: Number(inv.balanceDue ?? inv.amountDue ?? 0),
+        totalAmount: Number(inv.totalAmount ?? 0),
+        netAmount: Number(inv.totalAmount ?? 0),
+        paidAmount: Number(inv.paidAmount ?? 0),
+        amountPaid: Number(inv.paidAmount ?? 0),
+        saleType: inv.saleType || 'RETAIL',
+        dueDate: inv.dueDate || inv.invoiceDate || inv.date || inv.createdAt,
+        paymentStatus: Number(inv.balanceDue ?? 0) === 0 ? 'PAID' : 'PARTIAL',
+        date: inv.invoiceDate || inv.date || inv.createdAt,
+        branchName: inv.branchName || 'Branch',
+      }));
     }
-    return demoInvoices;
-  }, [isBackendMode, backendInvoices, demoInvoices]);
+    return demoInvoices.filter(
+      (inv) =>
+        inv.customerId === selectedCustomerId &&
+        inv.amountDue > 0 &&
+        inv.paymentStatus !== 'PAID'
+    );
+  }, [isBackendMode, selectedCustomerId, customerOutstandingData, demoInvoices]);
 
   const collections = useMemo(() => {
     if (isBackendMode) {
@@ -101,21 +163,30 @@ function CollectionsContent() {
         id: c.id || c._id,
         collectionNumber: c.collectionNumber,
         receiptNumber: c.receiptNumber || c.collectionNumber,
-        customerId: c.customerId,
-        amount: c.amount,
+        customerId: c.customerId?._id || c.customerId?.id || c.customerId,
+        customerName: c.customerName || c.customerId?.name || 'Customer',
+        amount: Number(c.totalCollected ?? c.amount ?? 0),
+        unallocatedAdvance: Number(c.unallocatedAmount ?? c.unallocatedAdvance ?? 0),
         paymentMethod: c.paymentMethod,
         date: c.collectionDate || c.createdAt,
-        collectedByName: c.collectedByName || 'Staff',
+        collectedAt: c.collectionDate || c.collectedAt || c.createdAt,
+        collectedByName: c.collectedBy || c.collectedByName || 'Staff',
+        allocations: (c.allocations || []).map((a: any) => ({
+          ...a,
+          allocatedAmount: Number(a.allocatedAmount ?? 0),
+          invoiceNumber: a.invoiceNumber || 'INV',
+        })),
       })) as any[];
     }
     return demoCollections;
   }, [isBackendMode, backendCollections, demoCollections]);
 
+  // Client-Side Pagination for Collections History (renders when collections > 10)
+  const { paginatedItems: paginatedCollections, PaginationComponent: CollectionsPagination } =
+    useClientPagination(collections, 10, 'collections');
+
   const isColLoading = isBackendMode ? isBackendColLoading : isDemoColLoading;
   const isPosting = isBackendMode ? isBackendPosting : isDemoPosting;
-
-  // Selected Customer State
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(initialCustomerId);
 
   useEffect(() => {
     if (initialCustomerId) {
@@ -127,19 +198,16 @@ function CollectionsContent() {
   }, [initialCustomerId]);
 
   const selectedCustomer = useMemo(() => {
-    return customers.find((c) => c.id === selectedCustomerId) || null;
-  }, [customers, selectedCustomerId]);
-
-  // Open & Unpaid Invoices for this customer
-  const openInvoices = useMemo(() => {
-    if (!selectedCustomerId) return [];
-    return invoices.filter(
-      (inv) =>
-        inv.customerId === selectedCustomerId &&
-        inv.amountDue > 0 &&
-        inv.paymentStatus !== 'PAID'
-    );
-  }, [invoices, selectedCustomerId]);
+    const cust = customers.find((c) => c.id === selectedCustomerId) || null;
+    if (!cust) return null;
+    if (isBackendMode && customerOutstandingData) {
+      return {
+        ...cust,
+        currentOutstanding: customerOutstandingData.totalOutstanding ?? cust.currentOutstanding,
+      };
+    }
+    return cust;
+  }, [customers, selectedCustomerId, isBackendMode, customerOutstandingData]);
 
   // Payment Form State
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
@@ -217,11 +285,19 @@ function CollectionsContent() {
         };
       });
 
+    const effectiveBranch =
+      (selectedBranchId && selectedBranchId !== 'ALL' ? selectedBranchId : undefined) ||
+      (selectedCustomer as any)?.branchId ||
+      openInvoices[0]?.branchId ||
+      currentUser?.assignedBranchId ||
+      (currentUser as any)?.branchId ||
+      (branches.length > 0 ? (branches[0].id || (branches[0] as any)._id) : undefined);
+
     try {
       if (isBackendMode) {
         const result = await createBackendCollectionMutation({
           customerId: selectedCustomer.id || (selectedCustomer as any)._id,
-          branchId: currentUser?.assignedBranchId || (currentUser as any)?.branchId || undefined,
+          branchId: effectiveBranch && effectiveBranch !== 'ALL' ? effectiveBranch : undefined,
           amount: paymentAmount,
           paymentMethod: (paymentMethod === 'CREDIT_30D' ? 'CASH' : paymentMethod) as any,
           reference: reference.trim() || undefined,
@@ -232,12 +308,22 @@ function CollectionsContent() {
           })),
         }).unwrap();
 
+        const collectionObj = (result as any).collection || result;
         setCompletedCollection({
-          ...result,
-          id: result.id || (result as any)._id,
-          receiptNumber: (result as any).receiptNumber || result.collectionNumber,
-          date: (result as any).collectionDate || (result as any).createdAt,
-          allocations: result.allocations || [],
+          ...collectionObj,
+          id: collectionObj.id || collectionObj._id,
+          receiptNumber: collectionObj.receiptNumber || collectionObj.collectionNumber,
+          customerName: collectionObj.customerName || selectedCustomer.name,
+          amount: Number(collectionObj.totalCollected ?? collectionObj.amount ?? paymentAmount),
+          unallocatedAdvance: Number(collectionObj.unallocatedAmount ?? collectionObj.unallocatedAdvance ?? 0),
+          date: collectionObj.collectionDate || collectionObj.createdAt || new Date().toISOString(),
+          collectedAt: collectionObj.collectionDate || collectionObj.createdAt || new Date().toISOString(),
+          collectedByName: collectionObj.collectedBy || currentUser?.name || 'Staff',
+          allocations: (collectionObj.allocations || []).map((a: any) => ({
+            ...a,
+            allocatedAmount: Number(a.allocatedAmount ?? 0),
+            invoiceNumber: a.invoiceNumber || 'INV',
+          })),
         } as any);
         setPaymentAmount(0);
         setAllocations({});
@@ -248,7 +334,7 @@ function CollectionsContent() {
 
       const result = await createCollectionMutation({
         customerId: selectedCustomer.id,
-        branchId: currentUser?.assignedBranchId || 'BR-MAIN-01',
+        branchId: effectiveBranch || 'BR-MAIN-01',
         amount: paymentAmount,
         paymentMethod,
         reference: reference.trim() || undefined,
@@ -274,16 +360,15 @@ function CollectionsContent() {
         {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <Link
+            {/* <Link
               href="/customers"
               className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 bg-white border border-slate-200 hover:bg-blue-50 px-3 py-2 rounded-xl transition-colors shadow-2xs cursor-pointer"
             >
               <ArrowRight className="w-4 h-4 rotate-180" />
               <span>Customers Registry</span>
-            </Link>
+            </Link> */}
             <div>
               <h1 className="text-xl font-extrabold text-slate-900 tracking-tight font-sans flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-emerald-600" />
                 <span>Customer Payment Recovery &amp; Collections</span>
               </h1>
               <p className="text-xs text-slate-500 font-sans">
@@ -304,8 +389,57 @@ function CollectionsContent() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column (Customer & Open Invoices) */}
           <div className="lg:col-span-7 space-y-6">
-            {/* Customer Search & Selector */}
+            {/* Customer Search & Selector with Branch Isolation */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+              {/* Branch Isolation / Scope Indicator */}
+              {isSuperAdmin ? (
+                <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-xs text-indigo-900 font-bold">
+                      <Store className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <span>Super Admin: Filter Customers by Branch</span>
+                    </div>
+                    <select
+                      value={selectedBranchId}
+                      onChange={(e) => {
+                        setSelectedBranchId(e.target.value);
+                        setSelectedCustomerId('');
+                        setPaymentAmount(0);
+                        setAllocations({});
+                      }}
+                      className="px-3 py-1.5 bg-white border border-indigo-300 rounded-lg text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="">All Branches (All Registered Customers)</option>
+                      {branches.map((b: any) => (
+                        <option key={b.id || b._id} value={b.id || b._id}>
+                          {b.name} ({b.code || b.shopNumber || 'Branch'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-[11px] text-indigo-700">
+                    As Super Admin, you can view and manage all customers across all branches, or filter to see customers of an individual branch.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Store className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <div>
+                      <span className="font-bold text-emerald-950">
+                        Branch Khata Terminal: {branches.find((b: any) => (b.id || b._id) === selectedBranchId)?.name || 'Your Branch'}
+                      </span>
+                      <p className="text-[11px] text-emerald-800">
+                        Strict Branch Isolation: Showing strictly your branch&apos;s registered customers and khata dues.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px] border border-emerald-300">
+                    Branch Scoped
+                  </span>
+                </div>
+              )}
+
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider font-sans">
                 Select Customer Account
               </label>
@@ -319,31 +453,37 @@ function CollectionsContent() {
                     setPaymentAmount(0);
                     setAllocations({});
                   }}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 cursor-pointer"
                 >
-                  <option value="">-- Choose Customer --</option>
+                  <option value="">-- Choose Customer ({customers.length} available) --</option>
                   {customers.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name} ({c.customerCode}) • Outstanding: Rs.{' '}
-                      {c.currentOutstanding.toLocaleString()}
+                      {c.name} {c.phone ? `(${c.phone})` : ''} {c.branchName ? `• [${c.branchName}]` : ''} • Due: Rs.{' '}
+                      {(c.currentOutstanding ?? 0).toLocaleString()}
                     </option>
                   ))}
                 </select>
               </div>
 
               {selectedCustomer && (
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-4">
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-bold text-xs text-slate-900 font-sans">
                         {selectedCustomer.name}
                       </span>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
                         {selectedCustomer.customerType}
                       </span>
+                      {selectedCustomer.branchName && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 flex items-center gap-1">
+                          <Store className="w-3 h-3 text-slate-600" />
+                          <span>Branch: {selectedCustomer.branchName}</span>
+                        </span>
+                      )}
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Phone: {selectedCustomer.phone} • Terms: {selectedCustomer.creditTerms}
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Phone: {selectedCustomer.phone} • Terms: {selectedCustomer.creditTerms || 'Net 30'}
                     </p>
                   </div>
 
@@ -352,7 +492,7 @@ function CollectionsContent() {
                       Total Outstanding
                     </span>
                     <span className="text-base font-black text-purple-800 font-sans">
-                      Rs. {selectedCustomer.currentOutstanding.toLocaleString()}
+                      Rs. {(selectedCustomer.currentOutstanding ?? 0).toLocaleString()}
                     </span>
                   </div>
                 </div>
@@ -399,9 +539,8 @@ function CollectionsContent() {
                     return (
                       <div
                         key={inv.id}
-                        className={`p-4 transition-colors flex flex-wrap items-center justify-between gap-3 ${
-                          isAllocated ? 'bg-emerald-50/40' : 'hover:bg-slate-50'
-                        }`}
+                        className={`p-4 transition-colors flex flex-wrap items-center justify-between gap-3 ${isAllocated ? 'bg-emerald-50/40' : 'hover:bg-slate-50'
+                          }`}
                       >
                         <div>
                           <div className="flex items-center gap-2">
@@ -415,10 +554,10 @@ function CollectionsContent() {
                           </div>
 
                           <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 font-sans">
-                            <span>Net Total: Rs. {inv.netAmount.toLocaleString()}</span>
-                            <span>• Paid: Rs. {inv.amountPaid.toLocaleString()}</span>
+                            <span>Net Total: Rs. {(inv.netAmount ?? 0).toLocaleString()}</span>
+                            <span>• Paid: Rs. {(inv.amountPaid ?? 0).toLocaleString()}</span>
                             <span className="font-bold text-purple-800">
-                              Due: Rs. {inv.amountDue.toLocaleString()}
+                              Due: Rs. {(inv.amountDue ?? 0).toLocaleString()}
                             </span>
                           </div>
 
@@ -438,7 +577,7 @@ function CollectionsContent() {
                             <input
                               type="number"
                               min={0}
-                              max={inv.amountDue}
+                              max={inv.amountDue ?? 0}
                               value={allocatedVal || ''}
                               onChange={(e) =>
                                 handleInvoiceAllocChange(
@@ -451,7 +590,7 @@ function CollectionsContent() {
                             />
                             {allocatedVal > 0 && (
                               <span className="text-[10px] text-slate-400 block mt-0.5">
-                                Remaining: Rs. {remainingAfter.toLocaleString()}
+                                Remaining: Rs. {(remainingAfter ?? 0).toLocaleString()}
                               </span>
                             )}
                           </div>
@@ -486,6 +625,38 @@ function CollectionsContent() {
                 </div>
               )}
 
+              {/* Receiving Branch Selector */}
+              {branches.length > 0 && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                    <Store className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Receiving Branch *</span>
+                  </label>
+                  <select
+                    value={selectedBranchId}
+                    onChange={(e) => setSelectedBranchId(e.target.value)}
+                    disabled={currentUser?.role !== 'SUPER_ADMIN'}
+                    className={`w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-emerald-500 font-sans ${
+                      currentUser?.role !== 'SUPER_ADMIN' ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    {currentUser?.role === 'SUPER_ADMIN' && (
+                      <option value="">All Branches / Auto-Detect Customer Branch</option>
+                    )}
+                    {branches.map((b: any) => (
+                      <option key={b.id || b._id} value={b.id || b._id}>
+                        {b.name} ({b.code || b.shopNumber || 'Branch'})
+                      </option>
+                    ))}
+                  </select>
+                  {currentUser?.role !== 'SUPER_ADMIN' && (
+                    <p className="text-[10px] text-slate-400 mt-1 font-medium">
+                      Branch Locked: You can only recover khata dues for your assigned branch.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Amount Collected Input */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -515,11 +686,10 @@ function CollectionsContent() {
                   <button
                     type="button"
                     onClick={() => setPaymentMethod('CASH')}
-                    className={`py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                      paymentMethod === 'CASH'
-                        ? 'bg-white text-emerald-800 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                    className={`py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${paymentMethod === 'CASH'
+                      ? 'bg-white text-emerald-800 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                      }`}
                   >
                     <Banknote className="w-3.5 h-3.5" />
                     <span>Cash</span>
@@ -527,11 +697,10 @@ function CollectionsContent() {
                   <button
                     type="button"
                     onClick={() => setPaymentMethod('PAYPAK_CARD')}
-                    className={`py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                      paymentMethod === 'PAYPAK_CARD'
-                        ? 'bg-white text-blue-800 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                    className={`py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${paymentMethod === 'PAYPAK_CARD'
+                      ? 'bg-white text-blue-800 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                      }`}
                   >
                     <CreditCard className="w-3.5 h-3.5" />
                     <span>Card</span>
@@ -539,11 +708,10 @@ function CollectionsContent() {
                   <button
                     type="button"
                     onClick={() => setPaymentMethod('BANK_TRANSFER')}
-                    className={`py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                      paymentMethod === 'BANK_TRANSFER'
-                        ? 'bg-white text-purple-800 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                    className={`py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${paymentMethod === 'BANK_TRANSFER'
+                      ? 'bg-white text-purple-800 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                      }`}
                   >
                     <Building className="w-3.5 h-3.5" />
                     <span>Bank</span>
@@ -584,19 +752,19 @@ function CollectionsContent() {
                 <div className="flex justify-between">
                   <span className="text-slate-500">Total Collected:</span>
                   <span className="font-bold text-slate-900 font-sans">
-                    Rs. {paymentAmount.toLocaleString()}
+                    Rs. {(paymentAmount || 0).toLocaleString()}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Allocated to Invoices:</span>
                   <span className="font-bold text-emerald-700 font-sans">
-                    Rs. {totalAllocated.toLocaleString()}
+                    Rs. {(totalAllocated || 0).toLocaleString()}
                   </span>
                 </div>
                 {excessAdvance > 0 && (
                   <div className="flex justify-between text-blue-700 font-bold pt-1 border-t border-slate-200">
                     <span>Unallocated Advance Balance:</span>
-                    <span>Rs. {excessAdvance.toLocaleString()}</span>
+                    <span>Rs. {(excessAdvance || 0).toLocaleString()}</span>
                   </div>
                 )}
               </div>
@@ -651,7 +819,7 @@ function CollectionsContent() {
                     </td>
                   </tr>
                 ) : (
-                  collections.map((c) => {
+                  paginatedCollections.map((c) => {
                     const formattedDate = formatDateTime(c.collectedAt);
 
                     return (
@@ -663,7 +831,7 @@ function CollectionsContent() {
                         <td className="py-3.5 px-4 font-bold text-slate-800">{c.customerName}</td>
                         <td className="py-3.5 px-4 text-slate-600">{c.paymentMethod}</td>
                         <td className="py-3.5 px-4 text-right font-black text-emerald-700 font-sans">
-                          Rs. {c.amount.toLocaleString()}
+                          Rs. {(c.amount ?? 0).toLocaleString()}
                         </td>
                         <td className="py-3.5 px-4">
                           <div className="flex flex-wrap gap-1">
@@ -672,14 +840,14 @@ function CollectionsContent() {
                                 key={idx}
                                 className="px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-mono font-semibold text-slate-700 border border-slate-200"
                               >
-                                {a.invoiceNumber}: Rs. {a.allocatedAmount.toLocaleString()}
+                                {a.invoiceNumber || 'INV'}: Rs. {(a.allocatedAmount ?? 0).toLocaleString()}
                               </span>
                             ))}
                           </div>
                         </td>
                         <td className="py-3.5 px-4 text-right font-bold text-blue-700 font-sans">
-                          {c.unallocatedAdvance > 0
-                            ? `Rs. ${c.unallocatedAdvance.toLocaleString()}`
+                          {(c.unallocatedAdvance ?? 0) > 0
+                            ? `Rs. ${(c.unallocatedAdvance ?? 0).toLocaleString()}`
                             : '-'}
                         </td>
                         <td className="py-3.5 px-4 text-right">
@@ -699,6 +867,9 @@ function CollectionsContent() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (Only renders when collections > 10) */}
+          {CollectionsPagination}
         </div>
       </div>
 
@@ -763,16 +934,16 @@ function CollectionsContent() {
                 {/* Allocations */}
                 <div className="space-y-1 text-[11px] py-1 border-b border-dashed border-slate-300">
                   <div className="font-bold text-slate-900 pb-0.5">Allocated Invoices:</div>
-                  {completedCollection.allocations.map((a, i) => (
+                  {(completedCollection.allocations || []).map((a, i) => (
                     <div key={i} className="flex justify-between">
-                      <span>{a.invoiceNumber}:</span>
-                      <span>Rs. {a.allocatedAmount.toLocaleString()}</span>
+                      <span>{a.invoiceNumber || 'INV'}:</span>
+                      <span>Rs. {(a.allocatedAmount ?? 0).toLocaleString()}</span>
                     </div>
                   ))}
-                  {completedCollection.unallocatedAdvance > 0 && (
+                  {(completedCollection.unallocatedAdvance ?? 0) > 0 && (
                     <div className="flex justify-between text-blue-700 font-bold">
                       <span>Customer Advance:</span>
-                      <span>Rs. {completedCollection.unallocatedAdvance.toLocaleString()}</span>
+                      <span>Rs. {(completedCollection.unallocatedAdvance ?? 0).toLocaleString()}</span>
                     </div>
                   )}
                 </div>
@@ -780,7 +951,7 @@ function CollectionsContent() {
                 {/* Total */}
                 <div className="pt-2 flex justify-between font-black text-sm text-emerald-800 font-sans">
                   <span>TOTAL RECOVERED:</span>
-                  <span>Rs. {completedCollection.amount.toLocaleString()}</span>
+                  <span>Rs. {(completedCollection.amount ?? 0).toLocaleString()}</span>
                 </div>
               </div>
             </div>

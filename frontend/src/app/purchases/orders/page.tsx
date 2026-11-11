@@ -4,6 +4,7 @@ import React, { useState, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
+import { useClientPagination } from '@/components/common/Pagination';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetPurchaseOrdersQuery,
@@ -101,6 +102,10 @@ function PurchaseOrdersListContent() {
       return true;
     });
   }, [purchaseOrders, statusFilter, supplierFilter, branchFilter, searchQuery]);
+
+  // Client-Side Pagination (Only renders when orders > 10)
+  const { paginatedItems: paginatedOrders, PaginationComponent: OrdersPagination } =
+    useClientPagination(filteredOrders, 10, 'purchase orders');
 
   const handleQuickApprove = async (poId: string) => {
     if (!window.confirm('Are you sure you want to approve this purchase order?')) return;
@@ -248,7 +253,7 @@ function PurchaseOrdersListContent() {
                     </td>
                   </tr>
                 ) : filteredOrders.length > 0 ? (
-                  filteredOrders.map((po) => {
+                  paginatedOrders.map((po) => {
                     const totalOrderedQty = (po.items || []).reduce((sum: number, i: any) => sum + (i.orderedQuantity || 0), 0);
                     const totalReceivedQty = (po.items || []).reduce((sum: number, i: any) => sum + (i.receivedQuantity || 0), 0);
                     const percentReceived =
@@ -384,6 +389,9 @@ function PurchaseOrdersListContent() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (renders when purchase orders > 10) */}
+          {OrdersPagination}
         </div>
       </div>
     </AppLayout>

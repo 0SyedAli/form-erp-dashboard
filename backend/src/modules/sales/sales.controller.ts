@@ -69,5 +69,17 @@ export class SalesController {
       SalesController.handleError(res, error, 'Failed to calculate sales summary.');
     }
   }
+
+  public static async deleteInvoice(req: Request, res: Response): Promise<void> {
+    try {
+      const userContext = SalesController.getUserContext(req);
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const returnStock = req.body?.returnStock !== false; // Default to true if omitted
+      const result = await SalesService.deleteInvoice(id, { returnStock }, userContext);
+      sendSuccess(res, result, result.message, 200);
+    } catch (error) {
+      SalesController.handleError(res, error, 'Failed to delete/void invoice.');
+    }
+  }
 }
 

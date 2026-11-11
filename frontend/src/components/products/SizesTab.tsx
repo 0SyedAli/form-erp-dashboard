@@ -11,6 +11,7 @@ import {
   useGetSkusQuery as useGetBackendSkusQuery,
   useDeleteSizeMutation,
 } from '@/store/services/catalogueApi';
+import { useClientPagination } from '@/components/common/Pagination';
 import SizeModal from './SizeModal';
 import SizeStatusModal from './SizeStatusModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
@@ -89,6 +90,10 @@ export default function SizesTab({ canManage, onToast }: SizesTabProps) {
       return matchesSearch && matchesStatus;
     });
   }, [sizes, searchQuery, statusFilter]);
+
+  // Client-Side Pagination (Only renders when sizes > 10)
+  const { paginatedItems: paginatedSizes, PaginationComponent: SizesPagination } =
+    useClientPagination(filteredSizes, 10, 'sizes');
 
   const handleEdit = (size: MattressSize) => {
     setSelectedSize(size);
@@ -191,7 +196,7 @@ export default function SizesTab({ canManage, onToast }: SizesTabProps) {
                   </td>
                 </tr>
               ) : (
-                filteredSizes.map((size, idx) => {
+                paginatedSizes.map((size, idx) => {
                   const sizeVariants = variants.filter((v) => v.sizeId === size.id);
 
                   return (
@@ -279,12 +284,14 @@ export default function SizesTab({ canManage, onToast }: SizesTabProps) {
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
-          <span>
-            Showing {filteredSizes.length} of {sizes.length} sizes
-          </span>
-        </div>
+        {/* Pagination Controls (renders when sizes > 10) */}
+        {SizesPagination || (
+          <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
+            <span>
+              Showing {filteredSizes.length} of {sizes.length} sizes
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Add / Edit Size Modal */}

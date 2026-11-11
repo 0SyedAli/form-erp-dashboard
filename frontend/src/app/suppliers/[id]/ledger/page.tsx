@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
+import { useClientPagination } from '@/components/common/Pagination';
 import {
   useGetSupplierByIdQuery,
   useGetSupplierLedgerQuery,
@@ -76,6 +77,10 @@ function SupplierLedgerContent() {
   const totalCredits = filteredEntries.reduce((sum: number, e: any) => sum + (e.credit || 0), 0);
   const totalDebits = filteredEntries.reduce((sum: number, e: any) => sum + (e.debit || 0), 0);
   const closingBalance = summary?.currentBalance ?? (ledger.length > 0 ? ledger[ledger.length - 1].balance : 0);
+
+  // Client Pagination (Hidden if <= 10 items)
+  const { paginatedItems: paginatedEntries, PaginationComponent: LedgerPagination } =
+    useClientPagination(filteredEntries, 10, 'ledger entries');
 
   if (isSupLoading) {
     return (
@@ -259,7 +264,7 @@ function SupplierLedgerContent() {
                     </td>
                   </tr>
                 ) : filteredEntries.length > 0 ? (
-                  filteredEntries.map((e: any) => (
+                  paginatedEntries.map((e: any) => (
                     <tr key={e.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-3.5 px-4 whitespace-nowrap text-xs text-slate-600">
                         {formatDate(e.date)}
@@ -296,7 +301,7 @@ function SupplierLedgerContent() {
                       <td className="py-3.5 px-4 text-right text-xs whitespace-nowrap">
                         {e.debit > 0 ? (
                           <span className="font-semibold text-emerald-700">
-                            Rs. {e.debit.toLocaleString()}
+                            Rs. {(e.debit ?? 0).toLocaleString()}
                           </span>
                         ) : (
                           <span className="text-slate-300">—</span>
@@ -306,7 +311,7 @@ function SupplierLedgerContent() {
                       <td className="py-3.5 px-4 text-right text-xs whitespace-nowrap">
                         {e.credit > 0 ? (
                           <span className="font-semibold text-rose-700">
-                            Rs. {e.credit.toLocaleString()}
+                            Rs. {(e.credit ?? 0).toLocaleString()}
                           </span>
                         ) : (
                           <span className="text-slate-300">—</span>
@@ -314,7 +319,7 @@ function SupplierLedgerContent() {
                       </td>
 
                       <td className="py-3.5 px-4 text-right font-bold text-sm whitespace-nowrap text-slate-900">
-                        Rs. {e.balance.toLocaleString()}
+                        Rs. {(e.balance ?? 0).toLocaleString()}
                       </td>
                     </tr>
                   ))
@@ -328,6 +333,9 @@ function SupplierLedgerContent() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (Only renders when ledger entries > 10) */}
+          {LedgerPagination}
         </div>
       </div>
     </AppLayout>

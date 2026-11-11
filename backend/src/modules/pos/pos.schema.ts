@@ -36,6 +36,7 @@ export const checkoutSchema = z.object({
     overrideReason: z.string().optional(),
     notes: z.string().optional(),
     idempotencyKey: z.string().optional(),
+    editingInvoiceId: z.string().optional(),
   }),
 });
 

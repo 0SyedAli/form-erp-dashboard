@@ -1,7 +1,25 @@
 import mongoose from 'mongoose';
-import { SalesInvoice, Branch, Customer, Payment, PaymentCollection } from '../../models/index.js';
-import { SALE_TYPES, PAYMENT_STATUSES } from '../../constants/index.js';
+import {
+  SalesInvoice,
+  Branch,
+  Customer,
+  Payment,
+  PaymentCollection,
+  StockBalance,
+  StockLocation,
+  StockMovement,
+  CustomerLedgerEntry,
+  AuditLog,
+} from '../../models/index.js';
+import {
+  SALE_TYPES,
+  PAYMENT_STATUSES,
+  INVOICE_STATUSES,
+  STOCK_MOVEMENT_TYPES,
+} from '../../constants/index.js';
 import { AppError } from '../../utils/apiResponse.js';
+import { runTransaction } from '../../utils/transaction.js';
+import { generateDailySequence } from '../../utils/sequence.js';
 import { SalesQuery } from './sales.schema.js';
 
 export interface UserContext {
@@ -185,6 +203,176 @@ export class SalesService {
       } : null,
       notes: invoice.notes,
     };
+  }
+
+  /**
+   * 4. DELETE / VOID INVOICE (With Option to Return Stock or Delete Only)
+   */
+  public static async deleteInvoice(
+    id: string,
+    options: { returnStock: boolean },
+    userContext: UserContext
+  ) {
+    return await runTransaction(async (session) => {
+      const invoice = await SalesInvoice.findById(id).session(session);
+      if (!invoice) {
+        throw new AppError('Invoice not found.', 404, 'INVOICE_NOT_FOUND');
+      }
+
+      if (invoice.status === INVOICE_STATUSES.VOID) {
+        throw new AppError('This invoice has already been voided/deleted.', 400, 'INVOICE_ALREADY_VOID');
+      }
+
+      const sellingBranchId = invoice.branchId?.toString();
+      if (userContext.role !== 'SUPER_ADMIN' && sellingBranchId !== userContext.branchId) {
+        throw new AppError('Unauthorized: You cannot delete invoices of another branch.', 403, 'FORBIDDEN_BRANCH');
+      }
+
+      // 1. Stock Return (If requested)
+      if (options.returnStock && invoice.items && invoice.items.length > 0) {
+        const sourceBranchId = invoice.sourceBranchId || invoice.branchId;
+
+        // Find default or sales floor stock location for the source branch
+        let targetLocation = await StockLocation.findOne({
+          branchId: sourceBranchId,
+          type: 'SALES_FLOOR',
+          isActive: true,
+        }).session(session);
+
+        if (!targetLocation) {
+          targetLocation = await StockLocation.findOne({
+            branchId: sourceBranchId,
+            isActive: true,
+          }).session(session);
+        }
+
+        if (targetLocation) {
+          for (const item of invoice.items) {
+            const skuKey = item.sku.toUpperCase();
+            const prevBal = await StockBalance.findOne({
+              branchId: sourceBranchId,
+              stockLocationId: targetLocation._id,
+              sku: skuKey,
+            }).session(session);
+
+            const prevOnHand = prevBal ? prevBal.onHand : 0;
+
+            await StockBalance.findOneAndUpdate(
+              {
+                branchId: sourceBranchId,
+                stockLocationId: targetLocation._id,
+                sku: skuKey,
+              },
+              {
+                $inc: { onHand: item.quantity },
+              },
+              { session, upsert: true, new: true }
+            );
+
+            const movementNumber = await generateDailySequence('MOV-RET', session);
+            await StockMovement.create(
+              [
+                {
+                  movementNumber,
+                  branchId: sourceBranchId,
+                  stockLocationId: targetLocation._id,
+                  sku: skuKey,
+                  movementType: STOCK_MOVEMENT_TYPES.RETURN_RESTOCK,
+                  quantityDifference: item.quantity,
+                  previousBalance: prevOnHand,
+                  newBalance: prevOnHand + item.quantity,
+                  referenceType: 'SALES_INVOICE',
+                  referenceId: invoice.invoiceNumber,
+                  reason: `Stock returned from deleted/voided invoice #${invoice.invoiceNumber}`,
+                  performedBy: userContext.loginId,
+                  timestamp: new Date(),
+                },
+              ],
+              { session }
+            );
+          }
+        }
+      }
+
+      // 2. Reverse Customer Dues if invoice had balanceDue > 0
+      if (invoice.balanceDue > 0 && invoice.customerId) {
+        const customer = await Customer.findById(invoice.customerId).session(session);
+        if (customer) {
+          const duesToReverse = invoice.balanceDue;
+          customer.outstandingBalance = Math.max(0, (customer.outstandingBalance || 0) - duesToReverse);
+          await customer.save({ session: session || undefined });
+
+          // Decrement branch specific customer balance
+          await Customer.updateOne(
+            { _id: customer._id, 'branchBalances.branchId': invoice.branchId },
+            { $inc: { 'branchBalances.$.outstanding': -duesToReverse } },
+            { session: session || undefined }
+          );
+
+          await CustomerLedgerEntry.create(
+            [
+              {
+                customerId: customer._id,
+                branchId: invoice.branchId,
+                entryType: 'REFUND',
+                referenceInvoiceId: invoice.invoiceNumber,
+                debit: 0,
+                credit: duesToReverse,
+                runningBalance: customer.outstandingBalance,
+                narration: `Reversal of dues for deleted invoice #${invoice.invoiceNumber}${
+                  options.returnStock ? ' (Stock Returned)' : ' (Invoice Cancelled)'
+                }`,
+                performedBy: userContext.loginId,
+                timestamp: new Date(),
+              },
+            ],
+            { session }
+          );
+        }
+      }
+
+      // 3. Audit Log
+      await AuditLog.create(
+        [
+          {
+            accountId: userContext.accountId ? new mongoose.Types.ObjectId(userContext.accountId) : undefined,
+            action: options.returnStock ? 'INVOICE_VOID_RETURN_STOCK' : 'INVOICE_VOID_ONLY',
+            entity: 'SalesInvoice',
+            entityId: invoice.invoiceNumber,
+            details: {
+              invoiceId: invoice._id.toString(),
+              invoiceNumber: invoice.invoiceNumber,
+              returnStock: options.returnStock,
+              itemsCount: invoice.items?.length || 0,
+              totalAmount: invoice.total,
+              balanceDue: invoice.balanceDue,
+              reason: options.returnStock
+                ? 'Returned stock and deleted invoice'
+                : 'Deleted invoice without stock return',
+            },
+          },
+        ],
+        { session }
+      );
+
+      // 4. Update Invoice Status to VOID
+      invoice.status = INVOICE_STATUSES.VOID;
+      invoice.balanceDue = 0;
+      invoice.notes = `${invoice.notes || ''} [DELETED/VOIDED by ${userContext.loginId} on ${new Date().toISOString()} - ${
+        options.returnStock ? 'Stock Restored to Inventory' : 'Stock Not Returned'
+      }]`.trim();
+      await invoice.save({ session: session || undefined });
+
+      return {
+        success: true,
+        invoiceNumber: invoice.invoiceNumber,
+        status: invoice.status,
+        stockReturned: options.returnStock,
+        message: options.returnStock
+          ? `Invoice #${invoice.invoiceNumber} deleted and items returned to stock successfully.`
+          : `Invoice #${invoice.invoiceNumber} deleted successfully (stock not affected).`,
+      };
+    });
   }
 
   /**

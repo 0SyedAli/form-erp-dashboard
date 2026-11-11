@@ -13,6 +13,7 @@ import {
   useGetProductsQuery as useGetBackendProductsQuery,
   useDeleteCategoryMutation,
 } from '@/store/services/catalogueApi';
+import { useClientPagination } from '@/components/common/Pagination';
 import CategoryModal from './CategoryModal';
 import CategoryStatusModal from './CategoryStatusModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
@@ -113,6 +114,10 @@ export default function CategoriesTab({ canManage, onToast }: CategoriesTabProps
       return matchesSearch && matchesBrand && matchesStatus;
     });
   }, [categories, searchQuery, brandFilter, statusFilter]);
+
+  // Client-Side Pagination (Only renders when categories > 10)
+  const { paginatedItems: paginatedCategories, PaginationComponent: CategoriesPagination } =
+    useClientPagination(filteredCategories, 10, 'categories');
 
   const handleEdit = (cat: Category) => {
     setSelectedCategory(cat);
@@ -229,7 +234,7 @@ export default function CategoriesTab({ canManage, onToast }: CategoriesTabProps
                   </td>
                 </tr>
               ) : (
-                filteredCategories.map((cat, idx) => {
+                paginatedCategories.map((cat, idx) => {
                   const parentBrand = brandMap.get(cat.brandId);
                   const catProducts = products.filter((p) => p.categoryId === cat.id);
 
@@ -318,12 +323,14 @@ export default function CategoriesTab({ canManage, onToast }: CategoriesTabProps
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
-          <span>
-            Showing {filteredCategories.length} of {categories.length} categories
-          </span>
-        </div>
+        {/* Pagination Controls (renders when categories > 10) */}
+        {CategoriesPagination || (
+          <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
+            <span>
+              Showing {filteredCategories.length} of {categories.length} categories
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Add / Edit Category Modal */}

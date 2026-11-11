@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
+import { useClientPagination } from '@/components/common/Pagination';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetStockCountsQuery,
@@ -57,6 +58,10 @@ export default function StockCountsPage() {
   const { data: counts = [], isLoading: isCountsLoading } = useGetStockCountsQuery({
     branchId: selectedBranchId,
   });
+
+  // Client Pagination (Hidden if <= 10 items)
+  const { paginatedItems: paginatedCounts, PaginationComponent: CountsPagination } =
+    useClientPagination(counts, 10, 'count sessions');
 
   const { data: locationBalances = [] } = useGetInventoryBalancesQuery({
     stockLocationId: newCountLocationId,
@@ -409,7 +414,7 @@ export default function StockCountsPage() {
                     </td>
                   </tr>
                 ) : (
-                  counts.map((cnt) => {
+                  paginatedCounts.map((cnt) => {
                     const loc = stockLocations.find((l) => l.id === cnt.stockLocationId);
                     return (
                       <tr key={cnt.id} className="hover:bg-gray-50/50">
@@ -480,6 +485,9 @@ export default function StockCountsPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (Only renders when count sessions > 10) */}
+          {CountsPagination}
         </div>
       </div>
 

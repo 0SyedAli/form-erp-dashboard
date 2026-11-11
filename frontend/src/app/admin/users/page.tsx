@@ -16,6 +16,7 @@ import UserStatusModal from '@/components/users/UserStatusModal';
 import RoleManagementModal from '@/components/users/RoleManagementModal';
 import PermissionsMatrix from '@/components/users/PermissionsMatrix';
 import Toast, { ToastMessage } from '@/components/common/Toast';
+import { useClientPagination } from '@/components/common/Pagination';
 import { formatDate } from '@/utils/formatters';
 import {
   Plus,
@@ -94,6 +95,10 @@ export default function UsersManagementPage() {
     }
     return users[0];
   }, [users, selectedUserId]);
+
+  // Client-Side Pagination (Only renders when users > 10)
+  const { paginatedItems: paginatedUsers, PaginationComponent: UsersPagination } =
+    useClientPagination(users, 10, 'employees');
 
   // Local state for bottom permission editor overrides (per user ID)
   const [permissionOverrides, setPermissionOverrides] = useState<Record<string, string[]>>({});
@@ -363,7 +368,7 @@ export default function UsersManagementPage() {
                   </td>
                 </tr>
               ) : (
-                users.map((u, idx) => {
+                paginatedUsers.map((u, idx) => {
                   const roleBadge = getRoleBadge(u.role);
                   const isSelected = selectedUser?.id === u.id;
                   const isActive = u.isActive ?? true;
@@ -467,6 +472,9 @@ export default function UsersManagementPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls (Only renders when users > 10) */}
+        {UsersPagination}
       </div>
 
       {/* Bottom Section: User Information & Role / Permissions Inspector */}

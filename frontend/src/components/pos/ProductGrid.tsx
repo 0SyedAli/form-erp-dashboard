@@ -284,7 +284,7 @@ export default function ProductGrid({
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {products.map((product, idx) => {
               const { startingPrice, inStock, totalAvailable } = getProductMetrics(product.id);
               const isSelected = selectedProductId === product.id;
@@ -294,13 +294,13 @@ export default function ProductGrid({
                   key={product.id}
                   onClick={() => onSelectProduct(product)}
                   className={`group bg-white rounded-2xl border-2 p-3.5 flex flex-col justify-between transition-all duration-150 cursor-pointer ${isSelected
-                      ? 'border-[#1a73e8] shadow-sm ring-2 ring-blue-500/20'
-                      : 'border-slate-200 hover:border-slate-300 hover:shadow-md'
+                    ? 'border-[#1a73e8] shadow-sm ring-2 ring-blue-500/20'
+                    : 'border-slate-200 hover:border-slate-300 hover:shadow-md'
                     }`}
                 >
                   {/* Mattress Visual Container */}
                   <div className="w-full h-26 bg-slate-50/70 rounded-xl overflow-hidden relative mb-3 flex items-center justify-center border border-slate-100">
-                    {product.imageUrl ? (
+                    {/* {product.imageUrl ? (
                       <Image
                         src={product.imageUrl}
                         alt={product.name}
@@ -311,7 +311,14 @@ export default function ProductGrid({
                       />
                     ) : (
                       <RealisticMattressImage name={product.name} index={idx} />
-                    )}
+                    )} */}
+                    <Image
+                      src="/assets/mattress/1.png"
+                      alt="mattress"
+                      width={200}
+                      height={200}
+                      className="object-cover"
+                    />
 
                     {/* In Stock Badge */}
                     <div className="absolute top-2 right-2">
@@ -330,9 +337,9 @@ export default function ProductGrid({
                   {/* Info */}
                   <div className="flex-1 flex flex-col justify-between">
                     <div>
-                      <h3 className="font-bold text-sm text-slate-900 leading-snug line-clamp-1 font-sans">
+                      {/* <h3 className="font-bold text-sm text-slate-900 leading-snug line-clamp-1 font-sans">
                         {product.name}
-                      </h3>
+                      </h3> */}
                       <p className="text-xs text-slate-500 mt-0.5 line-clamp-1 font-sans">
                         {product.description || 'Standard Foam'}
                       </p>
@@ -340,7 +347,7 @@ export default function ProductGrid({
 
                     <div className="pt-3">
                       {/* Price Display matching reference mockup */}
-                      <div className="flex items-baseline gap-1 mb-2.5">
+                      <div className="flex items-baseline gap-1">
                         {startingPrice > 0 ? (
                           <div className="flex items-baseline gap-1 font-sans">
                             <span className="text-xs font-bold text-slate-900">Rs.</span>
@@ -356,7 +363,7 @@ export default function ProductGrid({
                       </div>
 
                       {/* Select Action Button matching reference mockup */}
-                      <button
+                      {/* <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -371,7 +378,7 @@ export default function ProductGrid({
                           }`}
                       >
                         {inStock ? 'Select' : 'Unavailable'}
-                      </button>
+                      </button> */}
                     </div>
                   </div>
                 </div>

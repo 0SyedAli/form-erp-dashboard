@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ShoppingCart } from 'lucide-react';
 import { useAppSelector, useAppDispatch } from '@/store';
 import {
@@ -29,6 +29,7 @@ import {
   useHoldSaleMutation as useHoldSaleBackendMutation,
   useDeleteHeldSaleMutation as useDeleteHeldSaleBackendMutation,
   useCompleteCheckoutMutation as useCompleteBackendCheckoutMutation,
+  useGetInvoiceByIdQuery as useGetBackendInvoiceByIdQuery,
 } from '@/store/services/posApi';
 import {
   catalogueApi,
@@ -95,6 +96,10 @@ function computeDefaultDueDate(days: number = 30): string {
 
 function POSContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editInvoiceId = searchParams?.get('editInvoiceId');
+  const [editingInvoice, setEditingInvoice] = useState<{ id: string; invoiceNumber: string } | null>(null);
+
   const dispatch = useAppDispatch();
   const currentUser = useAppSelector((state) => state.auth.currentUser);
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
@@ -124,7 +129,7 @@ function POSContent() {
   const { data: demoProducts = [], refetch: refetchDemoProducts } = useGetCatalogueProductsQuery(undefined, { skip: isBackendMode });
   const { data: demoVariants = [], refetch: refetchDemoVariants } = useGetProductVariantsQuery(undefined, { skip: isBackendMode });
   const { data: demoInventoryBalances = [], refetch: refetchDemoInventory } = useGetInventoryBalancesQuery(undefined, { skip: isBackendMode });
-  const { data: posSettings } = useGetPOSSettingsQuery();
+  const { data: posSettings } = useGetPOSSettingsQuery(undefined, { skip: isBackendMode });
   const { data: demoHeldSales = [] } = useGetHeldSalesQuery(undefined, { skip: isBackendMode });
 
   // Backend Queries
@@ -208,6 +213,11 @@ function POSContent() {
   const [deleteHeldSaleBackendMutation] = useDeleteHeldSaleBackendMutation();
   const [completeCheckoutBackendMutation, { isLoading: isBackendCheckingOut }] =
     useCompleteBackendCheckoutMutation();
+
+  const { data: backendEditingInvoice } = useGetBackendInvoiceByIdQuery(
+    editInvoiceId || '',
+    { skip: !isBackendMode || !editInvoiceId }
+  );
 
   const isCheckingOut = isBackendMode ? isBackendCheckingOut : isDemoCheckingOut;
 
@@ -650,6 +660,74 @@ function POSContent() {
     return demoStorage.getItem<POSCartItem[]>(STORAGE_KEYS.POS_CART, []);
   });
 
+  // Pre-load existing invoice items and configuration when editing an invoice
+  useEffect(() => {
+    if (backendEditingInvoice && editInvoiceId) {
+      setEditingInvoice({
+        id: String(backendEditingInvoice.id || (backendEditingInvoice as any)._id),
+        invoiceNumber: backendEditingInvoice.invoiceNumber,
+      });
+
+      if (backendEditingInvoice.items && backendEditingInvoice.items.length > 0) {
+        const loadedItems: POSCartItem[] = backendEditingInvoice.items.map((it: any) => ({
+          variantId: String(it.variantId || it.sku),
+          productId: String(it.productId || it.variantId || it.sku),
+          productName: it.productName,
+          sku: it.sku,
+          brandName: it.brandName || 'Molty',
+          categoryName: it.categoryName || 'Foam',
+          quantity: it.quantity || 1,
+          unitPrice: it.unitPrice || 0,
+          discount: it.discount || 0,
+          lineTotal: it.lineTotal || (it.unitPrice || 0) * (it.quantity || 1),
+          sizeLabel: it.sizeLabel || '',
+          thicknessLabel: it.thicknessLabel || '',
+          availableStock: 999,
+          retailPrice: it.unitPrice,
+          wholesalePrice: it.unitPrice,
+          distributorPrice: it.unitPrice,
+        }));
+        setCartItems(loadedItems);
+      }
+
+      if (backendEditingInvoice.saleType) {
+        setSaleType(backendEditingInvoice.saleType as any);
+      }
+
+      const invDiscount = (backendEditingInvoice as any).discount ?? (backendEditingInvoice as any).discountAmount ?? 0;
+      if (invDiscount > 0) {
+        setDiscountAmount(invDiscount);
+      }
+
+      if (backendEditingInvoice.customerId) {
+        const custObj: any = typeof backendEditingInvoice.customerId === 'object'
+          ? backendEditingInvoice.customerId
+          : null;
+        if (custObj) {
+          setSelectedCustomer({
+            id: String(custObj._id || custObj.id || backendEditingInvoice.customerId),
+            name: custObj.name || backendEditingInvoice.customerName,
+            phone: custObj.phone || backendEditingInvoice.customerPhone,
+            customerType: custObj.customerType || backendEditingInvoice.customerType,
+            outstandingBalance: custObj.outstandingBalance || 0,
+            creditLimit: custObj.creditLimit || 0,
+            creditEnabled: custObj.creditEnabled || true,
+          } as any);
+        } else if (backendEditingInvoice.customerName) {
+          setSelectedCustomer({
+            id: String(backendEditingInvoice.customerId),
+            name: backendEditingInvoice.customerName,
+            phone: backendEditingInvoice.customerPhone || '',
+            customerType: backendEditingInvoice.customerType || 'WALK_IN',
+            outstandingBalance: 0,
+            creditLimit: 50000,
+            creditEnabled: true,
+          } as any);
+        }
+      }
+    }
+  }, [backendEditingInvoice, editInvoiceId]);
+
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [enteredAmountReceived, setEnteredAmountReceived] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
@@ -1059,6 +1137,7 @@ function POSContent() {
             unitPrice: item.unitPrice,
           })),
           notes: `${saleType} Sale - ${submitData.paymentArrangement} Arrangement${isCrossBranch ? ` - Stock from ${sourceBranchObj?.name}` : ''}`,
+          editingInvoiceId: editingInvoice?.id || undefined,
         }).unwrap();
 
         const inv: any = result.invoice;
@@ -1105,6 +1184,10 @@ function POSContent() {
         setCompletedInvoice(normalizedInvoice);
         setIsReceiptModalOpen(true);
         handleClearCart();
+        setEditingInvoice(null);
+        if (editInvoiceId) {
+          router.replace('/pos');
+        }
 
         // Immediate local stock decrement
         const soldMap: Record<string, number> = {};
@@ -1515,6 +1598,29 @@ function POSContent() {
         onSyncClick={triggerSync}
       />
 
+      {/* Editing Invoice Mode Banner */}
+      {editingInvoice && (
+        <div className="mx-3.5 mt-2 px-3.5 py-2 bg-amber-600 text-white rounded-xl text-xs flex items-center justify-between shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+            <span>
+              <strong>Editing Invoice #{editingInvoice.invoiceNumber}:</strong> Making changes and completing checkout will update this invoice, restore previous stock, and re-calculate dues.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              handleClearCart();
+              setEditingInvoice(null);
+              router.replace('/pos');
+            }}
+            className="px-2.5 py-1 bg-white/20 hover:bg-white/30 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer"
+          >
+            Cancel Edit & Start Fresh
+          </button>
+        </div>
+      )}
+
       {/* Cross-Branch Stock Alert Banner */}
       {effectiveStockBranchId && effectiveStockBranchId !== activeBranch?.id && (
         <div className="mx-3.5 mt-2 px-3 py-1.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-center justify-between shadow-2xs animate-in fade-in">
@@ -1688,6 +1794,7 @@ function POSContent() {
         onClose={() => setIsCustomerModalOpen(false)}
         selectedCustomerId={selectedCustomer?.id}
         onSelectCustomer={handleSelectCustomer}
+        branchId={activeBranch?.id}
         recommendedType={
           saleType === 'WHOLESALE'
             ? 'WHOLESALE'

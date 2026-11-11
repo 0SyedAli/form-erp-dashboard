@@ -240,6 +240,7 @@ SalesInvoiceSchema.virtual('date').get(function () {
 });
 
 SalesInvoiceSchema.index({ branchId: 1, createdAt: -1 });
+SalesInvoiceSchema.index({ customerId: 1, branchId: 1, balanceDue: 1 });
 
 export const SalesInvoice = mongoose.model<ISalesInvoice>('SalesInvoice', SalesInvoiceSchema);
 

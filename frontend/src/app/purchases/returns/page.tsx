@@ -3,6 +3,7 @@
 import React, { useState, useMemo, Suspense } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
+import { useClientPagination } from '@/components/common/Pagination';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetPurchaseReturnsQuery,
@@ -138,6 +139,10 @@ function PurchaseReturnsContent() {
       return true;
     });
   }, [returns, supplierFilter, searchQuery]);
+
+  // Client Pagination (Hidden if <= 10 items)
+  const { paginatedItems: paginatedReturns, PaginationComponent: ReturnsPagination } =
+    useClientPagination(filteredReturns, 10, 'purchase returns');
 
   const handleSubmitReturn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -306,7 +311,7 @@ function PurchaseReturnsContent() {
                     </td>
                   </tr>
                 ) : filteredReturns.length > 0 ? (
-                  filteredReturns.map((r) => (
+                  paginatedReturns.map((r) => (
                     <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-3.5 px-4 font-bold text-brand-burgundy">
                         <button
@@ -339,7 +344,7 @@ function PurchaseReturnsContent() {
                       </td>
 
                       <td className="py-3.5 px-4 text-right font-bold text-emerald-700 whitespace-nowrap">
-                        -Rs. {r.totalAmount.toLocaleString()}
+                        -Rs. {(r.totalAmount ?? 0).toLocaleString()}
                       </td>
 
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
@@ -363,6 +368,9 @@ function PurchaseReturnsContent() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (Only renders when returns > 10) */}
+          {ReturnsPagination}
         </div>
       </div>
 

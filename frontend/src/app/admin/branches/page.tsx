@@ -17,6 +17,7 @@ import AddBranchModal from '@/components/branches/AddBranchModal';
 import EditBranchModal from '@/components/branches/EditBranchModal';
 import BranchStatusModal from '@/components/branches/BranchStatusModal';
 import Toast, { ToastMessage } from '@/components/common/Toast';
+import { useClientPagination } from '@/components/common/Pagination';
 import {
   Plus,
   Edit2,
@@ -69,6 +70,10 @@ export default function BranchesManagementPage() {
     }
     return branches[0];
   }, [branches, selectedBranchId]);
+
+  // Client-Side Pagination (Only renders when branches > 10)
+  const { paginatedItems: paginatedBranches, PaginationComponent: BranchesPagination } =
+    useClientPagination(branches, 10, 'branches');
 
   // Branch Settings pending user overrides (per branch ID)
   const [pendingSettings, setPendingSettings] = useState<Record<string, Partial<BranchSettings>>>({});
@@ -357,7 +362,7 @@ export default function BranchesManagementPage() {
                   </td>
                 </tr>
               ) : (
-                branches.map((b, idx) => {
+                paginatedBranches.map((b, idx) => {
                   const isSelected = selectedBranch?.id === b.id;
 
                   return (
@@ -450,6 +455,9 @@ export default function BranchesManagementPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls (Only renders when branches > 10) */}
+        {BranchesPagination}
       </div>
 
       {/* Bottom Section: Branch Information & Settings */}

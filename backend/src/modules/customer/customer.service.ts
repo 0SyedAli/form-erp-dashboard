@@ -30,6 +30,13 @@ export class CustomerService {
       filter.status = query.status;
     }
 
+    // Branch Isolation: Branch users strictly see only their own branch customers
+    if (_userContext.role !== 'SUPER_ADMIN' && _userContext.branchId) {
+      filter.branchId = new mongoose.Types.ObjectId(_userContext.branchId);
+    } else if (query.branchId && query.branchId !== 'ALL') {
+      filter.branchId = new mongoose.Types.ObjectId(query.branchId);
+    }
+
     if (query.search && query.search.trim()) {
       const q = query.search.trim();
       filter.$or = [
@@ -42,18 +49,59 @@ export class CustomerService {
     const [total, customers] = await Promise.all([
       Customer.countDocuments(filter),
       Customer.find(filter)
+        .populate('branchId', 'name code shopNumber')
         .sort({ name: 1 })
         .skip(skip)
         .limit(limit)
         .lean(),
     ]);
 
-    const formattedCustomers = customers.map((c: any) => ({
-      ...c,
-      id: c._id.toString(),
-      currentOutstanding: c.outstandingBalance || 0,
-      availableCredit: Math.max(0, (c.creditLimit || 0) - (c.outstandingBalance || 0)),
-    }));
+    // Branch Isolation: Calculate branch-specific dues for branch users
+    const branchDuesMap = new Map<string, number>();
+    const isBranchUser = _userContext.role !== 'SUPER_ADMIN' && !!_userContext.branchId;
+
+    if (isBranchUser && customers.length > 0) {
+      const customerIds = customers.map((c) => c._id);
+      const branchDues = await SalesInvoice.aggregate([
+        {
+          $match: {
+            customerId: { $in: customerIds },
+            branchId: new mongoose.Types.ObjectId(_userContext.branchId),
+            balanceDue: { $gt: 0 },
+          },
+        },
+        {
+          $group: {
+            _id: '$customerId',
+            totalDue: { $sum: '$balanceDue' },
+          },
+        },
+      ]);
+      branchDues.forEach((d) => {
+        branchDuesMap.set(d._id.toString(), d.totalDue);
+      });
+    }
+
+    const formattedCustomers = customers.map((c: any) => {
+      const outstanding = isBranchUser
+        ? (branchDuesMap.get(c._id.toString()) || 0)
+        : (c.outstandingBalance || 0);
+
+      const branchObj = typeof c.branchId === 'object' && c.branchId ? c.branchId : null;
+      const bId = branchObj ? branchObj._id?.toString() || branchObj.id : (c.branchId ? c.branchId.toString() : '');
+      const bName = branchObj ? branchObj.name : 'Unassigned';
+      const bCode = branchObj ? branchObj.code || branchObj.shopNumber : '';
+
+      return {
+        ...c,
+        id: c._id.toString(),
+        branchId: bId,
+        branchName: bName,
+        branchCode: bCode,
+        currentOutstanding: outstanding,
+        availableCredit: Math.max(0, (c.creditLimit || 0) - outstanding),
+      };
+    });
 
     return {
       customers: formattedCustomers,
@@ -69,13 +117,28 @@ export class CustomerService {
   /**
    * 2. GET CUSTOMER BY ID
    */
-  public static async getCustomerById(id: string, _userContext: UserContext) {
-    const customer: any = await Customer.findById(id).lean();
+  public static async getCustomerById(id: string, userContext: UserContext) {
+    const customer: any = await Customer.findById(id).populate('branchId', 'name code shopNumber').lean();
     if (!customer) throw new AppError('Customer not found.', 404, 'CUSTOMER_NOT_FOUND');
+
+    if (userContext.role !== 'SUPER_ADMIN' && userContext.branchId) {
+      const custBranchStr = customer.branchId?._id?.toString() || customer.branchId?.toString();
+      if (custBranchStr && custBranchStr !== userContext.branchId) {
+        throw new AppError('Access denied. Customer belongs to another branch.', 403, 'FORBIDDEN_BRANCH_ACCESS');
+      }
+    }
+
+    const branchObj = typeof customer.branchId === 'object' && customer.branchId ? customer.branchId : null;
+    const bId = branchObj ? branchObj._id?.toString() || branchObj.id : (customer.branchId ? customer.branchId.toString() : '');
+    const bName = branchObj ? branchObj.name : 'Unassigned';
+    const bCode = branchObj ? branchObj.code || branchObj.shopNumber : '';
 
     return {
       ...customer,
       id: customer._id.toString(),
+      branchId: bId,
+      branchName: bName,
+      branchCode: bCode,
       currentOutstanding: customer.outstandingBalance || 0,
       availableCredit: Math.max(0, (customer.creditLimit || 0) - (customer.outstandingBalance || 0)),
     };
@@ -106,9 +169,15 @@ export class CustomerService {
       }
     }
 
+    const effectiveBranchId =
+      userContext.role !== 'SUPER_ADMIN'
+        ? userContext.branchId
+        : input.branchId || undefined;
+
     const customer = await Customer.create({
       name: input.name.trim(),
       phone: input.phone.trim(),
+      branchId: effectiveBranchId ? new mongoose.Types.ObjectId(effectiveBranchId) : undefined,
       customerType: input.customerType,
       businessName: input.businessName?.trim(),
       email: input.email?.trim() || undefined,
@@ -174,6 +243,9 @@ export class CustomerService {
     if (input.defaultDueDays !== undefined) customer.defaultDueDays = input.defaultDueDays;
     if (input.status) customer.status = input.status;
     if (input.notes !== undefined) customer.notes = input.notes;
+    if (input.branchId !== undefined && userContext.role === 'SUPER_ADMIN') {
+      customer.branchId = input.branchId ? new mongoose.Types.ObjectId(input.branchId) : undefined;
+    }
 
     await customer.save();
     return customer;
@@ -181,68 +253,173 @@ export class CustomerService {
 
   /**
    * 5. GET CUSTOMER FINANCIAL LEDGER
-   * Deterministic running balance journal statement
+   * Deterministic running balance journal statement with strict branch-isolation
    */
-  public static async getCustomerLedger(customerId: string, _userContext: UserContext) {
+  public static async getCustomerLedger(
+    customerId: string,
+    userContext: UserContext,
+    branchFilter?: string
+  ): Promise<any> {
     const customer = await Customer.findById(customerId).lean();
     if (!customer) throw new AppError('Customer not found.', 404, 'CUSTOMER_NOT_FOUND');
 
-    const entries = await CustomerLedgerEntry.find({
+    let effectiveBranchId: string | undefined = undefined;
+    if (userContext.role !== 'SUPER_ADMIN') {
+      const branchStr = userContext.branchId || branchFilter;
+      if (!branchStr) {
+        throw new AppError('Branch assignment required to view customer ledger.', 403, 'NO_BRANCH_ASSIGNED');
+      }
+      effectiveBranchId = branchStr;
+    } else if (branchFilter && branchFilter !== 'ALL') {
+      effectiveBranchId = branchFilter;
+    }
+
+    const query: Record<string, unknown> = {
       customerId: new mongoose.Types.ObjectId(customerId),
-    })
+    };
+
+    if (effectiveBranchId) {
+      query.branchId = new mongoose.Types.ObjectId(effectiveBranchId);
+    }
+
+    // Retrieve entries in ascending order to compute running balance accurately for this branch scope
+    const rawEntries = await CustomerLedgerEntry.find(query)
       .populate('branchId', 'name code shopNumber')
       .sort({ timestamp: 1, _id: 1 })
       .lean();
 
+    let running = 0;
+    const computedEntries = rawEntries.map((e: any) => {
+      const debit = Number(e.debit || 0);
+      const credit = Number(e.credit || 0);
+      running = running + debit - credit;
+      return {
+        ...e,
+        id: e._id.toString(),
+        date: e.timestamp || e.createdAt,
+        type: e.entryType,
+        referenceNumber: e.referenceInvoiceId || e.referencePaymentId || '-',
+        description: e.narration || 'Transaction',
+        branchName: e.branchId?.name || e.branchId?.code || 'Main Branch',
+        branchCode: e.branchId?.code || '',
+        branchId: e.branchId?._id?.toString() || e.branchId?.toString(),
+        performedBy: e.performedBy || 'System',
+        debit,
+        credit,
+        runningBalance: running,
+      };
+    });
+
+    const totalDebit = computedEntries.reduce((sum, e) => sum + e.debit, 0);
+    const totalCredit = computedEntries.reduce((sum, e) => sum + e.credit, 0);
+    const branchBalance = totalDebit - totalCredit;
+
+    // Display newest entries first for UI table
+    const reversedEntries = [...computedEntries].reverse();
+
     return {
       customer: {
+        ...customer,
         id: customer._id.toString(),
-        name: customer.name,
-        phone: customer.phone,
-        businessName: customer.businessName,
-        customerType: customer.customerType,
-        creditLimit: customer.creditLimit,
-        creditTerms: customer.creditTerms,
-        outstandingBalance: customer.outstandingBalance,
+        code: (customer as any).customerCode || `CUST-${customer.phone?.slice(-4)}`,
+        currentOutstanding: effectiveBranchId ? branchBalance : (customer.outstandingBalance || 0),
+        availableCredit: Math.max(
+          0,
+          (customer.creditLimit || 0) - (effectiveBranchId ? branchBalance : (customer.outstandingBalance || 0))
+        ),
+        scopeBranchId: effectiveBranchId || null,
       },
-      entries,
+      summary: {
+        totalDebit,
+        totalCredit,
+        currentBalance: effectiveBranchId ? branchBalance : (customer.outstandingBalance || 0),
+        transactionCount: computedEntries.length,
+      },
+      entries: reversedEntries,
     };
   }
 
   /**
    * 6. GET CUSTOMER OUTSTANDING INVOICES (FOR RECOVERY / COLLECTIONS)
+   * Strictly filtered by branch so a branch only recovers its own receivables
    */
-  public static async getCustomerOutstanding(customerId: string, _userContext: UserContext) {
+  public static async getCustomerOutstanding(
+    customerId: string,
+    userContext: UserContext,
+    branchFilter?: string
+  ) {
     const customer = await Customer.findById(customerId).lean();
     if (!customer) throw new AppError('Customer not found.', 404, 'CUSTOMER_NOT_FOUND');
 
-    const invoices = await SalesInvoice.find({
+    let effectiveBranchId: string | undefined = undefined;
+    if (userContext.role !== 'SUPER_ADMIN') {
+      const branchStr = userContext.branchId || branchFilter;
+      if (branchStr) {
+        effectiveBranchId = branchStr;
+      }
+    } else if (branchFilter && branchFilter !== 'ALL') {
+      effectiveBranchId = branchFilter;
+    }
+
+    const invoiceFilter: Record<string, unknown> = {
       customerId: new mongoose.Types.ObjectId(customerId),
       balanceDue: { $gt: 0 },
-    })
+    };
+
+    if (effectiveBranchId) {
+      invoiceFilter.branchId = new mongoose.Types.ObjectId(effectiveBranchId);
+    }
+
+    const invoices = await SalesInvoice.find(invoiceFilter)
       .populate('branchId', 'name code shopNumber')
       .sort({ createdAt: 1 }) // Oldest invoice first for standard aging allocation
       .lean();
+
+    const branchOutstanding = invoices.reduce((sum, inv) => sum + (inv.balanceDue || 0), 0);
 
     return {
       customer: {
         id: customer._id.toString(),
         name: customer.name,
         phone: customer.phone,
-        outstandingBalance: customer.outstandingBalance,
+        outstandingBalance: effectiveBranchId ? branchOutstanding : (customer.outstandingBalance || 0),
         creditLimit: customer.creditLimit,
       },
-      invoices,
+      invoices: invoices.map((inv: any) => ({
+        id: inv._id.toString(),
+        invoiceNumber: inv.invoiceNumber,
+        invoiceDate: inv.invoiceDate || inv.createdAt,
+        totalAmount: inv.totalAmount,
+        paidAmount: inv.paidAmount,
+        balanceDue: inv.balanceDue,
+        branchId: inv.branchId?._id?.toString() || inv.branchId?.toString(),
+        branchName: inv.branchId?.name || inv.branchId?.code || 'Branch',
+      })),
+      totalOutstanding: effectiveBranchId ? branchOutstanding : (customer.outstandingBalance || 0),
     };
   }
 
   /**
    * 7. GET ALL CUSTOMER PURCHASE INVOICES
    */
-  public static async getCustomerInvoices(customerId: string, _userContext: UserContext) {
-    return await SalesInvoice.find({
+  public static async getCustomerInvoices(
+    customerId: string,
+    userContext: UserContext,
+    branchFilter?: string
+  ) {
+    const filter: Record<string, unknown> = {
       customerId: new mongoose.Types.ObjectId(customerId),
-    })
+    };
+
+    if (userContext.role !== 'SUPER_ADMIN') {
+      if (userContext.branchId) {
+        filter.branchId = new mongoose.Types.ObjectId(userContext.branchId);
+      }
+    } else if (branchFilter && branchFilter !== 'ALL') {
+      filter.branchId = new mongoose.Types.ObjectId(branchFilter);
+    }
+
+    return await SalesInvoice.find(filter)
       .populate('branchId', 'name code shopNumber')
       .sort({ createdAt: -1 })
       .lean();

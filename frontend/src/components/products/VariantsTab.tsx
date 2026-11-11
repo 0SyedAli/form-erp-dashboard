@@ -18,6 +18,7 @@ import {
   useGetThicknessQuery,
 } from '@/store/services/apiSlice';
 import EditPriceModal from './EditPriceModal';
+import { useClientPagination } from '@/components/common/Pagination';
 import BulkPriceModal from './BulkPriceModal';
 import PriceHistoryModal from './PriceHistoryModal';
 import VariantStatusModal from './VariantStatusModal';
@@ -124,6 +125,10 @@ export default function VariantsTab({
     sizeMap,
     thicknessMap,
   ]);
+
+  // Client-Side Pagination (Only renders when variants > 10)
+  const { paginatedItems: paginatedVariants, PaginationComponent: VariantsPagination } =
+    useClientPagination(filteredVariants, 10, 'variants');
 
   const handleOpenHistory = (sku?: string) => {
     setHistoryTargetSku(sku);
@@ -304,7 +309,7 @@ export default function VariantsTab({
                   </td>
                 </tr>
               ) : (
-                filteredVariants.map((v, idx) => {
+                paginatedVariants.map((v, idx) => {
                   const prod = productMap.get(v.productId);
                   const brand = prod ? brandMap.get(prod.brandId) : null;
                   const cat = prod ? categoryMap.get(prod.categoryId) : null;
@@ -397,12 +402,14 @@ export default function VariantsTab({
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
-          <span>
-            Showing {filteredVariants.length} of {variants.length} saleable SKU variants
-          </span>
-        </div>
+        {/* Pagination Controls (renders when variants > 10) */}
+        {VariantsPagination || (
+          <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
+            <span>
+              Showing {filteredVariants.length} of {variants.length} saleable SKU variants
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Edit Single Variant Price Modal */}

@@ -4,6 +4,7 @@ import React, { useState, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
+import { useClientPagination } from '@/components/common/Pagination';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetSuppliersQuery,
@@ -257,6 +258,10 @@ function SuppliersDirectoryContent() {
 
   const totalOutstandingAP = suppliers.reduce((sum, s) => sum + s.currentOutstanding, 0);
 
+  // Client Pagination (Hidden if <= 10 items)
+  const { paginatedItems: paginatedSuppliers, PaginationComponent: SuppliersPagination } =
+    useClientPagination(filteredSuppliers, 10, 'suppliers');
+
   return (
     <AppLayout>
       <PurchasesNavTabs />
@@ -372,7 +377,7 @@ function SuppliersDirectoryContent() {
                     </td>
                   </tr>
                 ) : filteredSuppliers.length > 0 ? (
-                  filteredSuppliers.map((s) => (
+                  paginatedSuppliers.map((s) => (
                     <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-3.5 px-4">
                         <Link
@@ -473,6 +478,9 @@ function SuppliersDirectoryContent() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (Only renders when suppliers > 10) */}
+          {SuppliersPagination}
         </div>
       </div>
 

@@ -6,6 +6,7 @@ import {
   CustomerLedgerEntry,
   Payment,
   IdempotencyKey,
+  Branch,
 } from '../../models/index.js';
 import { PAYMENT_STATUSES } from '../../constants/index.js';
 import { AppError } from '../../utils/apiResponse.js';
@@ -48,31 +49,106 @@ export class CollectionService {
         }
       }
 
-      // 2. Resolve Branch
-      let effectiveBranchId: mongoose.Types.ObjectId;
-      if (userContext.role === 'SUPER_ADMIN' && input.branchId) {
-        effectiveBranchId = new mongoose.Types.ObjectId(input.branchId);
-      } else if (userContext.branchId) {
-        effectiveBranchId = new mongoose.Types.ObjectId(userContext.branchId);
-      } else {
-        throw new AppError('Branch assignment required for recording payment collections.', 403, 'NO_BRANCH_ASSIGNED');
-      }
-
-      // 3. Find Customer
+      // 2. Find Customer
       const customer = await Customer.findById(input.customerId).session(session);
       if (!customer) {
         throw new AppError('Customer not found.', 404, 'CUSTOMER_NOT_FOUND');
       }
 
+      // 3. Resolve Branch & Enforce Strict Branch Boundary
+      let effectiveBranchId: mongoose.Types.ObjectId | null = null;
+      const explicitBranchStr =
+        (userContext.branchId && userContext.branchId !== 'ALL' ? userContext.branchId : undefined) ||
+        (input.branchId && input.branchId !== 'ALL' ? input.branchId : undefined);
+
+      if (explicitBranchStr && mongoose.Types.ObjectId.isValid(explicitBranchStr)) {
+        effectiveBranchId = new mongoose.Types.ObjectId(explicitBranchStr);
+      } else if (customer.branchId && mongoose.Types.ObjectId.isValid(customer.branchId.toString())) {
+        effectiveBranchId = new mongoose.Types.ObjectId(customer.branchId.toString());
+      } else {
+        // Fallback for Super Admin / HQ users or unpinned accounts:
+        // Priority 1: Check if the customer has an open invoice with balanceDue > 0 at any branch
+        const custInvoice = await SalesInvoice.findOne({
+          customerId: customer._id,
+          balanceDue: { $gt: 0 },
+        }).session(session);
+
+        if (custInvoice && custInvoice.branchId) {
+          effectiveBranchId = custInvoice.branchId as mongoose.Types.ObjectId;
+        } else {
+          // Priority 2: Check any past invoice for this customer
+          const pastInvoice = await SalesInvoice.findOne({
+            customerId: customer._id,
+          })
+            .sort({ createdAt: -1 })
+            .session(session);
+
+          if (pastInvoice && pastInvoice.branchId) {
+            effectiveBranchId = pastInvoice.branchId as mongoose.Types.ObjectId;
+          } else {
+            // Priority 3: Main or active branch
+            const defaultBranch = await Branch.findOne({ isActive: true })
+              .sort({ isMain: -1, createdAt: 1 })
+              .session(session);
+            if (defaultBranch) {
+              effectiveBranchId = defaultBranch._id as mongoose.Types.ObjectId;
+            } else {
+              const anyBranch = await Branch.findOne().session(session);
+              if (anyBranch) {
+                effectiveBranchId = anyBranch._id as mongoose.Types.ObjectId;
+              }
+            }
+          }
+        }
+      }
+
+      if (!effectiveBranchId) {
+        throw new AppError('Branch assignment required for recording payment collections.', 403, 'NO_BRANCH_ASSIGNED');
+      }
+
+      // If customer was not yet bound to a branch, bind them to this branch
+      if (!customer.branchId) {
+        customer.branchId = effectiveBranchId;
+      }
+
       // 4. Find open invoices with balanceDue > 0
-      const openInvoices = await SalesInvoice.find({
+      let openInvoices = await SalesInvoice.find({
         customerId: customer._id,
+        branchId: effectiveBranchId,
         balanceDue: { $gt: 0 },
       })
         .sort({ createdAt: 1 }) // FIFO / Oldest first
         .session(session);
 
-      const totalOutstanding = openInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
+      // If user is SUPER_ADMIN and no open invoices found at the initially resolved branch,
+      // fallback to customer's open invoices at other branches
+      if (openInvoices.length === 0 && userContext.role === 'SUPER_ADMIN') {
+        const anyBranchInvoices = await SalesInvoice.find({
+          customerId: customer._id,
+          balanceDue: { $gt: 0 },
+        })
+          .sort({ createdAt: 1 })
+          .session(session);
+
+        if (anyBranchInvoices.length > 0) {
+          openInvoices = anyBranchInvoices;
+          effectiveBranchId = anyBranchInvoices[0].branchId as mongoose.Types.ObjectId;
+        }
+      }
+
+      const totalBranchOutstanding = openInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
+
+      // Branch Isolation Guard: A branch user cannot collect payments for a customer assigned to another branch
+      const isCustomerAssignedToBranch =
+        customer.branchId && customer.branchId.toString() === effectiveBranchId.toString();
+
+      if (!isCustomerAssignedToBranch && userContext.role !== 'SUPER_ADMIN' && totalBranchOutstanding === 0) {
+        throw new AppError(
+          `Customer ${customer.name} belongs to another branch. Cross-branch collection is strictly prohibited.`,
+          403,
+          'FORBIDDEN_CROSS_BRANCH_COLLECTION'
+        );
+      }
 
       // 5. Determine Allocations
       let remainingToAllocate = input.amount;
@@ -89,9 +165,9 @@ export class CollectionService {
           const inv = openInvoices.find((i) => i._id.toString() === alloc.invoiceId);
           if (!inv) {
             throw new AppError(
-              `Invoice ${alloc.invoiceId} is not an outstanding invoice for customer ${customer.name}.`,
-              400,
-              'INVALID_INVOICE_FOR_CUSTOMER'
+              `Invoice ${alloc.invoiceId} does not belong to this branch or has no balance due. Cross-branch collection is strictly prohibited.`,
+              403,
+              'FORBIDDEN_CROSS_BRANCH_COLLECTION'
             );
           }
 
@@ -150,7 +226,8 @@ export class CollectionService {
 
       // 7. Update Customer Outstanding Balance
       const previousOutstanding = customer.outstandingBalance || 0;
-      const newOutstanding = Math.max(0, previousOutstanding - totalAppliedToInvoices);
+      const amountToReduce = Math.min(previousOutstanding, Math.max(totalAppliedToInvoices, input.amount));
+      const newOutstanding = Math.max(0, previousOutstanding - amountToReduce);
       customer.outstandingBalance = newOutstanding;
       await customer.save({ session });
 
@@ -235,10 +312,22 @@ export class CollectionService {
         );
       }
 
+      const collectionObj = collection.toObject();
       return {
-        collection,
-        appliedAmount: totalAppliedToInvoices,
+        collection: {
+          ...collectionObj,
+          id: collection._id.toString(),
+          amount: collection.totalCollected,
+          unallocatedAdvance: collection.unallocatedAmount || 0,
+        },
+        id: collection._id.toString(),
+        collectionNumber: collection.collectionNumber,
+        receiptNumber: collection.receiptNumber,
+        amount: collection.totalCollected,
+        totalCollected: collection.totalCollected,
+        unallocatedAdvance: collection.unallocatedAmount || 0,
         unallocatedAmount: remainingToAllocate,
+        appliedAmount: totalAppliedToInvoices,
         newCustomerOutstanding: newOutstanding,
         message: 'Payment collection recorded and allocated successfully.',
         isReplay: false,
@@ -257,7 +346,9 @@ export class CollectionService {
     const filter: Record<string, unknown> = {};
 
     if (userContext.role !== 'SUPER_ADMIN') {
-      filter.branchId = new mongoose.Types.ObjectId(userContext.branchId);
+      if (userContext.branchId) {
+        filter.branchId = new mongoose.Types.ObjectId(userContext.branchId);
+      }
     } else if (query.branchId && query.branchId !== 'ALL') {
       filter.branchId = new mongoose.Types.ObjectId(query.branchId);
     }
@@ -288,8 +379,15 @@ export class CollectionService {
         .lean(),
     ]);
 
+    const formattedCollections = collections.map((col: any) => ({
+      ...col,
+      id: col._id.toString(),
+      amount: col.totalCollected ?? 0,
+      unallocatedAdvance: col.unallocatedAmount ?? 0,
+    }));
+
     return {
-      collections,
+      collections: formattedCollections,
       pagination: {
         total,
         page,

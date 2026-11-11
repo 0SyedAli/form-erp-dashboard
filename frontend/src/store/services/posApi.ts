@@ -74,6 +74,7 @@ export interface POSCheckoutInput {
   overrideReason?: string;
   notes?: string;
   idempotencyKey?: string;
+  editingInvoiceId?: string;
 }
 
 export interface POSHeldSaleItem {
@@ -176,10 +177,14 @@ export interface CustomerData {
   creditEnabled: boolean;
   creditLimit: number;
   currentOutstanding: number;
+  outstandingBalance?: number;
   availableCredit: number;
   creditTerms: string;
   defaultDueDays: number;
   status: 'ACTIVE' | 'INACTIVE' | 'BLOCKED';
+  branchId?: string;
+  branchName?: string;
+  branchCode?: string;
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -421,6 +426,18 @@ export const posApi = createApi({
       providesTags: (_result, _error, id) => [{ type: 'SalesInvoice', id }],
     }),
 
+    deleteInvoice: builder.mutation<
+      { success: boolean; message: string },
+      { id: string; returnStock: boolean }
+    >({
+      query: ({ id, returnStock }) => ({
+        url: `/sales/invoices/${encodeURIComponent(id)}`,
+        method: 'DELETE',
+        body: { returnStock },
+      }),
+      invalidatesTags: ['SalesInvoice', 'Customer', 'PaymentCollection'],
+    }),
+
     getSalesSummary: builder.query<
       SalesSummaryData,
       { branchId?: string; dateFrom?: string; dateTo?: string } | void
@@ -438,6 +455,7 @@ export const posApi = createApi({
       CustomerData[],
       {
         search?: string;
+        branchId?: string;
         customerType?: string;
         status?: string;
         page?: number;
@@ -480,7 +498,7 @@ export const posApi = createApi({
 
     getCustomerLedger: builder.query<
       CustomerLedgerResponse,
-      { id: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }
+      { id: string; branchId?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }
     >({
       query: ({ id, ...params }) => ({
         url: `/customers/${encodeURIComponent(id)}/ledger`,
@@ -490,9 +508,19 @@ export const posApi = createApi({
       providesTags: (_result, _error, { id }) => [{ type: 'CustomerLedger', id }],
     }),
 
-    getCustomerOutstandingInvoices: builder.query<SalesInvoice[], string>({
-      query: (id) => `/customers/${encodeURIComponent(id)}/outstanding`,
-      transformResponse: (response: ApiResponse<SalesInvoice[]>) => response.data,
+    getCustomerOutstandingInvoices: builder.query<
+      { customer: any; invoices: any[]; totalOutstanding: number },
+      { id: string; branchId?: string } | string
+    >({
+      query: (arg) => {
+        const id = typeof arg === 'string' ? arg : arg.id;
+        const branchId = typeof arg === 'string' ? undefined : arg.branchId;
+        return {
+          url: `/customers/${encodeURIComponent(id)}/outstanding`,
+          params: branchId ? { branchId } : undefined,
+        };
+      },
+      transformResponse: (response: ApiResponse<any>) => response.data,
       providesTags: ['SalesInvoice'],
     }),
 
@@ -575,6 +603,7 @@ export const {
   useGetInvoicesQuery,
   useGetInvoiceByIdQuery,
   useGetInvoiceReceiptQuery,
+  useDeleteInvoiceMutation,
   useGetSalesSummaryQuery,
   useGetCustomersQuery,
   useGetCustomerByIdQuery,

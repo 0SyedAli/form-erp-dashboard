@@ -7,14 +7,18 @@ import {
   useCreateCustomerMutation,
   useUpdateCustomerMutation,
   useToggleCustomerStatusMutation,
+  useGetBranchesQuery,
 } from '@/store/services/apiSlice';
 import {
   useGetCustomersQuery as useGetBackendCustomersQuery,
   useCreateCustomerMutation as useCreateBackendCustomerMutation,
   useUpdateCustomerMutation as useUpdateBackendCustomerMutation,
+  useGetBranchesQuery as useGetBackendBranchesQuery,
 } from '@/store/services/posApi';
+import { useAppSelector } from '@/store';
 import { Customer, CustomerStatus } from '@/types';
 import AppLayout from '@/components/layout/AppLayout';
+import { useClientPagination } from '@/components/common/Pagination';
 import {
   Users,
   Search,
@@ -31,6 +35,7 @@ import {
   AlertTriangle,
   X,
   CheckCircle2,
+  Store,
 } from 'lucide-react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -62,16 +67,39 @@ function CustomersContent() {
     setMounted(true);
   }, []);
 
+  const currentUser = useAppSelector((state) => state.auth.currentUser);
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+
+  // Branches
+  const { data: demoBranches = [] } = useGetBranchesQuery(undefined, { skip: isBackendMode });
+  const { data: backendBranches = [] } = useGetBackendBranchesQuery(undefined, {
+    skip: !isBackendMode,
+  });
+  const branches = useMemo(() => {
+    return isBackendMode ? backendBranches : demoBranches;
+  }, [isBackendMode, backendBranches, demoBranches]);
+
+  const [branchFilter, setBranchFilter] = useState<string>('ALL');
+  const [formBranchId, setFormBranchId] = useState<string>('');
+
+  const customerQueryParams = useMemo(() => {
+    if (!isSuperAdmin) {
+      const bId = currentUser?.assignedBranchId || (currentUser as any)?.branchId;
+      return bId ? { branchId: bId } : undefined;
+    }
+    return branchFilter !== 'ALL' ? { branchId: branchFilter } : undefined;
+  }, [isSuperAdmin, currentUser, branchFilter]);
+
   const { data: demoCustomers = [], isLoading: isDemoLoading } = useGetCustomersQuery(undefined, {
-    skip: !mounted || isBackendMode,
+    skip: isBackendMode,
   });
   const [createCustomerMutation, { isLoading: isDemoCreating }] = useCreateCustomerMutation();
   const [updateCustomerMutation, { isLoading: isDemoUpdating }] = useUpdateCustomerMutation();
   const [toggleStatusMutation] = useToggleCustomerStatusMutation();
 
   const { data: backendCustomers = [], isLoading: isBackendLoading } = useGetBackendCustomersQuery(
-    undefined,
-    { skip: !mounted || !isBackendMode }
+    customerQueryParams,
+    { skip: !isBackendMode }
   );
   const [createCustomerBackendMutation, { isLoading: isBackendCreating }] =
     useCreateBackendCustomerMutation();
@@ -84,11 +112,14 @@ function CustomersContent() {
         ...c,
         id: c.id || c._id,
         code: c.code || c.customerCode || `CUST-${(c.id || c._id || '').slice(-4).toUpperCase()}`,
+        branchId: c.branchId || '',
+        branchName: c.branchName || 'Main Branch',
+        branchCode: c.branchCode || '',
         currentOutstanding: c.currentOutstanding || 0,
         availableCredit:
           c.availableCredit ??
           Math.max(0, (c.creditLimit || 0) - (c.currentOutstanding || 0)),
-      })) as Customer[];
+      })) as any[];
     }
     return demoCustomers;
   }, [isBackendMode, backendCustomers, demoCustomers]);
@@ -140,6 +171,10 @@ function CustomersContent() {
   const handleOpenCreate = () => {
     setEditingCustomer(null);
     setFormError(null);
+    const defaultBranch = isSuperAdmin
+      ? (branchFilter !== 'ALL' ? branchFilter : branches[0]?.id || '')
+      : (currentUser?.assignedBranchId || (currentUser as any)?.branchId || '');
+    setFormBranchId(defaultBranch);
     reset({
       name: '',
       phone: '',
@@ -162,6 +197,7 @@ function CustomersContent() {
   const handleOpenEdit = (c: Customer) => {
     setEditingCustomer(c);
     setFormError(null);
+    setFormBranchId((c as any).branchId || '');
     reset({
       name: c.name,
       phone: c.phone,
@@ -190,6 +226,7 @@ function CustomersContent() {
             id: editingCustomer.id || (editingCustomer as any)._id,
             body: {
               ...data,
+              branchId: isSuperAdmin ? formBranchId || undefined : undefined,
               customerType: (data.customerType === 'RETAIL' ? 'WALK_IN' : data.customerType) as any,
               email: data.email || undefined,
               businessName: data.businessName || undefined,
@@ -203,6 +240,7 @@ function CustomersContent() {
         } else {
           await createCustomerBackendMutation({
             ...data,
+            branchId: formBranchId || (!isSuperAdmin ? currentUser?.assignedBranchId : undefined),
             customerType: (data.customerType === 'RETAIL' ? 'WALK_IN' : data.customerType) as any,
             email: data.email || undefined,
             businessName: data.businessName || undefined,
@@ -292,6 +330,10 @@ function CustomersContent() {
     });
   }, [customers, typeFilter, statusFilter, onlyExceededFilter, searchQuery]);
 
+  // Client-Side Pagination (Only renders when customers > 10)
+  const { paginatedItems: paginatedCustomers, PaginationComponent: CustomersPagination } =
+    useClientPagination(filteredCustomers, 10, 'customers');
+
   // Overall KPIs
   const totalReceivables = useMemo(() => {
     return customers.reduce((sum, c) => sum + (c.currentOutstanding || 0), 0);
@@ -360,461 +402,539 @@ function CustomersContent() {
 
         {/* Main Content Area */}
         <div className="space-y-6">
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-500 font-semibold font-sans">Total Customers</p>
-              <h3 className="text-2xl font-black text-slate-900 mt-1 font-sans">
-                {customers.length}
-              </h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">Active across all tiers</p>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-500 font-semibold font-sans">Total Customers</p>
+                <h3 className="text-2xl font-black text-slate-900 mt-1 font-sans">
+                  {customers.length}
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">Active across all tiers</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                <Users className="w-5 h-5" />
+              </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Users className="w-5 h-5" />
-            </div>
-          </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-500 font-semibold font-sans">Wholesale Dealers</p>
-              <h3 className="text-2xl font-black text-amber-700 mt-1 font-sans">
-                {wholesaleCount}
-              </h3>
-              <p className="text-[11px] text-amber-600 mt-0.5 font-medium">B2B Trade Accounts</p>
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-500 font-semibold font-sans">Wholesale Dealers</p>
+                <h3 className="text-2xl font-black text-amber-700 mt-1 font-sans">
+                  {wholesaleCount}
+                </h3>
+                <p className="text-[11px] text-amber-600 mt-0.5 font-medium">B2B Trade Accounts</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <Building2 className="w-5 h-5" />
+              </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-              <Building2 className="w-5 h-5" />
-            </div>
-          </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-500 font-semibold font-sans">Distributors</p>
-              <h3 className="text-2xl font-black text-purple-700 mt-1 font-sans">
-                {distributorCount}
-              </h3>
-              <p className="text-[11px] text-purple-600 mt-0.5 font-medium">Regional Primary Dealers</p>
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-500 font-semibold font-sans">Distributors</p>
+                <h3 className="text-2xl font-black text-purple-700 mt-1 font-sans">
+                  {distributorCount}
+                </h3>
+                <p className="text-[11px] text-purple-600 mt-0.5 font-medium">Regional Primary Dealers</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                <Truck className="w-5 h-5" />
+              </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-              <Truck className="w-5 h-5" />
-            </div>
-          </div>
 
-          {/* DANGER: Credit Limit Exceeded Metric Card */}
-          <div
-            onClick={() => setOnlyExceededFilter(!onlyExceededFilter)}
-            className={`p-4 rounded-2xl border shadow-2xs flex items-center justify-between cursor-pointer transition-all ${
-              onlyExceededFilter
+            {/* DANGER: Credit Limit Exceeded Metric Card */}
+            <div
+              onClick={() => setOnlyExceededFilter(!onlyExceededFilter)}
+              className={`p-4 rounded-2xl border shadow-2xs flex items-center justify-between cursor-pointer transition-all ${onlyExceededFilter
                 ? 'bg-rose-600 border-rose-700 text-white shadow-md'
                 : exceededCount > 0
-                ? 'bg-rose-50 border-rose-200 hover:bg-rose-100/80 text-rose-900'
-                : 'bg-white border-slate-200 text-slate-900'
-            }`}
-            title="Click to toggle filter for over-limit accounts"
-          >
-            <div>
-              <p className={`text-xs font-semibold font-sans ${onlyExceededFilter ? 'text-rose-100' : 'text-rose-700'}`}>
-                Limit Exceeded (خطرہ)
-              </p>
-              <h3 className={`text-2xl font-black mt-1 font-sans ${onlyExceededFilter ? 'text-white' : 'text-rose-700'}`}>
-                {exceededCount}
-              </h3>
-              <p className={`text-[11px] mt-0.5 font-medium ${onlyExceededFilter ? 'text-rose-200' : 'text-rose-600'}`}>
-                {onlyExceededFilter ? 'Showing Over-Limit Only' : 'Click to view accounts'}
-              </p>
+                  ? 'bg-rose-50 border-rose-200 hover:bg-rose-100/80 text-rose-900'
+                  : 'bg-white border-slate-200 text-slate-900'
+                }`}
+              title="Click to toggle filter for over-limit accounts"
+            >
+              <div>
+                <p className={`text-xs font-semibold font-sans ${onlyExceededFilter ? 'text-rose-100' : 'text-rose-700'}`}>
+                  Limit Exceeded (خطرہ)
+                </p>
+                <h3 className={`text-2xl font-black mt-1 font-sans ${onlyExceededFilter ? 'text-white' : 'text-rose-700'}`}>
+                  {exceededCount}
+                </h3>
+                <p className={`text-[11px] mt-0.5 font-medium ${onlyExceededFilter ? 'text-rose-200' : 'text-rose-600'}`}>
+                  {onlyExceededFilter ? 'Showing Over-Limit Only' : 'Click to view accounts'}
+                </p>
+              </div>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${onlyExceededFilter ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-600'}`}>
+                <AlertTriangle className="w-5 h-5" />
+              </div>
             </div>
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${onlyExceededFilter ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-600'}`}>
-              <AlertTriangle className="w-5 h-5" />
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-500 font-semibold font-sans">Total Receivables</p>
+                <h3 className="text-2xl font-black text-emerald-800 mt-1 font-sans">
+                  Rs. {totalReceivables.toLocaleString()}
+                </h3>
+                <p className="text-[11px] text-emerald-700 mt-0.5 font-medium">Total Credit Outstanding</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <CreditCard className="w-5 h-5" />
+              </div>
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-500 font-semibold font-sans">Total Receivables</p>
-              <h3 className="text-2xl font-black text-emerald-800 mt-1 font-sans">
-                Rs. {totalReceivables.toLocaleString()}
-              </h3>
-              <p className="text-[11px] text-emerald-700 mt-0.5 font-medium">Total Credit Outstanding</p>
+          {/* Filters Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+            {/* Search */}
+            <div className="relative flex-1 min-w-[240px]">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by code, customer name, business or phone..."
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+              />
             </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <CreditCard className="w-5 h-5" />
-            </div>
-          </div>
-        </div>
 
-        {/* Filters Bar */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-          {/* Search */}
-          <div className="relative flex-1 min-w-[240px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by code, customer name, business or phone..."
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          {/* Quick Danger Filter Pill */}
-          <button
-            type="button"
-            onClick={() => setOnlyExceededFilter(!onlyExceededFilter)}
-            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
-              onlyExceededFilter
+            {/* Quick Danger Filter Pill */}
+            <button
+              type="button"
+              onClick={() => setOnlyExceededFilter(!onlyExceededFilter)}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${onlyExceededFilter
                 ? 'bg-rose-600 border-rose-700 text-white shadow-xs'
                 : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
-            }`}
-          >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span>Over-Limit ({exceededCount})</span>
-          </button>
-
-          {/* Type Filter */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-500 font-medium">Tier:</span>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold px-3 py-2 text-slate-700 focus:outline-hidden"
+                }`}
             >
-              <option value="ALL">All Tiers</option>
-              <option value="WALK_IN">Walk-in Accounts</option>
-              <option value="WHOLESALE">Wholesale</option>
-              <option value="DISTRIBUTOR">Distributor</option>
-            </select>
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>Over-Limit ({exceededCount})</span>
+            </button>
+
+            {/* Type Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-500 font-medium">Tier:</span>
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold px-3 py-2 text-slate-700 focus:outline-hidden"
+              >
+                <option value="ALL">All Tiers</option>
+                <option value="WALK_IN">Walk-in Accounts</option>
+                <option value="WHOLESALE">Wholesale</option>
+                <option value="DISTRIBUTOR">Distributor</option>
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-500 font-medium">Status:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold px-3 py-2 text-slate-700 focus:outline-hidden"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+              </select>
+            </div>
+
+            {/* Branch Filter / Scope */}
+            {isSuperAdmin ? (
+              <div className="flex items-center gap-1.5">
+                <Store className="w-4 h-4 text-slate-400" />
+                <select
+                  value={branchFilter}
+                  onChange={(e) => setBranchFilter(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold px-3 py-2 text-slate-700 focus:outline-hidden"
+                >
+                  <option value="ALL">All Branches</option>
+                  {branches.map((b: any) => (
+                    <option key={b.id || b._id} value={b.id || b._id}>
+                      {b.name} ({b.code || b.shopNumber || 'Branch'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-xs font-semibold">
+                <Store className="w-3.5 h-3.5 text-emerald-600" />
+                <span>
+                  Branch: {branches.find((b: any) => (b.id || b._id) === currentUser?.assignedBranchId)?.name || 'Your Branch'}
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* Status Filter */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-500 font-medium">Status:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold px-3 py-2 text-slate-700 focus:outline-hidden"
-            >
-              <option value="ALL">All Statuses</option>
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Customers Table */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
-                <tr>
-                  <th className="py-3.5 px-4">Code</th>
-                  <th className="py-3.5 px-4">Customer / Business</th>
-                  <th className="py-3.5 px-4">Tier Type</th>
-                  <th className="py-3.5 px-4">Phone / City</th>
-                  <th className="py-3.5 px-4 text-right">Credit Limit</th>
-                  <th className="py-3.5 px-4 text-right">Outstanding</th>
-                  <th className="py-3.5 px-4 text-right">Available Credit</th>
-                  <th className="py-3.5 px-4 text-center">Status</th>
-                  <th className="py-3.5 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                {isLoading ? (
+          {/* Customers Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-slate-400">
-                      Loading customer registry...
-                    </td>
+                    <th className="py-3.5 px-4">Code</th>
+                    <th className="py-3.5 px-4">Customer / Business</th>
+                    <th className="py-3.5 px-4">Branch</th>
+                    <th className="py-3.5 px-4">Tier Type</th>
+                    <th className="py-3.5 px-4">Phone / City</th>
+                    <th className="py-3.5 px-4 text-right">Limit</th>
+                    <th className="py-3.5 px-4 text-right">Credit</th>
+                    <th className="py-3.5 px-4 text-right">Available Credit</th>
+                    <th className="py-3.5 px-4 text-center">Status</th>
+                    <th className="py-3.5 px-4 text-right">Actions</th>
                   </tr>
-                ) : filteredCustomers.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="py-12 text-center text-slate-400">
-                      No matching customers found.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredCustomers.map((c) => {
-                    const availableCredit = Math.max(0, c.creditLimit - c.currentOutstanding);
-                    const isExceeded = (c.creditLimit || 0) > 0 && (c.currentOutstanding || 0) >= c.creditLimit;
-                    const overAmount = Math.max(0, (c.currentOutstanding || 0) - (c.creditLimit || 0));
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={10} className="py-8 text-center text-slate-400">
+                        Loading customer registry...
+                      </td>
+                    </tr>
+                  ) : filteredCustomers.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="py-12 text-center text-slate-400">
+                        No matching customers found.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedCustomers.map((c) => {
+                      const availableCredit = Math.max(0, c.creditLimit - c.currentOutstanding);
+                      const isExceeded = (c.creditLimit || 0) > 0 && (c.currentOutstanding || 0) >= c.creditLimit;
+                      const overAmount = Math.max(0, (c.currentOutstanding || 0) - (c.creditLimit || 0));
 
-                    return (
-                      <tr
-                        key={c.id}
-                        className={`transition-colors ${
-                          isExceeded
+                      return (
+                        <tr
+                          key={c.id}
+                          className={`transition-colors ${isExceeded
                             ? 'bg-rose-50/90 hover:bg-rose-100/90 border-l-4 border-l-rose-600'
                             : 'hover:bg-slate-50/80'
-                        }`}
-                      >
-                        <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
-                          {c.customerCode}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={`font-bold font-sans ${isExceeded ? 'text-rose-950 font-black' : 'text-slate-900'}`}>
-                              {c.name}
-                            </span>
-                            {isExceeded && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-600 text-white font-extrabold text-[9px] tracking-tight shadow-xs animate-pulse">
-                                <AlertTriangle className="w-2.5 h-2.5" />
-                                LIMIT EXCEEDED
+                            }`}
+                        >
+                          <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
+                            {c.customerCode}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`font-bold font-sans ${isExceeded ? 'text-rose-950 font-black' : 'text-slate-900'}`}>
+                                {c.name}
+                              </span>
+                              {isExceeded && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-600 text-white font-extrabold text-[9px] tracking-tight shadow-xs animate-pulse">
+                                  <AlertTriangle className="w-2.5 h-2.5" />
+                                  LIMIT EXCEEDED
+                                </span>
+                              )}
+                            </div>
+                            {c.businessName && (
+                              <span className="text-[11px] text-slate-500 block">
+                                {c.businessName}
                               </span>
                             )}
-                          </div>
-                          {c.businessName && (
-                            <span className="text-[11px] text-slate-500 block">
-                              {c.businessName}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                              <Store className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                              <span>{(c as any).branchName || 'Main Branch'}</span>
                             </span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${c.customerType === 'DISTRIBUTOR'
+                            {(c as any).branchCode && (
+                              <span className="text-[10px] text-slate-400 block font-mono pl-5">
+                                {(c as any).branchCode}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${c.customerType === 'DISTRIBUTOR'
                                 ? 'bg-purple-100 text-purple-700'
                                 : c.customerType === 'WHOLESALE'
                                   ? 'bg-amber-100 text-amber-700'
                                   : 'bg-blue-100 text-blue-700'
-                              }`}
-                          >
-                            {c.customerType === 'DISTRIBUTOR' ? (
-                              <Truck className="w-3 h-3" />
-                            ) : c.customerType === 'WHOLESALE' ? (
-                              <Building2 className="w-3 h-3" />
-                            ) : (
-                              <User className="w-3 h-3" />
-                            )}
-                            <span>{c.customerType}</span>
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className="font-mono text-slate-800 block">{c.phone}</span>
-                          <span className="text-[11px] text-slate-400 block">{c.city || 'Punjab'}</span>
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-bold text-slate-800 font-sans">
-                          Rs. {c.creditLimit.toLocaleString()}
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-black text-slate-900 font-sans">
-                          {c.currentOutstanding > 0 ? (
-                            <span className={`font-bold ${isExceeded ? 'text-rose-700 font-black' : 'text-purple-800'}`}>
-                              Rs. {c.currentOutstanding.toLocaleString()}
+                                }`}
+                            >
+                              {c.customerType === 'DISTRIBUTOR' ? (
+                                <Truck className="w-3 h-3" />
+                              ) : c.customerType === 'WHOLESALE' ? (
+                                <Building2 className="w-3 h-3" />
+                              ) : (
+                                <User className="w-3 h-3" />
+                              )}
+                              <span>{c.customerType}</span>
                             </span>
-                          ) : (
-                            <span className="text-slate-400">Rs. 0</span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-bold font-sans">
-                          {isExceeded ? (
-                            <div className="flex flex-col items-end">
-                              <span className="text-rose-700 font-black text-xs">Rs. 0</span>
-                              <span className="text-[9px] font-extrabold text-rose-700 bg-rose-100/90 px-1.5 py-0.5 rounded border border-rose-300">
-                                Over: Rs. {overAmount.toLocaleString()}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="font-mono text-slate-800 block">{c.phone}</span>
+                            <span className="text-[11px] text-slate-400 block">{c.city || 'Punjab'}</span>
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-bold text-slate-800 font-sans">
+                            Rs. {c.creditLimit.toLocaleString()}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-black text-slate-900 font-sans">
+                            {c.currentOutstanding > 0 ? (
+                              <span className={`font-bold ${isExceeded ? 'text-rose-700 font-black' : 'text-purple-800'}`}>
+                                Rs. {c.currentOutstanding.toLocaleString()}
                               </span>
-                            </div>
-                          ) : (
-                            <span className="text-emerald-700 font-bold">
-                              Rs. {availableCredit.toLocaleString()}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${c.status === 'ACTIVE'
+                            ) : (
+                              <span className="text-slate-400">Rs. 0</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-bold font-sans">
+                            {isExceeded ? (
+                              <div className="flex flex-col items-end">
+                                <span className="text-rose-700 font-black text-xs">Rs. 0</span>
+                                <span className="text-[9px] font-extrabold text-rose-700 bg-rose-100/90 px-1.5 py-0.5 rounded border border-rose-300">
+                                  Over: Rs. {overAmount.toLocaleString()}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-emerald-700 font-bold">
+                                Rs. {availableCredit.toLocaleString()}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${c.status === 'ACTIVE'
                                 ? 'bg-emerald-100 text-emerald-700'
                                 : 'bg-slate-200 text-slate-600'
-                              }`}
-                          >
-                            {c.status}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
-                          {/* Ledger Action Link */}
-                          <Link
-                            href={`/customers/${c.id}/ledger`}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                            title="View Account Ledger"
-                          >
-                            <FileSpreadsheet className="w-3.5 h-3.5" />
-                            <span>Ledger</span>
-                          </Link>
+                                }`}
+                            >
+                              {c.status}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
+                            {/* Ledger Action Link */}
+                            <Link
+                              href={`/customers/${c.id}/ledger`}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                              title="View Account Ledger"
+                            >
+                              <FileSpreadsheet className="w-3.5 h-3.5" />
+                              <span>Ledger</span>
+                            </Link>
 
-                          {/* Record Collection Link */}
-                          <Link
-                            href={`/payments/collections?customerId=${c.id}`}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                            title="Collect Recovery Payment"
-                          >
-                            <Receipt className="w-3.5 h-3.5" />
-                            <span>Collect</span>
-                          </Link>
+                            {/* Record Collection Link */}
+                            <Link
+                              href={`/payments/collections?customerId=${c.id}`}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                              title="Collect Recovery Payment"
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                              <span>Collect</span>
+                            </Link>
 
-                          {/* Edit Customer */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEdit(c)}
-                            className="inline-flex items-center p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                            title="Edit Customer"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
+                            {/* Edit Customer */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(c)}
+                              className="inline-flex items-center p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                              title="Edit Customer"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
 
-                          {/* Toggle Active Status */}
-                          <button
-                            type="button"
-                            onClick={() => handleToggleStatus(c)}
-                            className={`inline-flex items-center p-1.5 rounded-lg transition-colors cursor-pointer ${c.status === 'ACTIVE'
+                            {/* Toggle Active Status */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleStatus(c)}
+                              className={`inline-flex items-center p-1.5 rounded-lg transition-colors cursor-pointer ${c.status === 'ACTIVE'
                                 ? 'text-emerald-600 hover:bg-emerald-50'
                                 : 'text-slate-400 hover:bg-slate-100'
-                              }`}
-                            title={c.status === 'ACTIVE' ? 'Deactivate Customer' : 'Activate Customer'}
-                          >
-                            <Power className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* Customer Create/Edit Drawer Modal */}
-      {isDrawerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs select-none">
-          <div className="bg-white rounded-2xl max-w-xl w-full max-h-[90vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            {/* Drawer Header */}
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
-                  {editingCustomer ? <Edit2 className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-slate-800 font-sans">
-                    {editingCustomer ? 'Edit Customer Details' : 'Register New Customer Account'}
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium">
-                    {editingCustomer
-                      ? `Updating ${editingCustomer.customerCode}`
-                      : 'Define pricing tier, contact information, and credit limit'}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsDrawerOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+                                }`}
+                              title={c.status === 'ACTIVE' ? 'Deactivate Customer' : 'Activate Customer'}
+                            >
+                              <Power className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            {/* Drawer Form */}
-            <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-y-auto p-6 space-y-4">
-              {formError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-700 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{formError}</span>
-                </div>
-              )}
+            {/* Pagination Controls (Only renders when customers > 10) */}
+            {CustomersPagination}
+          </div>
+        </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Full Name */}
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Customer / Contact Name *
-                  </label>
-                  <input
-                    type="text"
-                    {...register('name')}
-                    placeholder="e.g. Tariq Mehmood"
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                  />
-                  {errors.name && (
-                    <span className="text-[11px] text-rose-600 mt-0.5 block">
-                      {errors.name.message}
-                    </span>
-                  )}
+        {/* Customer Create/Edit Drawer Modal */}
+        {isDrawerOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs select-none">
+            <div className="bg-white rounded-2xl max-w-xl w-full max-h-[90vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              {/* Drawer Header */}
+              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
+                    {editingCustomer ? <Edit2 className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base text-slate-800 font-sans">
+                      {editingCustomer ? 'Edit Customer Details' : 'Register New Customer Account'}
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      {editingCustomer
+                        ? `Updating ${editingCustomer.customerCode}`
+                        : 'Define pricing tier, contact information, and credit limit'}
+                    </p>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDrawerOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-                {/* Business Name */}
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Business / Firm Name (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    {...register('businessName')}
-                    placeholder="e.g. Lahore Furniture Mart"
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+              {/* Drawer Form */}
+              <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-y-auto p-6 space-y-4">
+                {formError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-700 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
 
-                {/* Phone */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Phone Number *
-                  </label>
-                  <input
-                    type="text"
-                    {...register('phone')}
-                    placeholder="e.g. 0300-1234567"
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                  />
-                  {errors.phone && (
-                    <span className="text-[11px] text-rose-600 mt-0.5 block">
-                      {errors.phone.message}
-                    </span>
-                  )}
-                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Full Name */}
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Customer / Contact Name *
+                    </label>
+                    <input
+                      type="text"
+                      {...register('name')}
+                      placeholder="e.g. Tariq Mehmood"
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    />
+                    {errors.name && (
+                      <span className="text-[11px] text-rose-600 mt-0.5 block">
+                        {errors.name.message}
+                      </span>
+                    )}
+                  </div>
 
-                {/* Email */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    {...register('email')}
-                    placeholder="e.g. dealer@example.com"
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                  />
-                  {errors.email && (
-                    <span className="text-[11px] text-rose-600 mt-0.5 block">
-                      {errors.email.message}
-                    </span>
-                  )}
-                </div>
+                  {/* Business Name */}
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Business / Firm Name (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      {...register('businessName')}
+                      placeholder="e.g. Lahore Furniture Mart"
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
 
-                {/* Customer Type / Tier */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Customer Price Tier *
-                  </label>
-                  <select
-                    {...register('customerType')}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white font-semibold"
-                  >
-                    <option value="WALK_IN">Walk-in Account</option>
-                    <option value="WHOLESALE">Wholesale Dealer</option>
-                    <option value="DISTRIBUTOR">Distributor</option>
-                  </select>
-                </div>
+                  {/* Phone */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Phone Number *
+                    </label>
+                    <input
+                      type="text"
+                      {...register('phone')}
+                      placeholder="e.g. 0300-1234567"
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    />
+                    {errors.phone && (
+                      <span className="text-[11px] text-rose-600 mt-0.5 block">
+                        {errors.phone.message}
+                      </span>
+                    )}
+                  </div>
 
-                {/* City */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">City</label>
-                  <input
-                    type="text"
-                    {...register('city')}
-                    placeholder="e.g. Lahore, Gujranwala"
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+                  {/* Email */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Email Address
+                    </label>
+                    <input
+                      type="email"
+                      {...register('email')}
+                      placeholder="e.g. dealer@example.com"
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    />
+                    {errors.email && (
+                      <span className="text-[11px] text-rose-600 mt-0.5 block">
+                        {errors.email.message}
+                      </span>
+                    )}
+                  </div>
 
-                {/* Tax Number */}
-                {/* <div className="sm:col-span-2">
+                  {/* Customer Type / Tier */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Customer Price Tier *
+                    </label>
+                    <select
+                      {...register('customerType')}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white font-semibold"
+                    >
+                      <option value="WALK_IN">Walk-in Account</option>
+                      <option value="WHOLESALE">Wholesale Dealer</option>
+                      <option value="DISTRIBUTOR">Distributor</option>
+                    </select>
+                  </div>
+
+                  {/* City */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">City</label>
+                    <input
+                      type="text"
+                      {...register('city')}
+                      placeholder="e.g. Lahore, Gujranwala"
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    >
+                    </input>
+                  </div>
+
+                  {/* Managing Branch Field */}
+                  <div className="sm:col-span-2">
+                    {isSuperAdmin ? (
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                          <Store className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Customer Managing Branch *</span>
+                        </label>
+                        <select
+                          value={formBranchId}
+                          onChange={(e) => setFormBranchId(e.target.value)}
+                          className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white font-semibold"
+                        >
+                          {branches.map((b: any) => (
+                            <option key={b.id || b._id} value={b.id || b._id}>
+                              {b.name} ({b.code || b.shopNumber || 'Branch'})
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Super Admin: Select which branch owns and manages this customer.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs flex items-center gap-2">
+                        <Store className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <div>
+                          <span className="font-bold text-slate-800">Branch Registration:</span>{' '}
+                          <span className="text-slate-600 font-semibold">
+                            {branches.find((b: any) => (b.id || b._id) === currentUser?.assignedBranchId)?.name || 'Your Branch'}
+                          </span>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Customer will be strictly managed under your branch.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tax Number */}
+                  {/* <div className="sm:col-span-2">
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     Tax / NTN / STRN Number (Optional)
                   </label>
@@ -826,97 +946,97 @@ function CustomersContent() {
                   />
                 </div> */}
 
-                {/* Credit Controls Sub-card */}
-                <div className="sm:col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-slate-800">
-                        Enable Customer Credit Facility
-                      </span>
-                      <p className="text-[11px] text-slate-500">
-                        Allow udhaar / credit billing at POS
-                      </p>
+                  {/* Credit Controls Sub-card */}
+                  <div className="sm:col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800">
+                          Enable Customer Credit Facility
+                        </span>
+                        <p className="text-[11px] text-slate-500">
+                          Allow udhaar / credit billing at POS
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          {...register('creditEnabled')}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        {...register('creditEnabled')}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
+
+                    {creditEnabled && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">
+                            Credit Limit (PKR)
+                          </label>
+                          <input
+                            type="number"
+                            step={5000}
+                            {...register('creditLimit', { valueAsNumber: true })}
+                            className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-bold"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">
+                            Default Due Days
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={180}
+                            {...register('defaultDueDays', { valueAsNumber: true })}
+                            className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-bold text-slate-700 mb-1">
+                            Credit Terms Description
+                          </label>
+                          <input
+                            type="text"
+                            {...register('creditTerms')}
+                            placeholder="e.g. 30 Days Net Credit"
+                            className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
-
-                  {creditEnabled && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Credit Limit (PKR)
-                        </label>
-                        <input
-                          type="number"
-                          step={5000}
-                          {...register('creditLimit', { valueAsNumber: true })}
-                          className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-bold"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Default Due Days
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={180}
-                          {...register('defaultDueDays', { valueAsNumber: true })}
-                          className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Credit Terms Description
-                        </label>
-                        <input
-                          type="text"
-                          {...register('creditTerms')}
-                          placeholder="e.g. 30 Days Net Credit"
-                          className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
-              </div>
 
-              {/* Drawer Actions */}
-              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsDrawerOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isCreating || isUpdating}
-                  className="px-5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
-                >
-                  {isCreating || isUpdating
-                    ? 'Saving...'
-                    : editingCustomer
-                      ? 'Save Changes'
-                      : 'Create Customer'}
-                </button>
-              </div>
-            </form>
+                {/* Drawer Actions */}
+                <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsDrawerOpen(false)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isCreating || isUpdating}
+                    className="px-5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+                  >
+                    {isCreating || isUpdating
+                      ? 'Saving...'
+                      : editingCustomer
+                        ? 'Save Changes'
+                        : 'Create Customer'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  </AppLayout>
+        )}
+      </div>
+    </AppLayout>
   );
 }
 

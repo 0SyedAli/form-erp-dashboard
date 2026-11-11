@@ -13,6 +13,7 @@ import {
   useGetProductsQuery as useGetBackendProductsQuery,
   useDeleteBrandMutation,
 } from '@/store/services/catalogueApi';
+import { useClientPagination } from '@/components/common/Pagination';
 import BrandModal from './BrandModal';
 import BrandStatusModal from './BrandStatusModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
@@ -108,6 +109,10 @@ export default function BrandsTab({ canManage, onToast }: BrandsTabProps) {
       return matchesSearch && matchesStatus;
     });
   }, [brands, searchQuery, statusFilter]);
+
+  // Client-Side Pagination (Only renders when brands > 10)
+  const { paginatedItems: paginatedBrands, PaginationComponent: BrandsPagination } =
+    useClientPagination(filteredBrands, 10, 'brands');
 
   const handleEdit = (brand: Brand) => {
     setSelectedBrand(brand);
@@ -210,7 +215,7 @@ export default function BrandsTab({ canManage, onToast }: BrandsTabProps) {
                   </td>
                 </tr>
               ) : (
-                filteredBrands.map((brand, idx) => {
+                paginatedBrands.map((brand, idx) => {
                   const brandCategories = categories.filter((c) => c.brandId === brand.id);
                   const brandProducts = products.filter((p) => p.brandId === brand.id);
 
@@ -309,12 +314,14 @@ export default function BrandsTab({ canManage, onToast }: BrandsTabProps) {
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
-          <span>
-            Showing {filteredBrands.length} of {brands.length} brands
-          </span>
-        </div>
+        {/* Pagination Controls (renders when brands > 10) */}
+        {BrandsPagination || (
+          <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
+            <span>
+              Showing {filteredBrands.length} of {brands.length} brands
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Add / Edit Brand Modal */}

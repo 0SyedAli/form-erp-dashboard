@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useClientPagination } from '@/components/common/Pagination';
 import { ProductVariant } from '@/types';
 import { useAppSelector, RootState } from '@/store';
 import {
@@ -189,6 +190,10 @@ export default function ProductsTab({
     });
   }, [variants, searchQuery, brandFilter, categoryFilter, statusFilter, branchFilter, balanceMap, brands, categories]);
 
+  // Client-Side Pagination (Only renders when products > 10)
+  const { paginatedItems: paginatedProducts, PaginationComponent: ProductsPagination } =
+    useClientPagination(filteredItems, 10, 'products');
+
   const handleToggleStatus = async (item: ProductVariant) => {
     const isCurrentlyActive = item.status === 'active' || item.status === 'ACTIVE';
     const nextStatus: 'ACTIVE' | 'INACTIVE' = isCurrentlyActive ? 'INACTIVE' : 'ACTIVE';
@@ -354,7 +359,7 @@ export default function ProductsTab({
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item, idx) => {
+                paginatedProducts.map((item, idx) => {
                   const onHandStock =
                     (item as any).stock !== undefined
                       ? (item as any).stock
@@ -485,16 +490,18 @@ export default function ProductsTab({
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="p-3.5 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
-          <span>
-            Showing <strong className="text-gray-800">{filteredItems.length}</strong> of{' '}
-            <strong className="text-gray-800">{variants.length}</strong> products
-          </span>
-          <span className="text-[11px] text-gray-400">
-            Click &quot;Edit&quot; to modify specifications or prices
-          </span>
-        </div>
+        {/* Pagination Controls (renders when products > 10) */}
+        {ProductsPagination || (
+          <div className="p-3.5 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
+            <span>
+              Showing <strong className="text-gray-800">{filteredItems.length}</strong> of{' '}
+              <strong className="text-gray-800">{variants.length}</strong> products
+            </span>
+            <span className="text-[11px] text-gray-400">
+              Click &quot;Edit&quot; to modify specifications or prices
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

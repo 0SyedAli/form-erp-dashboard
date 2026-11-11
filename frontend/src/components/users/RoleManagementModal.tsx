@@ -166,20 +166,18 @@ export default function RoleManagementModal({
                     key={r.id}
                     type="button"
                     onClick={() => handleSelectRole(r)}
-                    className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${
-                      isSelected
+                    className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${isSelected
                         ? 'border-brand-blue bg-blue-50/60 shadow-xs ring-1 ring-brand-blue/30'
                         : 'border-gray-200 bg-white hover:bg-gray-100/60'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-gray-900 text-sm truncate">{r.name}</span>
                       <span
-                        className={`text-[10px] font-medium px-2 py-0.5 rounded-md ${
-                          r.isSystem
+                        className={`text-[10px] font-medium px-2 py-0.5 rounded-md ${r.isSystem
                             ? 'bg-purple-100 text-purple-700'
                             : 'bg-emerald-100 text-emerald-800'
-                        }`}
+                          }`}
                       >
                         {r.isSystem ? 'System' : 'Custom'}
                       </span>
@@ -299,9 +297,6 @@ export default function RoleManagementModal({
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold text-gray-900 text-base">{selectedRole.name}</h3>
-                      <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium">
-                        {selectedRole.code}
-                      </span>
                     </div>
                     <p className="text-gray-500 text-xs mt-0.5">{selectedRole.description}</p>
                   </div>

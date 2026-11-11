@@ -16,6 +16,7 @@ import { getUserAuthorizedBranches } from '@/lib/permissions';
 import { InventoryBalance, StockStatus } from '@/types';
 import Toast, { ToastMessage } from '@/components/common/Toast';
 import { formatDateTime } from '@/utils/formatters';
+import { useClientPagination } from '@/components/common/Pagination';
 import {
   Boxes,
   Search,
@@ -84,6 +85,10 @@ export default function StockBalancesPage() {
       return true;
     });
   }, [balances, brandFilter, categoryFilter]);
+
+  // Client-Side Pagination (Only renders when stock balances > 10)
+  const { paginatedItems: paginatedBalances, PaginationComponent: StockPagination } =
+    useClientPagination(filteredBalances, 10, 'stock items');
 
   // Handle Set Reorder Level
   const handleSaveReorderLevel = async () => {
@@ -321,7 +326,7 @@ export default function StockBalancesPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredBalances.map((item) => {
+                  paginatedBalances.map((item) => {
                     const location = stockLocations.find((l) => l.id === item.stockLocationId);
                     const isDamaged = location?.type === 'RETURNS_DAMAGED';
 
@@ -468,6 +473,9 @@ export default function StockBalancesPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (renders when stock items > 10) */}
+          {StockPagination}
         </div>
       </div>
 

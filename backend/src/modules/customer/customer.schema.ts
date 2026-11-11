@@ -4,6 +4,7 @@ import { CUSTOMER_TYPES } from '../../constants/index.js';
 export const customerQuerySchema = z.object({
   query: z.object({
     search: z.string().optional(),
+    branchId: z.string().optional(),
     customerType: z
       .enum([CUSTOMER_TYPES.WALK_IN, CUSTOMER_TYPES.WHOLESALE, CUSTOMER_TYPES.DISTRIBUTOR])
       .optional(),
@@ -17,6 +18,7 @@ export const createCustomerSchema = z.object({
   body: z.object({
     name: z.string().min(2, 'Customer name must be at least 2 characters'),
     phone: z.string().min(7, 'Valid phone number required'),
+    branchId: z.string().optional(),
     customerType: z
       .enum([CUSTOMER_TYPES.WALK_IN, CUSTOMER_TYPES.WHOLESALE, CUSTOMER_TYPES.DISTRIBUTOR])
       .default(CUSTOMER_TYPES.WALK_IN),
@@ -40,6 +42,7 @@ export const updateCustomerSchema = z.object({
   body: z.object({
     name: z.string().min(2).optional(),
     phone: z.string().min(7).optional(),
+    branchId: z.string().optional(),
     customerType: z
       .enum([CUSTOMER_TYPES.WALK_IN, CUSTOMER_TYPES.WHOLESALE, CUSTOMER_TYPES.DISTRIBUTOR])
       .optional(),
@@ -61,6 +64,11 @@ export const customerParamSchema = z.object({
   params: z.object({
     id: z.string().min(1, 'Customer ID is required'),
   }),
+  query: z
+    .object({
+      branchId: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type CustomerQuery = z.infer<typeof customerQuerySchema>['query'];

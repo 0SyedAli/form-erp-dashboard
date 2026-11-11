@@ -28,5 +28,16 @@ export const invoiceParamSchema = z.object({
   }),
 });
 
+export const deleteInvoiceSchema = z.object({
+  params: z.object({
+    id: z.string().min(1, 'Invoice ID is required'),
+  }),
+  body: z
+    .object({
+      returnStock: z.boolean().optional().default(true),
+    })
+    .optional(),
+});
+
 export type SalesQuery = z.infer<typeof salesQuerySchema>['query'];
 

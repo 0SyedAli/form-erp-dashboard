@@ -4,6 +4,7 @@ import React, { useState, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import PurchasesNavTabs from '@/components/purchases/PurchasesNavTabs';
+import { useClientPagination } from '@/components/common/Pagination';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetSupplierPaymentsQuery,
@@ -222,6 +223,10 @@ function SupplierPaymentsContent() {
 
   const totalPaidOut = payments.reduce((sum, p) => sum + p.amount, 0);
 
+  // Client Pagination (Hidden if <= 10 items)
+  const { paginatedItems: paginatedPayments, PaginationComponent: PaymentsPagination } =
+    useClientPagination(filteredPayments, 10, 'supplier payments');
+
   return (
     <AppLayout>
       <PurchasesNavTabs />
@@ -329,7 +334,7 @@ function SupplierPaymentsContent() {
                     </td>
                   </tr>
                 ) : filteredPayments.length > 0 ? (
-                  filteredPayments.map((p) => (
+                  paginatedPayments.map((p) => (
                     <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-3.5 px-4 font-bold text-brand-burgundy">
                         <button
@@ -391,6 +396,9 @@ function SupplierPaymentsContent() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (Only renders when payments > 10) */}
+          {PaymentsPagination}
         </div>
       </div>
 

@@ -75,7 +75,8 @@ export class CustomerController {
     try {
       const userContext = CustomerController.getUserContext(req);
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const data = await CustomerService.getCustomerLedger(id, userContext);
+      const branchIdQuery = typeof req.query.branchId === 'string' ? req.query.branchId : undefined;
+      const data = await CustomerService.getCustomerLedger(id, userContext, branchIdQuery);
       sendSuccess(res, data, 'Customer account ledger retrieved.');
     } catch (error) {
       CustomerController.handleError(res, error, 'Failed to fetch customer ledger.');
@@ -86,7 +87,8 @@ export class CustomerController {
     try {
       const userContext = CustomerController.getUserContext(req);
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const data = await CustomerService.getCustomerOutstanding(id, userContext);
+      const branchIdQuery = typeof req.query.branchId === 'string' ? req.query.branchId : undefined;
+      const data = await CustomerService.getCustomerOutstanding(id, userContext, branchIdQuery);
       sendSuccess(res, data, 'Customer outstanding invoices retrieved.');
     } catch (error) {
       CustomerController.handleError(res, error, 'Failed to fetch customer outstanding invoices.');

@@ -98,12 +98,12 @@ export default function Sidebar({
       icon: Package,
       requiredPermission: 'catalogue:view',
     },
-    {
-      title: 'Inventory',
-      href: '/inventory',
-      icon: Layers,
-      requiredPermission: 'inventory:view',
-    },
+    // {
+    //   title: 'Inventory',
+    //   href: '/inventory',
+    //   icon: Layers,
+    //   requiredPermission: 'inventory:view',
+    // },
     {
       title: 'Customers',
       href: '/customers',
@@ -116,24 +116,24 @@ export default function Sidebar({
       icon: Receipt,
       requiredPermission: 'payments.collect',
     },
-    {
-      title: 'Purchases',
-      href: '/purchases',
-      icon: ShoppingCart,
-      requiredPermission: 'purchases.view',
-    },
-    {
-      title: 'Suppliers',
-      href: '/suppliers',
-      icon: Building,
-      requiredPermission: 'suppliers.view',
-    },
-    {
-      title: 'Supplier Payments',
-      href: '/payments/suppliers',
-      icon: CreditCard,
-      requiredPermission: 'payments.suppliers.create',
-    },
+    // {
+    //   title: 'Purchases',
+    //   href: '/purchases',
+    //   icon: ShoppingCart,
+    //   requiredPermission: 'purchases.view',
+    // },
+    // {
+    //   title: 'Suppliers',
+    //   href: '/suppliers',
+    //   icon: Building,
+    //   requiredPermission: 'suppliers.view',
+    // },
+    // {
+    //   title: 'Supplier Payments',
+    //   href: '/payments/suppliers',
+    //   icon: CreditCard,
+    //   requiredPermission: 'payments.suppliers.create',
+    // },
     ...(isSuperAdmin
       ? [
         {

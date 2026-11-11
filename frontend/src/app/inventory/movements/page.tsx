@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
+import { useClientPagination } from '@/components/common/Pagination';
 import { useAppSelector, RootState } from '@/store';
 import {
   useGetStockMovementsQuery,
@@ -45,6 +46,10 @@ export default function StockMovementsPage() {
     endDate: endDate || undefined,
     search: search.trim() || undefined,
   });
+
+  // Client Pagination (Hidden if <= 10 items)
+  const { paginatedItems: paginatedMovements, PaginationComponent: MovementsPagination } =
+    useClientPagination(movements, 10, 'stock movements');
 
   const getMovementBadge = (type: StockMovementType) => {
     switch (type) {
@@ -205,7 +210,7 @@ export default function StockMovementsPage() {
                     </td>
                   </tr>
                 ) : (
-                  movements.map((mov) => {
+                  paginatedMovements.map((mov) => {
                     const badge = getMovementBadge(mov.movementType);
                     const isPositive = isPositiveDirection(mov.movementType);
                     const sourceLoc = stockLocations.find((l) => l.id === mov.sourceLocationId);
@@ -309,6 +314,9 @@ export default function StockMovementsPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (Only renders when movements > 10) */}
+          {MovementsPagination}
         </div>
       </div>
 
