@@ -60,16 +60,29 @@ export class CatalogueService {
   // BRANDS
   // ==========================================
 
-  public static async getBrands(query: { search?: string; status?: string } = {}) {
+  public static async getBrands(query: { search?: string; status?: string; branchId?: string } = {}) {
     const filter: any = {};
     if (query?.status && query.status !== 'ALL') {
       filter.status = query.status;
     }
-    if (query?.search) {
+    if (query?.branchId && query.branchId !== 'ALL' && mongoose.Types.ObjectId.isValid(query.branchId)) {
       filter.$or = [
+        { branchId: new mongoose.Types.ObjectId(query.branchId) },
+        { branchId: { $exists: false } },
+        { branchId: null },
+      ];
+    }
+    if (query?.search) {
+      const searchOr = [
         { name: { $regex: query.search, $options: 'i' } },
         { code: { $regex: query.search, $options: 'i' } },
       ];
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: searchOr }];
+        delete filter.$or;
+      } else {
+        filter.$or = searchOr;
+      }
     }
     return Brand.find(filter).sort({ name: 1 });
   }
@@ -173,7 +186,7 @@ export class CatalogueService {
   // CATEGORIES
   // ==========================================
 
-  public static async getCategories(query: { brandId?: string; search?: string; status?: string } = {}) {
+  public static async getCategories(query: { brandId?: string; search?: string; status?: string; branchId?: string } = {}) {
     const filter: any = {};
     if (query?.brandId) {
       filter.brandId = query.brandId;
@@ -181,11 +194,24 @@ export class CatalogueService {
     if (query?.status && query.status !== 'ALL') {
       filter.status = query.status;
     }
-    if (query?.search) {
+    if (query?.branchId && query.branchId !== 'ALL' && mongoose.Types.ObjectId.isValid(query.branchId)) {
       filter.$or = [
+        { branchId: new mongoose.Types.ObjectId(query.branchId) },
+        { branchId: { $exists: false } },
+        { branchId: null },
+      ];
+    }
+    if (query?.search) {
+      const searchOr = [
         { name: { $regex: query.search, $options: 'i' } },
         { code: { $regex: query.search, $options: 'i' } },
       ];
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: searchOr }];
+        delete filter.$or;
+      } else {
+        filter.$or = searchOr;
+      }
     }
     return Category.find(filter).populate('brandId', 'name code').sort({ name: 1 });
   }

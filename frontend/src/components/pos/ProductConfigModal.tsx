@@ -261,23 +261,15 @@ export default function ProductConfigModal({
         {/* Product Details Header */}
         <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
           <div className="flex items-center gap-4 bg-slate-50/70 p-3 rounded-xl border border-slate-100">
-            <div className="w-16 h-16 bg-white rounded-lg border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
-              {product.imageUrl ? (
-                <Image
-                  src={product.imageUrl}
-                  alt={product.name}
-                  width={64}
-                  height={64}
-                  className="w-full h-full object-cover"
-                  unoptimized
-                />
-              ) : (
-                <svg viewBox="0 0 50 32" className="w-12 h-9 text-blue-500">
-                  <polygon points="25,3 47,13 25,23 3,13" fill="#dbeafe" stroke="#3b82f6" strokeWidth="1" />
-                  <polygon points="3,13 25,23 25,29 3,19" fill="#3b82f6" />
-                  <polygon points="25,23 47,13 47,19 25,29" fill="#1d4ed8" />
-                </svg>
-              )}
+            <div className="w-16 h-16 bg-white rounded-lg border border-slate-200 overflow-hidden flex items-center justify-center shrink-0 p-1">
+              <Image
+                src={product.imageUrl || '/assets/mattress/foam1.png'}
+                alt={product.name}
+                width={64}
+                height={64}
+                className="w-full h-full object-contain"
+                unoptimized
+              />
             </div>
             <div className="flex-1 min-w-0">
               <h4 className="font-bold text-sm text-slate-900 font-sans truncate">{product.name}</h4>

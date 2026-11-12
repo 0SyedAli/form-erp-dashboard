@@ -14,6 +14,7 @@ import {
   BookOpen,
   ArrowRight,
   ShieldAlert,
+  Printer,
 } from 'lucide-react';
 import { Customer, PaymentMethod, PaymentArrangement, SaleType } from '@/types';
 import { formatDate } from '@/utils/formatters';
@@ -26,6 +27,7 @@ export interface CheckoutSubmitData {
   walkInPhone?: string;
   dueDate?: string;
   discountConcession?: number;
+  andPrint?: boolean;
 }
 
 interface PaymentCheckoutModalProps {
@@ -145,12 +147,22 @@ export default function PaymentCheckoutModal({
   const isWholesaleCustomerMissing =
     saleType !== 'WALK_IN' && !selectedCustomer;
 
+  // Double-submission lock
+  const isSubmittingRef = React.useRef(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      isSubmittingRef.current = false;
+    }
+  }, [isOpen]);
+
   // Final submit disabled flag
   const isSubmitDisabled = isProcessing || isWalkInCreditMissing || isWholesaleCustomerMissing;
 
   // Submit Handler
-  const handleConfirm = async () => {
-    if (isSubmitDisabled) return;
+  const handleConfirm = async (andPrint: boolean = false) => {
+    if (isSubmitDisabled || isProcessing || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
 
     let finalArrangement: PaymentArrangement = 'FULL';
     let concession = 0;
@@ -197,15 +209,22 @@ export default function PaymentCheckoutModal({
       }
     }
 
-    await onConfirmSale({
-      paymentArrangement: finalArrangement,
-      paymentMethod: effectiveMethod,
-      amountReceived: effectivePaid,
-      walkInName: walkInName.trim() || undefined,
-      walkInPhone: walkInPhone.trim() || undefined,
-      dueDate: isCreditActive ? dueDate : undefined,
-      discountConcession: concession,
-    });
+    try {
+      await onConfirmSale({
+        paymentArrangement: finalArrangement,
+        paymentMethod: effectiveMethod,
+        amountReceived: effectivePaid,
+        walkInName: walkInName.trim() || undefined,
+        walkInPhone: walkInPhone.trim() || undefined,
+        dueDate: isCreditActive ? dueDate : undefined,
+        discountConcession: concession,
+        andPrint,
+      });
+    } finally {
+      setTimeout(() => {
+        isSubmittingRef.current = false;
+      }, 500);
+    }
   };
 
   if (!isOpen) return null;
@@ -673,35 +692,49 @@ export default function PaymentCheckoutModal({
 
         {/* 3. Footer Actions */}
         <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 space-y-2 shrink-0">
-          <div className="flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isProcessing}
-              className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-bold transition-colors cursor-pointer"
-            >
-              Cancel / Back
-            </button>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+            <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isProcessing}
+                className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-bold transition-colors cursor-pointer shrink-0"
+              >
+                Cancel
+              </button>
+              {/* Button 1: Confirm & Complete Sale (Instant Save, Close, Silent Sync) */}
+              <button
+                type="button"
+                id="modal-confirm-sale-btn"
+                onClick={() => handleConfirm(false)}
+                disabled={isSubmitDisabled || isProcessing}
+                className="flex-1 py-2.5 bg-white hover:bg-emerald-50 active:scale-[0.99] border-2 border-emerald-600 text-emerald-800 font-bold text-xs rounded-xl shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5 disabled:bg-slate-100 disabled:border-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {isProcessing ? (
+                  <span className="w-3.5 h-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                )}
+                <span>Sale</span>
+              </button>
 
-            <button
-              type="button"
-              id="modal-confirm-sale-btn"
-              onClick={handleConfirm}
-              disabled={isSubmitDisabled}
-              className="flex-1 py-2.5 bg-[#0f9d58] hover:bg-[#0b8043] active:scale-[0.99] text-white font-bold text-xs rounded-xl shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-2 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed cursor-pointer"
-            >
-              {isProcessing ? (
-                <span className="flex items-center gap-2">
+              {/* Button 2: Complete Sale & Print (Instant Save, Print Immediately, Silent Sync) */}
+              <button
+                type="button"
+                id="modal-complete-and-print-btn"
+                onClick={() => handleConfirm(true)}
+                disabled={isSubmitDisabled || isProcessing}
+                className="flex-1 py-2.5 bg-[#0f9d58] hover:bg-[#0b8043] active:scale-[0.99] text-white font-bold text-xs rounded-xl shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-1.5 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {isProcessing ? (
                   <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Processing Sale...</span>
-                </span>
-              ) : (
-                <span className="flex items-center gap-1.5">
-                  <span>Confirm & Complete Sale</span>
-                  <ArrowRight className="w-4 h-4" />
-                </span>
-              )}
-            </button>
+                ) : (
+                  <Printer className="w-4 h-4 shrink-0" />
+                )}
+                <span>Sale & Print</span>
+                <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+              </button>
+            </div>
           </div>
 
           {/* Inline Validation Hints (Replaces intrusive alerts) */}

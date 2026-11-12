@@ -6,9 +6,13 @@ export class CatalogueController {
   // BRANDS
   public static async getBrands(req: Request, res: Response): Promise<void> {
     try {
+      const branchId =
+        (req.query.branchId as string) ||
+        (req.account?.role !== 'SUPER_ADMIN' ? (req.account?.branchId as any)?._id?.toString() || req.account?.branchId?.toString() : undefined);
       const data = await CatalogueService.getBrands({
         search: req.query.search as string,
         status: req.query.status as string,
+        branchId,
       });
       sendSuccess(res, data);
     } catch (error) {
@@ -68,10 +72,14 @@ export class CatalogueController {
   // CATEGORIES
   public static async getCategories(req: Request, res: Response): Promise<void> {
     try {
+      const branchId =
+        (req.query.branchId as string) ||
+        (req.account?.role !== 'SUPER_ADMIN' ? (req.account?.branchId as any)?._id?.toString() || req.account?.branchId?.toString() : undefined);
       const data = await CatalogueService.getCategories({
         brandId: req.query.brandId as string,
         search: req.query.search as string,
         status: req.query.status as string,
+        branchId,
       });
       sendSuccess(res, data);
     } catch (error) {

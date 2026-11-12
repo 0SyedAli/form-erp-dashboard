@@ -123,22 +123,28 @@ export async function getMasterSnapshot(): Promise<POSMasterSnapshot | null> {
 export async function queueOfflineSale(record: OfflineSaleRecord): Promise<void> {
   try {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_SALES, 'readwrite');
       const store = tx.objectStore(STORE_SALES);
       const req = store.put(record);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
+      tx.onerror = () => reject(tx.error);
     });
   } catch (err) {
     // LocalStorage fallback
     try {
       const raw = localStorage.getItem('pos_offline_sales') || '[]';
       const list: OfflineSaleRecord[] = JSON.parse(raw);
-      list.push(record);
+      const idx = list.findIndex((s) => s.id === record.id);
+      if (idx >= 0) {
+        list[idx] = record;
+      } else {
+        list.push(record);
+      }
       localStorage.setItem('pos_offline_sales', JSON.stringify(list));
-    } catch {
-      // ignore
+    } catch (storageErr: any) {
+      throw new Error(`Local storage save failed: ${storageErr?.message || 'Storage quota exceeded or unavailable'}`);
     }
   }
 }

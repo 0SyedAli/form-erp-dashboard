@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ICategory extends Document {
   brandId: mongoose.Types.ObjectId;
+  branchId?: mongoose.Types.ObjectId;
   code: string;
   name: string;
   description?: string;
@@ -16,6 +17,11 @@ const CategorySchema = new Schema<ICategory>(
       type: Schema.Types.ObjectId,
       ref: 'Brand',
       required: true,
+      index: true,
+    },
+    branchId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Branch',
       index: true,
     },
     code: {

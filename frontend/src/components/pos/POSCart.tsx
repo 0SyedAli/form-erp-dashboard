@@ -167,26 +167,15 @@ export default function POSCart({
             >
               {/* Item Top Row */}
               <div className="flex items-start gap-3">
-                <div className="w-12 h-12 bg-slate-50 rounded-lg overflow-hidden shrink-0 border border-slate-100 flex items-center justify-center">
-                  {item.imageUrl ? (
-                    <Image
-                      src={item.imageUrl}
-                      alt={item.productName}
-                      width={48}
-                      height={48}
-                      className="w-full h-full object-cover"
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-blue-50/50">
-                      {/* Mini mattress representation */}
-                      <svg viewBox="0 0 40 24" className="w-8 h-6 text-blue-500">
-                        <polygon points="20,2 38,10 20,18 2,10" fill="#dbeafe" stroke="#3b82f6" strokeWidth="1" />
-                        <polygon points="2,10 20,18 20,22 2,14" fill="#3b82f6" />
-                        <polygon points="20,18 38,10 38,14 20,22" fill="#1d4ed8" />
-                      </svg>
-                    </div>
-                  )}
+                <div className="w-12 h-12 bg-slate-50 rounded-lg overflow-hidden shrink-0 border border-slate-100 flex items-center justify-center p-1">
+                  <Image
+                    src={item.imageUrl || '/assets/mattress/foam1.png'}
+                    alt={item.productName}
+                    width={48}
+                    height={48}
+                    className="w-full h-full object-contain"
+                    unoptimized
+                  />
                 </div>
 
                 <div className="flex-1 min-w-0">

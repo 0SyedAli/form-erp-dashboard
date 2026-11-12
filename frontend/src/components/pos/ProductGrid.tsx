@@ -300,24 +300,13 @@ export default function ProductGrid({
                 >
                   {/* Mattress Visual Container */}
                   <div className="w-full h-26 bg-slate-50/70 rounded-xl overflow-hidden relative mb-3 flex items-center justify-center border border-slate-100">
-                    {/* {product.imageUrl ? (
-                      <Image
-                        src={product.imageUrl}
-                        alt={product.name}
-                        fill
-                        sizes="(max-width: 768px) 100vw, 300px"
-                        className="object-cover"
-                        unoptimized
-                      />
-                    ) : (
-                      <RealisticMattressImage name={product.name} index={idx} />
-                    )} */}
                     <Image
-                      src="/assets/mattress/1.png"
-                      alt="mattress"
-                      width={200}
-                      height={200}
-                      className="object-cover"
+                      src={product.imageUrl || '/assets/mattress/foam1.png'}
+                      alt={product.name}
+                      fill
+                      sizes="(max-width: 768px) 100vw, 300px"
+                      className="object-contain p-2 transition-transform duration-200 group-hover:scale-105"
+                      unoptimized
                     />
 
                     {/* In Stock Badge */}
@@ -337,9 +326,9 @@ export default function ProductGrid({
                   {/* Info */}
                   <div className="flex-1 flex flex-col justify-between">
                     <div>
-                      {/* <h3 className="font-bold text-sm text-slate-900 leading-snug line-clamp-1 font-sans">
+                      <h3 className="font-bold text-sm text-slate-900 leading-snug line-clamp-1 font-sans">
                         {product.name}
-                      </h3> */}
+                      </h3>
                       <p className="text-xs text-slate-500 mt-0.5 line-clamp-1 font-sans">
                         {product.description || 'Standard Foam'}
                       </p>

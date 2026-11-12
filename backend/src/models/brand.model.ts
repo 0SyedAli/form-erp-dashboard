@@ -5,6 +5,7 @@ export interface IBrand extends Document {
   name: string;
   description?: string;
   logoUrl?: string;
+  branchId?: mongoose.Types.ObjectId;
   status: 'ACTIVE' | 'INACTIVE';
   createdAt: Date;
   updatedAt: Date;
@@ -32,6 +33,11 @@ const BrandSchema = new Schema<IBrand>(
     logoUrl: {
       type: String,
       trim: true,
+    },
+    branchId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Branch',
+      index: true,
     },
     status: {
       type: String,

@@ -30,6 +30,7 @@ import {
   useDeleteHeldSaleMutation as useDeleteHeldSaleBackendMutation,
   useCompleteCheckoutMutation as useCompleteBackendCheckoutMutation,
   useGetInvoiceByIdQuery as useGetBackendInvoiceByIdQuery,
+  POSCheckoutInput,
 } from '@/store/services/posApi';
 import {
   catalogueApi,
@@ -87,6 +88,7 @@ import HeldSalesModal from '@/components/pos/HeldSalesModal';
 import POSSettingsModal from '@/components/pos/POSSettingsModal';
 import NewSaleConfirmModal from '@/components/pos/NewSaleConfirmModal';
 import PaymentCheckoutModal, { CheckoutSubmitData } from '@/components/pos/PaymentCheckoutModal';
+import { printThermalReceipt } from '@/utils/thermalPrinter';
 
 function computeDefaultDueDate(days: number = 30): string {
   const d = new Date();
@@ -219,7 +221,9 @@ function POSContent() {
     { skip: !isBackendMode || !editInvoiceId }
   );
 
-  const isCheckingOut = isBackendMode ? isBackendCheckingOut : isDemoCheckingOut;
+  const [isLocalCheckingOut, setIsLocalCheckingOut] = useState<boolean>(false);
+  const isCheckingOut = isLocalCheckingOut || (isBackendMode ? isBackendCheckingOut : isDemoCheckingOut);
+  const isCheckoutLockRef = useRef<boolean>(false);
 
   // Sync manager hook
   const {
@@ -600,36 +604,52 @@ function POSContent() {
 
   // Selected Brand and Category States
   const [chosenBrandId, setChosenBrandId] = useState<string | null>(null);
+
+  // Branch-scoped Brands: Only brands that have products or stock in this branch (or assigned to this branch)
+  const branchBrands = useMemo(() => {
+    const filtered = brands.filter((b) => {
+      if ((b as any).branchId && String((b as any).branchId) === String(effectiveStockBranchId)) {
+        return true;
+      }
+      const hasProducts = (brandProductCounts[b.id] || 0) > 0;
+      const hasStock = (brandStockMap[b.id] || 0) > 0;
+      return hasProducts || hasStock;
+    });
+    return filtered.length > 0 ? filtered : brands;
+  }, [brands, brandProductCounts, brandStockMap, effectiveStockBranchId]);
+
   const selectedBrandId = useMemo(() => {
+    const availableBrands = branchBrands.length > 0 ? branchBrands : brands;
+
     // 1. If chosen brand has available stock (> 0) in this branch, keep it
     if (
       chosenBrandId &&
-      brands.some((b) => String(b.id) === String(chosenBrandId)) &&
+      availableBrands.some((b) => String(b.id) === String(chosenBrandId)) &&
       (brandStockMap[chosenBrandId] || 0) > 0
     ) {
       return chosenBrandId;
     }
 
     // 2. High priority: First brand that has available stock (> 0) in this branch
-    const brandInStock = brands.find((b) => (brandStockMap[b.id] || 0) > 0);
+    const brandInStock = availableBrands.find((b) => (brandStockMap[b.id] || 0) > 0);
     if (brandInStock) return brandInStock.id;
 
     // 3. If chosen brand has products even if out of stock, retain it
     if (
       chosenBrandId &&
-      brands.some((b) => String(b.id) === String(chosenBrandId)) &&
+      availableBrands.some((b) => String(b.id) === String(chosenBrandId)) &&
       (brandProductCounts[chosenBrandId] || 0) > 0
     ) {
       return chosenBrandId;
     }
 
     // 4. Second priority: First brand that has active products in this branch
-    const brandWithProducts = brands.find((b) => (brandProductCounts[b.id] || 0) > 0);
+    const brandWithProducts = availableBrands.find((b) => (brandProductCounts[b.id] || 0) > 0);
     if (brandWithProducts) return brandWithProducts.id;
 
     // 5. Fallback: First brand
-    return brands[0]?.id || '';
-  }, [chosenBrandId, brands, brandStockMap, brandProductCounts]);
+    return availableBrands[0]?.id || '';
+  }, [chosenBrandId, branchBrands, brands, brandStockMap, brandProductCounts]);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -744,15 +764,8 @@ function POSContent() {
 
   // Active brand object
   const currentBrand = useMemo(() => {
-    return brands.find((b) => b.id === selectedBrandId) || brands[0] || null;
-  }, [brands, selectedBrandId]);
-
-  // Filter categories strictly by selected brand
-  const brandCategories = useMemo(() => {
-    return categories.filter(
-      (c) => String(c.brandId) === String(selectedBrandId) && c.status === 'ACTIVE'
-    );
-  }, [categories, selectedBrandId]);
+    return branchBrands.find((b) => b.id === selectedBrandId) || branchBrands[0] || brands[0] || null;
+  }, [branchBrands, brands, selectedBrandId]);
 
   // Fast O(P) Category Stock Map (sum of variant stock for each category within active brand for this branch)
   const categoryStockMap = useMemo(() => {
@@ -784,6 +797,37 @@ function POSContent() {
     }
     return counts;
   }, [products, selectedBrandId, branchProductIds]);
+
+  // Filter categories strictly by selected brand AND scoped to this branch
+  const branchCategories = useMemo(() => {
+    const filtered = categories.filter((c) => {
+      if (String(c.brandId) !== String(selectedBrandId) || c.status !== 'ACTIVE') {
+        return false;
+      }
+      if ((c as any).branchId && String((c as any).branchId) === String(effectiveStockBranchId)) {
+        return true;
+      }
+      return (categoryProductCounts[c.id] || 0) > 0;
+    });
+
+    if ((brandProductCounts[selectedBrandId] || 0) > 0) {
+      return filtered;
+    }
+
+    return categories.filter(
+      (c) => String(c.brandId) === String(selectedBrandId) && c.status === 'ACTIVE'
+    );
+  }, [categories, selectedBrandId, categoryProductCounts, brandProductCounts, effectiveStockBranchId]);
+
+  // Auto-reset category selection to ALL when switching brands or branches if category no longer exists
+  useEffect(() => {
+    if (selectedCategoryId !== 'ALL') {
+      const exists = branchCategories.some((c) => c.id === selectedCategoryId);
+      if (!exists) {
+        setSelectedCategoryId('ALL');
+      }
+    }
+  }, [selectedBrandId, branchCategories, selectedCategoryId]);
 
   // Filter products strictly by Branch ownership, Brand, Category, and Debounced Search
   const filteredProducts = useMemo(() => {
@@ -956,6 +1000,11 @@ function POSContent() {
   };
 
   const handleConfirmCheckout = async (submitData: CheckoutSubmitData) => {
+    // 1. Prevent duplicate submissions / simultaneous button clicks (Requirement 5)
+    if (isCheckoutLockRef.current) return;
+    isCheckoutLockRef.current = true;
+    setIsLocalCheckingOut(true);
+
     const finalDiscount = discountAmount + (submitData.discountConcession || 0);
     const finalGrandTotal = Math.max(0, subtotal - finalDiscount);
     const effectivePaid =
@@ -971,314 +1020,163 @@ function POSContent() {
         ? Math.max(0, submitData.amountReceived - finalGrandTotal)
         : 0;
 
-    const executeOfflineSale = async () => {
-      const offlineId = `OFF-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-      const offlineInvNumber = `OFF-${activeBranch?.code || 'POS'}-${Date.now().toString().slice(-6)}`;
+    // 2. Generate exactly ONE unique transaction ID and idempotency key per sale (Requirement 5)
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).slice(2, 7).toUpperCase();
+    const branchPrefix = activeBranch?.code || 'POS';
+    const transactionId = `TXN-${branchPrefix}-${timestamp}-${randomSuffix}`;
+    const idempotencyKey = transactionId;
+    const localInvoiceNumber = `${branchPrefix}-${timestamp.toString().slice(-6)}`;
 
-      const isCrossBranch = Boolean(
-        effectiveStockBranchId && effectiveStockBranchId !== activeBranch?.id
-      );
-      const sourceBranchObj = isCrossBranch
-        ? branches.find((b) => b.id === effectiveStockBranchId)
-        : null;
+    const isCrossBranch = Boolean(
+      effectiveStockBranchId && effectiveStockBranchId !== activeBranch?.id
+    );
+    const sourceBranchObj = isCrossBranch
+      ? branches.find((b) => b.id === effectiveStockBranchId)
+      : null;
 
-      const checkoutPayload: any = {
-        branchId: activeBranch?.id || (activeBranch as any)?._id || 'MAIN',
-        sourceBranchId: isCrossBranch ? effectiveStockBranchId : undefined,
-        customerId: selectedCustomer?.id || (selectedCustomer as any)?._id,
-        customerName: selectedCustomer
-          ? selectedCustomer.name
-          : submitData.walkInName?.trim() || 'Walk-in Customer',
-        customerPhone: selectedCustomer
-          ? selectedCustomer.phone
-          : submitData.walkInPhone?.trim() || '',
-        customerType: selectedCustomer?.customerType || (saleType === 'WALK_IN' ? 'WALK_IN' : saleType),
-        saleType,
-        paymentArrangement: submitData.paymentArrangement,
-        paymentMethod: submitData.paymentMethod,
-        discountAmount: finalDiscount,
-        amountReceived: effectivePaid,
-        cashReceived: effectivePaid,
-        dueDate: outstanding > 0 ? submitData.dueDate || dueDate : undefined,
-        creditOverride: true,
-        creditApprovedBy: currentUser?.name || 'Cashier',
-        overrideReason: 'Approved at terminal',
-        items: cartItems.map((item) => ({
-          sku: item.sku,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-        })),
-        notes: `${saleType} Sale (Offline Mode - Light/Internet Outage)${isCrossBranch ? ` - Dispatched from ${sourceBranchObj?.name}` : ''}`,
-        idempotencyKey: offlineId,
-      };
+    const customerDisplayName = selectedCustomer
+      ? selectedCustomer.name
+      : submitData.walkInName?.trim() || 'Walk-in Customer';
+    const customerDisplayPhone = selectedCustomer
+      ? selectedCustomer.phone
+      : submitData.walkInPhone?.trim() || '';
 
-      const offlineInvoice: Invoice = {
-        id: offlineId,
-        invoiceNumber: offlineInvNumber,
-        branchId: String(activeBranch?.id || 'MAIN'),
-        branchName: activeBranch?.name || 'Main Branch',
-        sourceBranchId: isCrossBranch ? effectiveStockBranchId : undefined,
-        sourceBranchName: sourceBranchObj?.name,
-        isInterBranch: isCrossBranch,
-        customerType: (selectedCustomer?.customerType || (saleType === 'WALK_IN' ? 'WALK_IN' : saleType)) as any,
-        customerName: selectedCustomer
-          ? selectedCustomer.name
-          : submitData.walkInName?.trim() || 'Walk-in Customer',
-        customerPhone: selectedCustomer
-          ? selectedCustomer.phone
-          : submitData.walkInPhone?.trim() || '',
-        grossAmount: subtotal,
-        subtotal,
-        discountAmount: finalDiscount,
-        returnAmount: 0,
-        taxAmount: 0,
-        netAmount: finalGrandTotal,
-        grandTotal: finalGrandTotal,
-        amountPaid: effectivePaid,
-        amountReceived: effectivePaid,
-        amountDue: outstanding,
-        changeAmount,
-        paymentStatus: outstanding <= 0 ? 'PAID' : effectivePaid > 0 ? 'PARTIAL' : 'UNPAID',
-        paymentMethod: submitData.paymentMethod as any,
-        status: 'COMPLETED' as any,
-        date: new Date().toISOString(),
-        salesPerson: currentUser?.name || 'Cashier',
-        items: cartItems.map((it) => ({
-          productId: it.productId,
-          productName: it.productName,
-          sku: it.sku,
-          quantity: it.quantity,
-          unitPrice: it.unitPrice,
-          discount: (it as any).discount || 0,
-          total: it.unitPrice * it.quantity,
-          lineTotal: it.unitPrice * it.quantity,
-          sizeLabel: it.sizeLabel || '',
-          thicknessLabel: it.thicknessLabel || '',
-        })),
-      };
+    const checkoutPayload: POSCheckoutInput = {
+      branchId: activeBranch?.id || (activeBranch as any)?._id || 'MAIN',
+      sourceBranchId: isCrossBranch ? effectiveStockBranchId : undefined,
+      customerId: selectedCustomer?.id || (selectedCustomer as any)?._id,
+      customerName: customerDisplayName,
+      customerPhone: customerDisplayPhone || undefined,
+      customerType: selectedCustomer?.customerType || (saleType === 'WALK_IN' ? 'WALK_IN' : saleType),
+      saleType,
+      paymentArrangement: submitData.paymentArrangement,
+      paymentMethod: submitData.paymentMethod as any,
+      discountAmount: finalDiscount,
+      amountReceived: effectivePaid,
+      cashReceived: effectivePaid,
+      dueDate: outstanding > 0 ? submitData.dueDate || dueDate : undefined,
+      creditOverride: true,
+      creditApprovedBy: currentUser?.name || 'Cashier',
+      overrideReason: 'Approved at terminal',
+      items: cartItems.map((item) => ({
+        sku: item.sku,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      })),
+      notes: `${saleType} Sale - ${submitData.paymentArrangement} Arrangement${isCrossBranch ? ` - Stock from ${sourceBranchObj?.name}` : ''}`,
+      idempotencyKey,
+      editingInvoiceId: editingInvoice?.id || undefined,
+    };
 
-      // 1. Queue into local IndexedDB
+    const localInvoice: Invoice = {
+      id: transactionId,
+      invoiceNumber: localInvoiceNumber,
+      branchId: String(activeBranch?.id || 'MAIN'),
+      branchName: activeBranch?.name || 'Main Branch',
+      sourceBranchId: isCrossBranch ? effectiveStockBranchId : undefined,
+      sourceBranchName: sourceBranchObj?.name,
+      isInterBranch: isCrossBranch,
+      customerType: (selectedCustomer?.customerType || (saleType === 'WALK_IN' ? 'WALK_IN' : saleType)) as any,
+      customerName: customerDisplayName,
+      customerPhone: customerDisplayPhone,
+      grossAmount: subtotal,
+      subtotal,
+      discountAmount: finalDiscount,
+      returnAmount: 0,
+      taxAmount: 0,
+      netAmount: finalGrandTotal,
+      grandTotal: finalGrandTotal,
+      amountPaid: effectivePaid,
+      amountReceived: effectivePaid,
+      amountDue: outstanding,
+      changeAmount,
+      paymentStatus: outstanding <= 0 ? 'PAID' : effectivePaid > 0 ? 'PARTIAL' : 'UNPAID',
+      paymentMethod: submitData.paymentMethod as any,
+      status: 'COMPLETED' as any,
+      date: new Date().toISOString(),
+      salesPerson: currentUser?.name || 'Cashier',
+      items: cartItems.map((it) => ({
+        productId: it.productId,
+        productName: it.productName,
+        sku: it.sku,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+        discount: (it as any).discount || 0,
+        total: it.unitPrice * it.quantity,
+        lineTotal: it.unitPrice * it.quantity,
+        sizeLabel: it.sizeLabel || '',
+        thicknessLabel: it.thicknessLabel || '',
+      })),
+    };
+
+    // 3. Local-First Save: Save locally before sending anything to backend (Requirement 1 & 8)
+    try {
       await queueOfflineSale({
-        id: offlineId,
-        idempotencyKey: offlineId,
+        id: transactionId,
+        idempotencyKey,
         checkoutPayload,
-        invoice: offlineInvoice,
+        invoice: localInvoice,
         status: 'PENDING',
         retryCount: 0,
         createdAt: new Date().toISOString(),
       });
+    } catch (saveError: any) {
+      // Requirement 8: If local save fails, do not complete or print. Display error and preserve cart.
+      console.error('Critical: Local sale save failed:', saveError);
+      isCheckoutLockRef.current = false;
+      setIsLocalCheckingOut(false);
+      alert(`Local Save Failed: ${saveError?.message || 'Storage error'}. Sale has not been completed. Cart preserved.`);
+      return;
+    }
 
-      // 2. Immediate local stock decrement
-      const soldMap: Record<string, number> = {};
-      cartItems.forEach((item) => {
-        soldMap[item.sku] = (soldMap[item.sku] || 0) + item.quantity;
+    // 4. Instant Sale Completion (Zero waiting for network!)
+    // Decrement local inventory cache immediately
+    const soldMap: Record<string, number> = {};
+    cartItems.forEach((item) => {
+      soldMap[item.sku] = (soldMap[item.sku] || 0) + item.quantity;
+    });
+    setSoldQuantitiesBySku((prev) => {
+      const next = { ...prev };
+      Object.entries(soldMap).forEach(([sku, qty]) => {
+        next[sku] = (next[sku] || 0) + qty;
       });
-      setSoldQuantitiesBySku((prev) => {
-        const next = { ...prev };
-        Object.entries(soldMap).forEach(([sku, qty]) => {
-          next[sku] = (next[sku] || 0) + qty;
-        });
-        return next;
+      return next;
+    });
+
+    // Close payment modal, set completed invoice, open receipt modal, and clear cart
+    setIsPaymentModalOpen(false);
+    setCompletedInvoice(localInvoice);
+    setIsReceiptModalOpen(true);
+    handleClearCart();
+    setEditingInvoice(null);
+    if (editInvoiceId) {
+      router.replace('/pos');
+    }
+    await refreshPendingCount();
+
+    // Release checkout lock
+    isCheckoutLockRef.current = false;
+    setIsLocalCheckingOut(false);
+
+    // 5. Printing handling (Requirement 3, 4, 7)
+    // If "Complete Sale & Print" was clicked (or auto-print enabled), trigger printing immediately
+    if (submitData.andPrint || posSettings?.autoPrintReceipt) {
+      setTimeout(() => {
+        try {
+          printThermalReceipt(localInvoice, activeBranch, currentUser?.name || 'Cashier');
+        } catch (printErr) {
+          console.warn('Printer invoke error (sale remains saved locally):', printErr);
+        }
+      }, 50);
+    }
+
+    // 6. Silent Background Sync (Requirement 2 & 3: Silently sync with backend)
+    // Non-blocking fire-and-forget sync using existing background synchronization queue
+    if (isBackendMode && navigator.onLine) {
+      triggerSync().catch((syncErr) => {
+        console.warn('Background sync queued for retry:', syncErr);
       });
-
-      await refreshPendingCount();
-
-      // 3. Close payment modal, open receipt modal and clear cart
-      setIsPaymentModalOpen(false);
-      setCompletedInvoice(offlineInvoice);
-      setIsReceiptModalOpen(true);
-      handleClearCart();
-
-      if (posSettings?.autoPrintReceipt) {
-        setTimeout(() => {
-          window.print();
-        }, 300);
-      }
-    };
-
-    try {
-      if (!isOnline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
-        await executeOfflineSale();
-        return;
-      }
-
-      if (isBackendMode) {
-        const isCrossBranch = Boolean(
-          effectiveStockBranchId && effectiveStockBranchId !== activeBranch?.id
-        );
-        const sourceBranchObj = isCrossBranch
-          ? branches.find((b) => b.id === effectiveStockBranchId)
-          : null;
-
-        const result = await completeCheckoutBackendMutation({
-          branchId: activeBranch.id || (activeBranch as any)._id,
-          sourceBranchId: isCrossBranch ? effectiveStockBranchId : undefined,
-          customerId: selectedCustomer?.id || (selectedCustomer as any)?._id,
-          customerName: selectedCustomer
-            ? selectedCustomer.name
-            : submitData.walkInName?.trim() || 'Walk-in Customer',
-          customerPhone: selectedCustomer
-            ? selectedCustomer.phone
-            : submitData.walkInPhone?.trim() || undefined,
-          customerType: selectedCustomer?.customerType || (saleType === 'WALK_IN' ? 'WALK_IN' : saleType),
-          saleType,
-          paymentArrangement: submitData.paymentArrangement,
-          paymentMethod: submitData.paymentMethod as any,
-          discountAmount: finalDiscount,
-          amountReceived: effectivePaid,
-          cashReceived: effectivePaid,
-          dueDate: outstanding > 0 ? submitData.dueDate || dueDate : undefined,
-          creditOverride: true,
-          creditApprovedBy: currentUser?.name || 'Cashier',
-          overrideReason: 'Approved at terminal',
-          items: cartItems.map((item) => ({
-            sku: item.sku,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-          })),
-          notes: `${saleType} Sale - ${submitData.paymentArrangement} Arrangement${isCrossBranch ? ` - Stock from ${sourceBranchObj?.name}` : ''}`,
-          editingInvoiceId: editingInvoice?.id || undefined,
-        }).unwrap();
-
-        const inv: any = result.invoice;
-        const normalizedInvoice: Invoice = {
-          ...inv,
-          id: String(inv.id || inv._id || ''),
-          invoiceNumber: inv.invoiceNumber,
-          branchId: String(activeBranch?.id || inv.branchId || ''),
-          branchName: activeBranch?.name || inv.branchName || 'Main Branch',
-          sourceBranchId: isCrossBranch ? effectiveStockBranchId : undefined,
-          sourceBranchName: sourceBranchObj?.name,
-          isInterBranch: isCrossBranch,
-          customerName: inv.customerName,
-          customerPhone: inv.customerPhone,
-          grossAmount: inv.subtotal ?? inv.grossAmount ?? inv.total ?? 0,
-          subtotal: inv.subtotal ?? inv.grossAmount ?? inv.total ?? 0,
-          discountAmount: inv.discount ?? inv.discountAmount ?? finalDiscount,
-          netAmount: inv.total ?? inv.netAmount ?? inv.grandTotal ?? finalGrandTotal,
-          grandTotal: inv.total ?? inv.grandTotal ?? inv.netAmount ?? finalGrandTotal,
-          amountPaid: inv.paidAmount ?? inv.amountPaid ?? inv.amountReceived ?? effectivePaid,
-          amountReceived: inv.paidAmount ?? inv.amountReceived ?? effectivePaid,
-          amountDue: inv.balanceDue ?? inv.amountDue ?? outstanding,
-          changeAmount: inv.changeReturned ?? inv.changeAmount ?? changeAmount,
-          paymentStatus: inv.paymentStatus || (outstanding <= 0 ? 'PAID' : 'PARTIAL'),
-          paymentMethod: inv.paymentArrangement || inv.paymentMethod || submitData.paymentMethod,
-          status: inv.status || 'COMPLETED',
-          date: inv.createdAt || inv.date || new Date().toISOString(),
-          salesPerson: inv.cashierName || currentUser?.name || 'Cashier',
-          items: (inv.items || []).map((it: any) => ({
-            productId: it.variantId || it.productId || it.sku,
-            productName: it.productName || it.sku,
-            sku: it.sku,
-            quantity: it.quantity || 1,
-            unitPrice: it.unitPrice || 0,
-            discount: it.discount || 0,
-            total: it.lineTotal ?? it.total ?? ((it.unitPrice || 0) * (it.quantity || 1)),
-            lineTotal: it.lineTotal ?? it.total ?? ((it.unitPrice || 0) * (it.quantity || 1)),
-            sizeLabel: it.sizeLabel || '',
-            thicknessLabel: it.thicknessLabel || '',
-          })),
-        };
-
-        setIsPaymentModalOpen(false);
-        setCompletedInvoice(normalizedInvoice);
-        setIsReceiptModalOpen(true);
-        handleClearCart();
-        setEditingInvoice(null);
-        if (editInvoiceId) {
-          router.replace('/pos');
-        }
-
-        // Immediate local stock decrement
-        const soldMap: Record<string, number> = {};
-        cartItems.forEach((item) => {
-          soldMap[item.sku] = (soldMap[item.sku] || 0) + item.quantity;
-        });
-        setSoldQuantitiesBySku((prev) => {
-          const next = { ...prev };
-          Object.entries(soldMap).forEach(([sku, qty]) => {
-            next[sku] = (next[sku] || 0) + qty;
-          });
-          return next;
-        });
-
-        // Tag invalidations across inventory and catalogue stores
-        dispatch(inventoryApi.util.invalidateTags(['StockBalance', 'InventorySummary', 'StockMovement']));
-        dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
-        dispatch(posApi.util.invalidateTags(['POSAvailability', 'POSCatalogue', 'StockBalance']));
-        dispatch(erpApi.util.invalidateTags(['InventoryBalances', 'Variants', 'Products']));
-
-        Promise.allSettled([
-          refetchStockBalances(),
-          refetchSkus(),
-          refetchProducts(),
-        ]).then(() => {
-          setSoldQuantitiesBySku({});
-        });
-
-        if (posSettings?.autoPrintReceipt) {
-          setTimeout(() => {
-            window.print();
-          }, 300);
-        }
-      } else {
-        const demoResult = await completeCheckoutMutation({
-          branchId: activeBranch.id,
-          cashierId: currentUser?.id || 'USR-ADMIN-01',
-          cashierName: currentUser?.name || 'Admin',
-          customerName: selectedCustomer ? selectedCustomer.name : (submitData.walkInName || 'Walk-in Retail Customer'),
-          customerPhone: selectedCustomer ? selectedCustomer.phone : (submitData.walkInPhone || '0300-1234567'),
-          customerId: selectedCustomer?.id,
-          saleType,
-          appliedPriceList: saleType,
-          paymentArrangement: submitData.paymentArrangement,
-          dueDate: outstanding > 0 ? submitData.dueDate || dueDate : undefined,
-          creditOverride: true,
-          creditApprovedBy: currentUser?.name || 'Supervisor',
-          paymentMethod: submitData.paymentMethod as any,
-          discountAmount: finalDiscount,
-          subtotal,
-          taxAmount: 0,
-          grandTotal: finalGrandTotal,
-          amountReceived: effectivePaid,
-          changeAmount,
-          items: cartItems.map((item) => ({
-            sku: item.sku,
-            productId: item.productId,
-            productName: item.productName,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-          })),
-          notes: `${saleType} Sale - ${submitData.paymentArrangement} Arrangement`,
-        }).unwrap();
-
-        setIsPaymentModalOpen(false);
-        setCompletedInvoice(demoResult.invoice);
-        setIsReceiptModalOpen(true);
-        handleClearCart();
-      }
-    } catch (err: any) {
-      const isNetworkError =
-        typeof navigator !== 'undefined' &&
-        (!navigator.onLine ||
-          err?.status === 'FETCH_ERROR' ||
-          err?.status === 'PARSING_ERROR' ||
-          err?.name === 'TypeError' ||
-          !err?.status ||
-          err?.message?.includes('Failed to fetch') ||
-          err?.message?.includes('NetworkError'));
-
-      if (isNetworkError) {
-        await executeOfflineSale();
-        return;
-      }
-
-      const errorMsg =
-        err?.data?.message ||
-        err?.error ||
-        (err as Error).message ||
-        'Checkout failed';
-      alert(`Checkout failed: ${errorMsg}`);
     }
   };
 
@@ -1480,10 +1378,7 @@ function POSContent() {
       if (e.key === 'F6') {
         e.preventDefault();
         if (handlers.completedInvoice) {
-          setIsReceiptModalOpen(true);
-          setTimeout(() => window.print(), 200);
-        } else if (handlers.cartItems.length > 0) {
-          window.print();
+          printThermalReceipt(handlers.completedInvoice, activeBranch, currentUser?.name || 'Cashier');
         }
         return;
       }
@@ -1648,7 +1543,7 @@ function POSContent() {
         <div className="flex-1 flex flex-col min-w-0 gap-3 overflow-hidden h-full">
           {/* Horizontal Brand Carousel */}
           <BrandSelector
-            brands={brands}
+            brands={branchBrands}
             selectedBrandId={selectedBrandId}
             onSelectBrand={(id) => {
               setChosenBrandId(id);
@@ -1662,12 +1557,12 @@ function POSContent() {
           <div className="flex-1 flex overflow-hidden gap-3.5 min-h-0">
             {/* Left: Category Sidebar Card */}
             <CategorySidebar
-              categories={brandCategories}
+              categories={branchCategories}
               selectedCategoryId={selectedCategoryId}
               onSelectCategory={setSelectedCategoryId}
               categoryProductCounts={categoryProductCounts}
               categoryStockMap={categoryStockMap}
-              totalAllCount={products.filter((p) => p.brandId === selectedBrandId && p.status === 'ACTIVE').length}
+              totalAllCount={products.filter((p) => p.brandId === selectedBrandId && p.status === 'ACTIVE' && branchProductIds.has(String(p.id))).length}
             />
 
             {/* Center: Products Grid Card */}
@@ -1706,9 +1601,7 @@ function POSContent() {
             onHoldSale={handleHoldSale}
             onPrintInvoice={() => {
               if (completedInvoice) {
-                setIsReceiptModalOpen(true);
-              } else if (cartItems.length > 0) {
-                window.print();
+                printThermalReceipt(completedInvoice, activeBranch, currentUser?.name || 'Cashier');
               }
             }}
             isProcessing={isCheckingOut}

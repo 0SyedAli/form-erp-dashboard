@@ -6,6 +6,7 @@ export const brandSchema = z.object({
     name: z.string().trim().min(2).max(100),
     description: z.string().trim().optional(),
     logoUrl: z.string().trim().optional().or(z.literal('')),
+    branchId: z.string().optional(),
     status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
@@ -17,6 +18,7 @@ export const updateBrandSchema = z.object({
     name: z.string().trim().min(2).max(100).optional(),
     description: z.string().trim().optional(),
     logoUrl: z.string().trim().optional().or(z.literal('')),
+    branchId: z.string().optional(),
     status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
@@ -24,6 +26,7 @@ export const updateBrandSchema = z.object({
 export const categorySchema = z.object({
   body: z.object({
     brandId: z.string({ required_error: 'Brand ID is required' }),
+    branchId: z.string().optional(),
     code: z.string().trim().min(2).max(10).toUpperCase(),
     name: z.string().trim().min(2).max(100),
     description: z.string().trim().optional(),
@@ -35,6 +38,7 @@ export const updateCategorySchema = z.object({
   params: z.object({ id: z.string() }),
   body: z.object({
     brandId: z.string().optional(),
+    branchId: z.string().optional(),
     code: z.string().trim().min(2).max(10).toUpperCase().optional(),
     name: z.string().trim().min(2).max(100).optional(),
     description: z.string().trim().optional(),
