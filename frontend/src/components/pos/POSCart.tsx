@@ -24,6 +24,7 @@ import {
 interface POSCartProps {
   items: POSCartItem[];
   onUpdateQuantity: (variantId: string, quantity: number) => void;
+  onUpdateUnitPrice?: (variantId: string, newPrice: number) => void;
   onRemoveItem: (variantId: string) => void;
   onClearCart: () => void;
   discountAmount: number;
@@ -54,6 +55,7 @@ interface POSCartProps {
 export default function POSCart({
   items,
   onUpdateQuantity,
+  onUpdateUnitPrice,
   onRemoveItem,
   onClearCart,
   discountAmount,
@@ -197,9 +199,31 @@ export default function POSCart({
                     {item.sizeLabel} • {item.thicknessInches}&quot; Thickness
                   </p>
 
-                  <p className="text-xs font-bold text-slate-800 mt-0.5 font-sans">
-                    Rs. {item.unitPrice.toLocaleString()}
-                  </p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="text-[11px] font-bold text-slate-500 font-sans">Rs.</span>
+                    {onUpdateUnitPrice ? (
+                      <input
+                        type="number"
+                        min={0}
+                        value={item.unitPrice}
+                        onChange={(e) => {
+                          const val = Math.max(0, parseInt(e.target.value) || 0);
+                          onUpdateUnitPrice(item.variantId, val);
+                        }}
+                        className="w-20 px-1.5 py-0.5 text-xs font-black text-slate-900 border border-slate-200 hover:border-slate-300 focus:border-blue-500 rounded bg-slate-50/70 focus:bg-white focus:outline-hidden font-sans"
+                        title="Click to edit unit price"
+                      />
+                    ) : (
+                      <span className="text-xs font-bold text-slate-800 font-sans">
+                        {item.unitPrice.toLocaleString()}
+                      </span>
+                    )}
+                    {item.originalPrice && item.originalPrice !== item.unitPrice && (
+                      <span className="text-[10px] text-slate-400 line-through font-sans">
+                        Rs. {item.originalPrice.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

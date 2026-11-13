@@ -29,6 +29,14 @@ interface ProductConfigModalProps {
   variantStockMap?: Record<string, number>;
 }
 
+interface UniqueSizeOption {
+  dimKey: string;
+  length: number;
+  width: number;
+  displayLabel: string;
+  sizeIds: string[];
+}
+
 export default function ProductConfigModal({
   isOpen,
   onClose,
@@ -73,116 +81,160 @@ export default function ProductConfigModal({
     return thicknesses.filter((t) => t.status === 'ACTIVE');
   }, [thicknesses]);
 
-  // Helper: compute stock for a size under this product
+  // Deduplicate and group sizes by dimension (length x width) for this product
+  const uniqueProductSizes = useMemo<UniqueSizeOption[]>(() => {
+    const map = new Map<string, UniqueSizeOption>();
+
+    for (const v of productVariants) {
+      const s = activeSizes.find((sz) => String(sz.id) === String(v.sizeId));
+      if (!s) continue;
+      const dimKey = s.length && s.width ? `${s.length}x${s.width}` : s.displayLabel || s.id;
+      if (!map.has(dimKey)) {
+        map.set(dimKey, {
+          dimKey,
+          length: s.length,
+          width: s.width,
+          displayLabel: s.length && s.width ? `${s.length}" × ${s.width}"` : s.displayLabel,
+          sizeIds: [String(s.id)],
+        });
+      } else {
+        const existing = map.get(dimKey)!;
+        if (!existing.sizeIds.includes(String(s.id))) {
+          existing.sizeIds.push(String(s.id));
+        }
+      }
+    }
+
+    return Array.from(map.values());
+  }, [productVariants, activeSizes]);
+
+  // Helper: compute total stock for a unique dimension option
   const getSizeStock = useCallback(
-    (sizeId: string) => {
+    (sizeOpt: UniqueSizeOption) => {
       return productVariants
-        .filter((v) => String(v.sizeId) === String(sizeId))
+        .filter((v) => sizeOpt.sizeIds.includes(String(v.sizeId)))
         .reduce((sum, v) => sum + (stockMap[v.id] || 0), 0);
     },
     [productVariants, stockMap]
   );
 
-  // Helper: compute stock for a thickness given the selected size
-  const getThicknessStock = useCallback(
-    (sizeId: string, thicknessId: string) => {
-      const v = productVariants.find(
-        (pv) =>
-          String(pv.sizeId) === String(sizeId) &&
-          String(pv.thicknessId) === String(thicknessId)
-      );
-      return v ? stockMap[v.id] || 0 : 0;
-    },
-    [productVariants, stockMap]
-  );
+  // Available unique sizes with stock > 0
+  const availableSizes = useMemo(() => {
+    const inStock = uniqueProductSizes.filter((s) => getSizeStock(s) > 0);
+    return inStock.length > 0 ? inStock : uniqueProductSizes;
+  }, [uniqueProductSizes, getSizeStock]);
 
-  // 4. Selected state
-  const [selectedSizeId, setSelectedSizeId] = useState<string>('');
+  // Selected state
+  const [selectedDimKey, setSelectedDimKey] = useState<string>('');
   const [selectedThicknessId, setSelectedThicknessId] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
 
-  // Auto-select initial size and thickness whenever the product changes or modal opens
-  useEffect(() => {
-    if (!isOpen || !product || activeSizes.length === 0) return;
+  // Currently selected unique size option
+  const selectedSize = useMemo(() => {
+    return availableSizes.find((s) => s.dimKey === selectedDimKey) || availableSizes[0] || null;
+  }, [availableSizes, selectedDimKey]);
 
-    // Prefer size that has stock > 0
-    let bestSize = activeSizes.find((s) => getSizeStock(s.id) > 0);
-    if (!bestSize) {
-      // Fallback to size that has configured variants for this product
-      bestSize = activeSizes.find((s) =>
-        productVariants.some((v) => String(v.sizeId) === String(s.id))
-      );
-    }
-    if (!bestSize) {
-      bestSize = activeSizes[0];
-    }
-
-    const initSizeId = bestSize ? bestSize.id : '';
-    setSelectedSizeId(initSizeId);
-
-    // Prefer thickness that has stock > 0 for this size
-    let bestThick = activeThicknesses.find(
-      (t) => getThicknessStock(initSizeId, t.id) > 0
+  // Available thicknesses for the selected size dimension that have variants & stock
+  const availableThicknesses = useMemo(() => {
+    if (!selectedSize) return [];
+    const matchingVariants = productVariants.filter((v) =>
+      selectedSize.sizeIds.includes(String(v.sizeId))
     );
-    if (!bestThick) {
-      bestThick = activeThicknesses.find((t) =>
-        productVariants.some(
-          (v) =>
-            String(v.sizeId) === String(initSizeId) &&
-            String(v.thicknessId) === String(t.id)
-        )
-      );
-    }
-    if (!bestThick) {
-      bestThick = activeThicknesses[0];
-    }
 
-    setSelectedThicknessId(bestThick ? bestThick.id : '');
-    setQuantity(1);
-  }, [isOpen, product, activeSizes, activeThicknesses, getSizeStock, getThicknessStock, productVariants]);
-
-  // Handle Size change
-  const handleSelectSize = (sizeId: string) => {
-    setSelectedSizeId(sizeId);
-    // Check if current thickness has stock for this newly selected size
-    const currentStock = getThicknessStock(sizeId, selectedThicknessId);
-    if (currentStock <= 0) {
-      // Auto-switch to first thickness with stock > 0
-      const bestThick = activeThicknesses.find(
-        (t) => getThicknessStock(sizeId, t.id) > 0
-      );
-      if (bestThick) {
-        setSelectedThicknessId(bestThick.id);
+    const map = new Map<string, { id: string; value: number; stock: number }>();
+    for (const v of matchingVariants) {
+      const th = activeThicknesses.find((t) => String(t.id) === String(v.thicknessId));
+      if (!th) continue;
+      const thKey = String(th.value);
+      const vStock = stockMap[v.id] || 0;
+      if (!map.has(thKey)) {
+        map.set(thKey, {
+          id: String(th.id),
+          value: th.value,
+          stock: vStock,
+        });
+      } else {
+        const existing = map.get(thKey)!;
+        existing.stock += vStock;
       }
     }
-    setQuantity(1);
-  };
 
-  // Find currently selected entities
-  const selectedSize = useMemo(() => {
-    return activeSizes.find((s) => s.id === selectedSizeId);
-  }, [activeSizes, selectedSizeId]);
-
-  const selectedThickness = useMemo(() => {
-    return activeThicknesses.find((t) => t.id === selectedThicknessId);
-  }, [activeThicknesses, selectedThicknessId]);
+    const list = Array.from(map.values()).sort((a, b) => a.value - b.value);
+    const inStock = list.filter((t) => t.stock > 0);
+    return inStock.length > 0 ? inStock : list;
+  }, [selectedSize, productVariants, activeThicknesses, stockMap]);
 
   // Currently matching variant
   const selectedVariant = useMemo(() => {
+    if (!selectedSize || !selectedThicknessId) return null;
+    const targetThick = activeThicknesses.find((t) => String(t.id) === String(selectedThicknessId));
+    if (!targetThick) return null;
+
     return (
-      productVariants.find(
-        (v) =>
-          String(v.sizeId) === String(selectedSizeId) &&
-          String(v.thicknessId) === String(selectedThicknessId)
-      ) || null
+      productVariants.find((v) => {
+        const matchesSize = selectedSize.sizeIds.includes(String(v.sizeId));
+        if (!matchesSize) return false;
+        const vThick = activeThicknesses.find((t) => String(t.id) === String(v.thicknessId));
+        return vThick && vThick.value === targetThick.value;
+      }) || null
     );
-  }, [productVariants, selectedSizeId, selectedThicknessId]);
+  }, [productVariants, selectedSize, selectedThicknessId, activeThicknesses]);
 
   // Available stock for selected configuration
   const currentAvailableStock = useMemo(() => {
     if (!selectedVariant) return 0;
     return stockMap[selectedVariant.id] || 0;
   }, [selectedVariant, stockMap]);
+
+  // Auto-select initial size and thickness whenever the product changes or modal opens
+  useEffect(() => {
+    if (!isOpen || !product || availableSizes.length === 0) return;
+
+    // Prefer size that has stock > 0
+    let bestSize = availableSizes.find((s) => getSizeStock(s) > 0);
+    if (!bestSize) {
+      bestSize = availableSizes[0];
+    }
+
+    const initDimKey = bestSize ? bestSize.dimKey : '';
+    setSelectedDimKey(initDimKey);
+
+    if (bestSize) {
+      const matchingVariants = productVariants.filter((v) =>
+        bestSize.sizeIds.includes(String(v.sizeId))
+      );
+      const inStockVar = matchingVariants.find((v) => (stockMap[v.id] || 0) > 0);
+      const chosenVar = inStockVar || matchingVariants[0];
+      if (chosenVar) {
+        setSelectedThicknessId(String(chosenVar.thicknessId));
+      }
+    }
+
+    setQuantity(1);
+  }, [isOpen, product, availableSizes, productVariants, stockMap, getSizeStock]);
+
+  // Handle Size change
+  const handleSelectSize = (dimKey: string) => {
+    setSelectedDimKey(dimKey);
+    const newSize = availableSizes.find((s) => s.dimKey === dimKey);
+    if (newSize) {
+      const matchingVariants = productVariants.filter((v) =>
+        newSize.sizeIds.includes(String(v.sizeId))
+      );
+      // Auto-switch to thickness with stock > 0
+      const inStockVar = matchingVariants.find((v) => (stockMap[v.id] || 0) > 0);
+      const chosenVar = inStockVar || matchingVariants[0];
+      if (chosenVar) {
+        setSelectedThicknessId(String(chosenVar.thicknessId));
+      }
+    }
+    setQuantity(1);
+  };
+
+  // Find currently selected thickness entity
+  const selectedThickness = useMemo(() => {
+    return activeThicknesses.find((t) => String(t.id) === String(selectedThicknessId));
+  }, [activeThicknesses, selectedThicknessId]);
 
   // Price helper
   const getVariantPrice = useCallback(
@@ -209,14 +261,23 @@ export default function ProductConfigModal({
     return basePrice;
   }, [selectedVariant, getVariantPrice, basePrice]);
 
-  const totalPrice = unitPrice * quantity;
+  // Editable price state for temporary price adjustments / negotiations
+  const [customPrice, setCustomPrice] = useState<number | ''>('');
+
+  useEffect(() => {
+    setCustomPrice(unitPrice);
+  }, [unitPrice, selectedDimKey, selectedThicknessId]);
+
+  const effectiveUnitPrice = typeof customPrice === 'number' && customPrice >= 0 ? customPrice : unitPrice;
+  const totalPrice = effectiveUnitPrice * quantity;
 
   // Add to Cart handler
   const handleAdd = () => {
     if (!product || currentAvailableStock <= 0) return;
 
     const variantId =
-      selectedVariant?.id || `synth-${product.id}-${selectedSizeId}-${selectedThicknessId}`;
+      selectedVariant?.id || `synth-${product.id}-${selectedDimKey}-${selectedThicknessId}`;
+    const finalUnitPrice = typeof customPrice === 'number' && customPrice >= 0 ? customPrice : unitPrice;
     const cartItem: POSCartItem = {
       variantId,
       productId: product.id,
@@ -228,9 +289,10 @@ export default function ProductConfigModal({
       sku:
         selectedVariant?.sku ||
         `${product.code || 'SKU'}-${selectedThickness?.value || 6}`,
-      unitPrice,
+      originalPrice: unitPrice,
+      unitPrice: finalUnitPrice,
       quantity,
-      lineTotal: totalPrice,
+      lineTotal: finalUnitPrice * quantity,
       availableStock: currentAvailableStock,
       imageUrl: product.imageUrl,
     };
@@ -298,125 +360,115 @@ export default function ProductConfigModal({
               )}
             </div>
 
-            <div className="grid grid-cols-4 sm:grid-cols-4 gap-2">
-              {activeSizes.map((size) => {
-                const isSelected = selectedSizeId === size.id;
-                const sizeStock = getSizeStock(size.id);
-                const hasStock = sizeStock > 0;
+            {availableSizes.length === 0 ? (
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-center">
+                <p className="text-xs font-semibold text-amber-800">
+                  No sizes available for this product at this branch.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {availableSizes.map((size) => {
+                  const isSelected = selectedDimKey === size.dimKey;
+                  const sizeStock = getSizeStock(size);
+                  const hasStock = sizeStock > 0;
 
-                // Format display label
-                const labelMatch = size.displayLabel.match(/^(.*?)\s*\((.*?)\)$/);
-                const mainName = labelMatch ? labelMatch[2] : size.displayLabel;
-                const subDim = labelMatch ? labelMatch[1] : `${size.length}" × ${size.width}"`;
-
-                return (
-                  <button
-                    key={size.id}
-                    type="button"
-                    disabled={!hasStock}
-                    onClick={() => handleSelectSize(size.id)}
-                    className={`py-2 px-1.5 rounded-xl border-2 flex flex-col items-center justify-center transition-all relative ${
-                      !hasStock
+                  return (
+                    <button
+                      key={size.dimKey}
+                      type="button"
+                      disabled={!hasStock}
+                      onClick={() => handleSelectSize(size.dimKey)}
+                      className={`py-2 px-1.5 rounded-xl border-2 flex flex-col items-center justify-center transition-all relative ${!hasStock
                         ? 'opacity-40 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400'
                         : isSelected
-                        ? 'border-[#1a73e8] bg-blue-50/40 shadow-xs ring-1 ring-blue-500/20 cursor-pointer'
-                        : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 cursor-pointer'
-                    }`}
-                  >
-                    {/* Small rounded stock badge */}
-                    <span
-                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full mb-1 leading-none ${
-                        hasStock
+                          ? 'border-[#1a73e8] bg-blue-50/40 shadow-xs ring-1 ring-blue-500/20 cursor-pointer'
+                          : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 cursor-pointer'
+                        }`}
+                    >
+                      {/* Small rounded stock badge */}
+                      <span
+                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full mb-1 leading-none ${hasStock
                           ? isSelected
                             ? 'bg-blue-600 text-white'
                             : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                           : 'bg-slate-200 text-slate-500'
-                      }`}
-                    >
-                      {sizeStock}
-                    </span>
+                          }`}
+                      >
+                        {sizeStock}
+                      </span>
 
-                    <span
-                      className={`text-xs font-bold truncate max-w-full ${
-                        !hasStock
-                          ? 'text-slate-400'
-                          : isSelected
-                          ? 'text-[#1a73e8]'
-                          : 'text-slate-800'
-                      }`}
-                    >
-                      {mainName}
-                    </span>
-                    <span className="text-[10px] text-slate-400 mt-0.5 whitespace-nowrap">
-                      {subDim}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                      <span className="text-[15px] font-bold text-slate-900 mt-0.5 whitespace-nowrap">
+                        {size.displayLabel}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Select Thickness (Depth) */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-bold text-slate-800 font-sans">
-                Select Thickness (Depth)
-              </label>
-              {selectedThickness && (
-                <span className="text-[11px] font-medium text-slate-500">
-                  Stock:{' '}
-                  <strong
-                    className={
-                      currentAvailableStock > 0 ? 'text-emerald-700 font-bold' : 'text-rose-600 font-bold'
-                    }
-                  >
-                    {currentAvailableStock > 0 ? `${currentAvailableStock} available` : 'Out of stock'}
-                  </strong>
-                </span>
-              )}
-            </div>
+          {availableThicknesses.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-bold text-slate-800 font-sans">
+                  Select Thickness (Depth)
+                </label>
+                {selectedThickness && (
+                  <span className="text-[11px] font-medium text-slate-500">
+                    Stock:{' '}
+                    <strong
+                      className={
+                        currentAvailableStock > 0 ? 'text-emerald-700 font-bold' : 'text-rose-600 font-bold'
+                      }
+                    >
+                      {currentAvailableStock > 0 ? `${currentAvailableStock} available` : 'Out of stock'}
+                    </strong>
+                  </span>
+                )}
+              </div>
 
-            <div className="grid grid-cols-5 gap-2">
-              {activeThicknesses.map((th) => {
-                const isSelected = selectedThicknessId === th.id;
-                const thickStock = getThicknessStock(selectedSizeId, th.id);
-                const hasStock = thickStock > 0;
+              <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                {availableThicknesses.map((th) => {
+                  const isSelected = String(selectedThicknessId) === String(th.id);
+                  const thickStock = th.stock;
+                  const hasStock = thickStock > 0;
 
-                return (
-                  <button
-                    key={th.id}
-                    type="button"
-                    disabled={!hasStock}
-                    onClick={() => {
-                      setSelectedThicknessId(th.id);
-                      setQuantity(1);
-                    }}
-                    className={`h-11 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1 transition-all relative ${
-                      !hasStock
+                  return (
+                    <button
+                      key={th.id}
+                      type="button"
+                      disabled={!hasStock}
+                      onClick={() => {
+                        setSelectedThicknessId(th.id);
+                        setQuantity(1);
+                      }}
+                      className={`h-11 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1 transition-all relative ${!hasStock
                         ? 'opacity-40 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400'
                         : isSelected
-                        ? 'border-[#1a73e8] bg-blue-50/40 text-[#1a73e8] shadow-xs ring-1 ring-blue-500/20 cursor-pointer'
-                        : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700 cursor-pointer'
-                    }`}
-                  >
-                    <span>{th.value}&quot;</span>
-                    {/* Small rounded stock badge */}
-                    <span
-                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
-                        hasStock
+                          ? 'border-[#1a73e8] bg-blue-50/40 text-[#1a73e8] shadow-xs ring-1 ring-blue-500/20 cursor-pointer'
+                          : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700 cursor-pointer'
+                        }`}
+                    >
+                      <span style={{ fontSize: '18px', fontWeight: 'bold' }}>{th.value}&quot;</span>
+                      {/* Small rounded stock badge */}
+                      <span
+                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none ${hasStock
                           ? isSelected
                             ? 'bg-blue-600 text-white'
                             : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                           : 'bg-slate-200 text-slate-500'
-                      }`}
-                    >
-                      {thickStock}
-                    </span>
-                  </button>
-                );
-              })}
+                          }`}
+                      >
+                        {thickStock}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Modal Bottom Action Row */}
@@ -457,23 +509,37 @@ export default function ProductConfigModal({
           </div>
 
           {/* Price & Add To Cart Button */}
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <span className="text-xs text-slate-500 font-medium">Price: </span>
-              <span className="text-base font-extrabold text-[#0f9d58] font-sans">
-                Rs. {totalPrice.toLocaleString()}
-              </span>
+          <div className="flex items-center gap-3">
+            <div className="flex flex-col items-end">
+              <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-xl px-2 py-1 shadow-2xs">
+                <span className="text-[11px] font-bold text-slate-500 font-sans">Price: Rs.</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={customPrice}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0);
+                    setCustomPrice(val);
+                  }}
+                  className="w-20 text-xs font-black text-slate-900 border-none focus:outline-hidden font-sans"
+                  title="Click to edit unit price"
+                />
+              </div>
+              {quantity > 1 && (
+                <span className="text-[10px] font-bold text-[#0f9d58] mt-0.5 font-sans">
+                  Total: Rs. {totalPrice.toLocaleString()}
+                </span>
+              )}
             </div>
 
             <button
               type="button"
               onClick={handleAdd}
               disabled={currentAvailableStock <= 0}
-              className={`font-bold text-xs px-5 py-2.5 rounded-xl transition-all flex items-center gap-1.5 select-none ${
-                currentAvailableStock > 0
-                  ? 'bg-[#0f9d58] hover:bg-[#0b8043] text-white shadow-xs hover:shadow-md cursor-pointer active:scale-95'
-                  : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-70'
-              }`}
+              className={`font-bold text-xs px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 select-none ${currentAvailableStock > 0
+                ? 'bg-[#0f9d58] hover:bg-[#0b8043] text-white shadow-xs hover:shadow-md cursor-pointer active:scale-95'
+                : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-70'
+                }`}
             >
               <ShoppingCart className="w-4 h-4" />
               <span>{currentAvailableStock > 0 ? 'Add to Cart' : 'Out of Stock'}</span>

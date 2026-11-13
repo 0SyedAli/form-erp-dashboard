@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { BranchType, Branch } from '@/types';
-import { useUpdateBranchMutation } from '@/store/services/apiSlice';
+import { useUpdateBranchMutation } from '@/store/services/catalogueApi';
 import { X, Edit2, Building2 } from 'lucide-react';
 
 const editBranchSchema = z.object({
@@ -124,7 +124,7 @@ function EditBranchModalContent({
       onSuccess(result);
       onClose();
     } catch (err) {
-      setServerError((err as { data?: string })?.data || 'Failed to update branch details.');
+      setServerError((err as any)?.data?.message || (err as any)?.data || (err as any)?.message || 'Failed to update branch details.');
     }
   };
 

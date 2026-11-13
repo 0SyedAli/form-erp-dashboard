@@ -10,6 +10,8 @@ import {
   updateBrandSchema,
   categorySchema,
   updateCategorySchema,
+  productLineSchema,
+  updateProductLineSchema,
   sizeSchema,
   updateSizeSchema,
   thicknessSchema,
@@ -122,6 +124,56 @@ catalogueRoutes.delete(
   requireBranchPermission('addEditProducts'),
   validateRequest(idParamSchema),
   CatalogueController.deleteCategory
+);
+
+// ==========================================
+// PRODUCT LINES (SUB-CATEGORIES)
+// ==========================================
+catalogueRoutes.get(
+  '/product-lines',
+  authenticate,
+  requireBranchPermission('viewProducts'),
+  CatalogueController.getProductLines
+);
+
+catalogueRoutes.get(
+  '/product-lines/:id',
+  authenticate,
+  requireBranchPermission('viewProducts'),
+  validateRequest(idParamSchema),
+  CatalogueController.getProductLineById
+);
+
+catalogueRoutes.post(
+  '/product-lines',
+  authenticate,
+  requireBranchPermission('addEditProducts'),
+  validateRequest(productLineSchema),
+  CatalogueController.createProductLine
+);
+
+catalogueRoutes.patch(
+  '/product-lines/:id',
+  authenticate,
+  requireBranchPermission('addEditProducts'),
+  validateRequest(updateProductLineSchema),
+  CatalogueController.updateProductLine
+);
+
+catalogueRoutes.patch(
+  '/product-lines/:id/status',
+  authenticate,
+  requireBranchPermission('addEditProducts'),
+  validateRequest(statusToggleSchema),
+  CatalogueController.toggleProductLineStatus
+);
+
+catalogueRoutes.delete(
+  '/product-lines/:id',
+  authenticate,
+  requireBranchPermission('addEditProducts'),
+  validateRequest(idParamSchema),
+  CatalogueController.deleteProductLine
 );
 
 // ==========================================

@@ -42,7 +42,7 @@ const SizeSchema = new Schema<ISize>(
   }
 );
 
-SizeSchema.index({ length: 1, width: 1, unit: 1 }, { unique: true });
+SizeSchema.index({ length: 1, width: 1, displayLabel: 1 }, { unique: true });
 
 export const Size = mongoose.model<ISize>('Size', SizeSchema);
 

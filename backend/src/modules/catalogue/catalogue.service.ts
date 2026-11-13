@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import {
   Brand,
   Category,
+  ProductLine,
   Size,
   Thickness,
   Product,
@@ -13,6 +14,7 @@ import {
   Branch,
   IBrand,
   ICategory,
+  IProductLine,
   ISize,
   IThickness,
   IVariant,
@@ -32,6 +34,7 @@ import {
 import {
   BrandInput,
   CategoryInput,
+  ProductLineInput,
   SizeInput,
   ThicknessInput,
   CreateProductWithVariantInput,
@@ -306,6 +309,153 @@ export class CatalogueService {
   }
 
   // ==========================================
+  // PRODUCT LINES (SUB-CATEGORIES)
+  // ==========================================
+
+  public static async getProductLines(query: {
+    brandId?: string;
+    categoryId?: string;
+    search?: string;
+    status?: string;
+    branchId?: string;
+  } = {}) {
+    const filter: any = {};
+    if (query?.brandId) {
+      filter.brandId = query.brandId;
+    }
+    if (query?.categoryId) {
+      filter.categoryId = query.categoryId;
+    }
+    if (query?.status && query.status !== 'ALL') {
+      filter.status = query.status;
+    }
+    if (query?.branchId && query.branchId !== 'ALL' && mongoose.Types.ObjectId.isValid(query.branchId)) {
+      filter.$or = [
+        { branchId: new mongoose.Types.ObjectId(query.branchId) },
+        { branchId: { $exists: false } },
+        { branchId: null },
+      ];
+    }
+    if (query?.search) {
+      const searchOr = [
+        { name: { $regex: query.search, $options: 'i' } },
+        { code: { $regex: query.search, $options: 'i' } },
+      ];
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: searchOr }];
+        delete filter.$or;
+      } else {
+        filter.$or = searchOr;
+      }
+    }
+    return ProductLine.find(filter)
+      .populate('brandId', 'name code')
+      .populate('categoryId', 'name code')
+      .sort({ name: 1 });
+  }
+
+  public static async getProductLineById(id: string): Promise<IProductLine> {
+    let productLine: any = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      productLine = await ProductLine.findById(id)
+        .populate('brandId', 'name code')
+        .populate('categoryId', 'name code');
+    }
+    if (!productLine) {
+      const cleanCode = id.replace(/^PL-/i, '').replace(/-\d+$/, '').toUpperCase();
+      productLine = await ProductLine.findOne({
+        $or: [
+          { code: id.toUpperCase() },
+          { code: cleanCode },
+          { code: { $regex: new RegExp(`^${cleanCode}`, 'i') } },
+          { name: id },
+        ],
+      })
+        .populate('brandId', 'name code')
+        .populate('categoryId', 'name code');
+    }
+    if (!productLine) throw new AppError(`Product Line '${id}' not found.`, 404, 'PRODUCT_LINE_NOT_FOUND');
+    return productLine;
+  }
+
+  public static async createProductLine(input: ProductLineInput): Promise<IProductLine> {
+    const [brand, category] = await Promise.all([
+      Brand.findById(input.brandId),
+      Category.findById(input.categoryId),
+    ]);
+    if (!brand) throw new AppError(`Brand '${input.brandId}' does not exist.`, 404, 'BRAND_NOT_FOUND');
+    if (!category) throw new AppError(`Category '${input.categoryId}' does not exist.`, 404, 'CATEGORY_NOT_FOUND');
+
+    const existing = await ProductLine.findOne({
+      brandId: brand._id,
+      categoryId: category._id,
+      name: new RegExp(`^${input.name.trim()}$`, 'i'),
+    });
+    if (existing) {
+      throw new AppError(
+        `Product Line '${input.name}' already exists under category '${category.name}'.`,
+        409,
+        'DUPLICATE_PRODUCT_LINE'
+      );
+    }
+
+    return ProductLine.create({
+      brandId: brand._id,
+      categoryId: category._id,
+      code: input.code.toUpperCase(),
+      name: input.name.trim(),
+      description: input.description?.trim(),
+      status: 'ACTIVE',
+      ...(input.branchId ? { branchId: input.branchId } : {}),
+    });
+  }
+
+  public static async updateProductLine(id: string, input: Partial<ProductLineInput>): Promise<IProductLine> {
+    const productLine = await this.getProductLineById(id);
+    if (input.code && input.code.toUpperCase() !== productLine.code) {
+      const existing = await ProductLine.findOne({
+        code: input.code.toUpperCase(),
+        _id: { $ne: id },
+      });
+      if (existing) throw new AppError(`Product Line code '${input.code}' already exists.`, 409, 'DUPLICATE_PRODUCT_LINE_CODE');
+      productLine.code = input.code.toUpperCase();
+    }
+    if (input.name) productLine.name = input.name.trim();
+    if (input.description !== undefined) productLine.description = input.description?.trim();
+    if (input.brandId) (productLine as any).brandId = input.brandId;
+    if (input.categoryId) (productLine as any).categoryId = input.categoryId;
+    if ((input as any).status) productLine.status = (input as any).status.toUpperCase();
+    return productLine.save();
+  }
+
+  public static async toggleProductLineStatus(id: string, status: 'ACTIVE' | 'INACTIVE'): Promise<IProductLine> {
+    const productLine = await this.getProductLineById(id);
+    productLine.status = status;
+    return productLine.save();
+  }
+
+  public static async deleteProductLine(id: string): Promise<{ deleted: boolean; message: string }> {
+    const productLine = await this.getProductLineById(id);
+    const productLineId = productLine._id;
+
+    // Find products for this product line
+    const products = await Product.find({ productLineId });
+    const productIds = products.map((p) => p._id);
+
+    const variants = await Variant.find({ productId: { $in: productIds } });
+    const variantIds = variants.map((v) => v._id);
+    const skus = variants.map((v) => v.sku);
+
+    await StockBalance.deleteMany({ $or: [{ variantId: { $in: variantIds } }, { sku: { $in: skus } }] });
+    await PriceHistory.deleteMany({ variantId: { $in: variantIds } });
+    await Variant.deleteMany({ _id: { $in: variantIds } });
+    await Product.deleteMany({ _id: { $in: productIds } });
+    await ProductLine.findByIdAndDelete(productLineId);
+
+    return { deleted: true, message: `Product Line '${productLine.name}' removed successfully.` };
+  }
+
+  // ==========================================
   // SIZES
   // ==========================================
 
@@ -467,11 +617,12 @@ export class CatalogueService {
     search?: string;
     brandId?: string;
     categoryId?: string;
+    productLineId?: string;
     status?: string;
     branchId?: string;
   }) {
     const page = Math.max(1, query.page || 1);
-    const limit = Math.max(1, Math.min(100, query.limit || 20));
+    const limit = Math.max(1, Math.min(1000, query.limit || 500));
     const skip = (page - 1) * limit;
 
     const filter: any = {};
@@ -483,6 +634,9 @@ export class CatalogueService {
     }
     if (query.categoryId) {
       filter.categoryId = query.categoryId;
+    }
+    if (query.productLineId) {
+      filter.productLineId = query.productLineId;
     }
     if (query.search) {
       filter.name = { $regex: query.search, $options: 'i' };
@@ -502,6 +656,7 @@ export class CatalogueService {
       Product.find(filter)
         .populate('brandId', 'name code logoUrl')
         .populate('categoryId', 'name code')
+        .populate('productLineId', 'name code')
         .populate('branchId', 'name code shopNumber city')
         .sort({ name: 1 })
         .skip(skip)
@@ -579,7 +734,8 @@ export class CatalogueService {
   public static async getProductById(id: string) {
     const product = await Product.findById(id)
       .populate('brandId', 'name code logoUrl')
-      .populate('categoryId', 'name code');
+      .populate('categoryId', 'name code')
+      .populate('productLineId', 'name code');
     if (!product) throw new AppError(`Product '${id}' not found.`, 404, 'PRODUCT_NOT_FOUND');
 
     const variants = await Variant.find({ productId: product._id })
@@ -591,6 +747,7 @@ export class CatalogueService {
       name: product.name,
       brand: product.brandId,
       category: product.categoryId,
+      productLine: product.productLineId,
       status: product.status,
       variants: variants.map((v) => ({
         id: v._id.toString(),
@@ -673,9 +830,10 @@ export class CatalogueService {
       });
     };
 
-    const [brand, category, size, thickness] = await Promise.all([
+    const [brand, category, productLine, size, thickness] = await Promise.all([
       resolveEntity(Brand, input.brandId),
       resolveEntity(Category, input.categoryId),
+      input.productLineId ? resolveEntity(ProductLine, input.productLineId) : Promise.resolve(null),
       resolveEntity(Size, input.sizeId),
       resolveEntity(Thickness, input.thicknessId),
     ]);
@@ -704,37 +862,22 @@ export class CatalogueService {
     const branchAndLoc = await this.resolvePrimaryBranchAndLocation(callerBranchId, input.destinationBranchId);
     const targetBranch = branchAndLoc?.branch;
 
-    // Generate Product Name: Brand Name + Category Name
-    const productName = `${brand.name} - ${category.name}`;
-
-    // Find or create base Product (scoped to target branch if specified)
-    let product = await Product.findOne({
-      brandId: brand._id,
-      categoryId: category._id,
-      ...(targetBranch ? { branchId: targetBranch._id } : {}),
-    });
-
-    if (!product) {
-      product = await Product.create({
-        brandId: brand._id,
-        categoryId: category._id,
-        name: productName,
-        branchId: targetBranch?._id,
-        status: 'ACTIVE',
-      });
+    if (!targetBranch) {
+      throw new AppError(
+        'A valid branch must be selected to register this product.',
+        400,
+        'BRANCH_REQUIRED'
+      );
     }
 
-    // 3. Generate unique SKU
-    const sku = generateSkuCode(brand.code, category.code, size.displayLabel, thickness.value);
+    // Generate Product Name: Product Line Name (or Brand Name + Category Name if no line)
+    const productName = productLine ? productLine.name : `${brand.name} - ${category.name}`;
 
-    // Check if variant with this specification or SKU already exists
-    const existingVariant = await Variant.findOne({
-      $or: [
-        { productId: product._id, sizeId: size._id, thicknessId: thickness._id },
-        { sku },
-      ],
-    });
+    // 3. Generate unique SKU and validate variant does not already exist BEFORE touching products
+    const skuCodePrefix = productLine?.code || category.code;
+    const sku = generateSkuCode(brand.code, skuCodePrefix, size.displayLabel, thickness.value);
 
+    const existingVariant = await Variant.findOne({ sku });
     if (existingVariant) {
       throw new AppError(
         `A mattress variant with SKU '${sku}' (${productName}, ${size.displayLabel}, ${thickness.displayLabel}) already exists.`,
@@ -743,7 +886,7 @@ export class CatalogueService {
       );
     }
 
-    // 4. Compute and Reconcile Authoritative Integer-Paisa Pricing
+    // 4. Compute and Reconcile Authoritative Integer-Paisa Pricing BEFORE creating product
     const listPricePaisa = toPaisa(input.listPrice);
     if (listPricePaisa <= 0) {
       throw new AppError('List Price must be greater than zero.', 400, 'INVALID_LIST_PRICE');
@@ -789,157 +932,190 @@ export class CatalogueService {
       distributorPricePaisa = calculateDistributorPrice(listPricePaisa, distributorDiscountPercent);
     }
 
-    // 5. Create Variant
-    const variant = await Variant.create({
-      productId: product._id,
-      sizeId: size._id,
-      thicknessId: thickness._id,
-      sku,
-      listPrice: listPricePaisa,
-      purchasePrice: purchasePricePaisa,
-      purchaseDiscountPercent,
-      retailPrice: retailPricePaisa,
-      retailMarkupPercent,
-      wholesalePrice: wholesalePricePaisa,
-      wholesaleDiscountPercent,
-      distributorPrice: distributorPricePaisa,
-      distributorDiscountPercent,
-      status: 'ACTIVE',
-    });
+    // Find or create base Product (scoped strictly to target branch and productLine if present)
+    let isNewlyCreatedProduct = false;
+    const productQuery: any = {
+      brandId: brand._id,
+      categoryId: category._id,
+      branchId: targetBranch._id,
+    };
+    if (productLine) {
+      productQuery.productLineId = productLine._id;
+    }
+    let product = await Product.findOne(productQuery);
 
-    // 6. Record Initial Price History
-    const accountObjectId = accountId && mongoose.Types.ObjectId.isValid(accountId)
-      ? new mongoose.Types.ObjectId(accountId)
-      : undefined;
-
-    await PriceHistory.insertMany([
-      {
-        variantId: variant._id,
-        sku,
-        tier: 'LIST',
-        previousPrice: 0,
-        newPrice: listPricePaisa,
-        changedByAccountId: accountObjectId,
-        reason: 'Initial Product Catalogue Registration',
-      },
-      {
-        variantId: variant._id,
-        sku,
-        tier: 'PURCHASE',
-        previousPrice: 0,
-        newPrice: purchasePricePaisa,
-        newPercent: purchaseDiscountPercent,
-        changedByAccountId: accountObjectId,
-        reason: 'Initial Product Catalogue Registration',
-      },
-      {
-        variantId: variant._id,
-        sku,
-        tier: 'RETAIL',
-        previousPrice: 0,
-        newPrice: retailPricePaisa,
-        newPercent: retailMarkupPercent,
-        changedByAccountId: accountObjectId,
-        reason: 'Initial Product Catalogue Registration',
-      },
-      {
-        variantId: variant._id,
-        sku,
-        tier: 'WHOLESALE',
-        previousPrice: 0,
-        newPrice: wholesalePricePaisa,
-        newPercent: wholesaleDiscountPercent,
-        changedByAccountId: accountObjectId,
-        reason: 'Initial Product Catalogue Registration',
-      },
-      {
-        variantId: variant._id,
-        sku,
-        tier: 'DISTRIBUTOR',
-        previousPrice: 0,
-        newPrice: distributorPricePaisa,
-        newPercent: distributorDiscountPercent,
-        changedByAccountId: accountObjectId,
-        reason: 'Initial Product Catalogue Registration',
-      },
-    ]);
-
-    // 7. Initial Stock Balance Handling
-    const stockQty = Math.max(0, input.stock || 0);
-    const minStockQty = input.minimumStock !== undefined ? Math.max(0, input.minimumStock) : 5;
-    let initialStockCreated = false;
-
-    if (branchAndLoc) {
-      const { branch: targetBranch, location: floorLocation } = branchAndLoc;
-
-      let stockBalance = await StockBalance.findOne({
+    if (!product) {
+      product = await Product.create({
+        brandId: brand._id,
+        categoryId: category._id,
+        ...(productLine ? { productLineId: productLine._id } : {}),
+        name: productName,
         branchId: targetBranch._id,
-        stockLocationId: floorLocation._id,
-        sku,
+        status: 'ACTIVE',
       });
-
-      if (!stockBalance) {
-        stockBalance = await StockBalance.create({
-          branchId: targetBranch._id,
-          stockLocationId: floorLocation._id,
-          sku,
-          variantId: variant._id,
-          onHand: stockQty,
-          reserved: 0,
-          reorderLevel: minStockQty,
-        });
-      } else {
-        stockBalance.onHand = stockQty;
-        stockBalance.reorderLevel = minStockQty;
-        stockBalance.variantId = variant._id;
-        await stockBalance.save();
-      }
-
-      if (stockQty > 0) {
-        await StockMovement.create({
-          movementNumber: `MOV-INIT-${sku}-${Date.now().toString().slice(-6)}`,
-          branchId: targetBranch._id,
-          stockLocationId: floorLocation._id,
-          sku,
-          movementType: 'OPENING_BALANCE',
-          quantityDifference: stockQty,
-          previousBalance: 0,
-          newBalance: stockQty,
-          referenceType: 'OPENING_BALANCE',
-          reason: 'Product catalogue opening stock registration',
-          performedBy: accountId || 'System',
-          timestamp: new Date(),
-        });
-      }
-      initialStockCreated = true;
+      isNewlyCreatedProduct = true;
     }
 
-    return {
-      product: {
-        id: product._id.toString(),
-        name: product.name,
-        brand: { id: brand._id.toString(), name: brand.name, code: brand.code },
-        category: { id: category._id.toString(), name: category.name, code: category.code },
-      },
-      variant: {
-        id: variant._id.toString(),
-        sku: variant.sku,
-        size: { id: size._id.toString(), label: size.displayLabel },
-        thickness: { id: thickness._id.toString(), label: thickness.displayLabel },
-        listPrice: toRupees(variant.listPrice),
-        purchasePrice: toRupees(variant.purchasePrice),
-        purchaseDiscountPercent: variant.purchaseDiscountPercent,
-        retailPrice: toRupees(variant.retailPrice),
-        retailMarkupPercent: variant.retailMarkupPercent,
-        wholesalePrice: toRupees(variant.wholesalePrice),
-        wholesaleDiscountPercent: variant.wholesaleDiscountPercent,
-        distributorPrice: toRupees(variant.distributorPrice),
-        distributorDiscountPercent: variant.distributorDiscountPercent,
-        initialStockCommitted: initialStockCreated,
-        onHand: input.stock || 0,
-        minimumStock: input.minimumStock ?? 5,
-      },
-    };
+    let variant: any;
+    try {
+      // 5. Create Variant
+      variant = await Variant.create({
+        productId: product._id,
+        sizeId: size._id,
+        thicknessId: thickness._id,
+        sku,
+        listPrice: listPricePaisa,
+        purchasePrice: purchasePricePaisa,
+        purchaseDiscountPercent,
+        retailPrice: retailPricePaisa,
+        retailMarkupPercent,
+        wholesalePrice: wholesalePricePaisa,
+        wholesaleDiscountPercent,
+        distributorPrice: distributorPricePaisa,
+        distributorDiscountPercent,
+        status: 'ACTIVE',
+      });
+
+      // 6. Record Initial Price History
+      const accountObjectId = accountId && mongoose.Types.ObjectId.isValid(accountId)
+        ? new mongoose.Types.ObjectId(accountId)
+        : undefined;
+
+      await PriceHistory.insertMany([
+        {
+          variantId: variant._id,
+          sku,
+          tier: 'LIST',
+          previousPrice: 0,
+          newPrice: listPricePaisa,
+          changedByAccountId: accountObjectId,
+          reason: 'Initial Product Catalogue Registration',
+        },
+        {
+          variantId: variant._id,
+          sku,
+          tier: 'PURCHASE',
+          previousPrice: 0,
+          newPrice: purchasePricePaisa,
+          newPercent: purchaseDiscountPercent,
+          changedByAccountId: accountObjectId,
+          reason: 'Initial Product Catalogue Registration',
+        },
+        {
+          variantId: variant._id,
+          sku,
+          tier: 'RETAIL',
+          previousPrice: 0,
+          newPrice: retailPricePaisa,
+          newPercent: retailMarkupPercent,
+          changedByAccountId: accountObjectId,
+          reason: 'Initial Product Catalogue Registration',
+        },
+        {
+          variantId: variant._id,
+          sku,
+          tier: 'WHOLESALE',
+          previousPrice: 0,
+          newPrice: wholesalePricePaisa,
+          newPercent: wholesaleDiscountPercent,
+          changedByAccountId: accountObjectId,
+          reason: 'Initial Product Catalogue Registration',
+        },
+        {
+          variantId: variant._id,
+          sku,
+          tier: 'DISTRIBUTOR',
+          previousPrice: 0,
+          newPrice: distributorPricePaisa,
+          newPercent: distributorDiscountPercent,
+          changedByAccountId: accountObjectId,
+          reason: 'Initial Product Catalogue Registration',
+        },
+      ]);
+
+      // 7. Initial Stock Balance Handling
+      const stockQty = Math.max(0, input.stock || 0);
+      const minStockQty = input.minimumStock !== undefined ? Math.max(0, input.minimumStock) : 5;
+      let initialStockCreated = false;
+
+      if (branchAndLoc) {
+        const { branch: targetBranch, location: floorLocation } = branchAndLoc;
+
+        let stockBalance = await StockBalance.findOne({
+          branchId: targetBranch._id,
+          stockLocationId: floorLocation._id,
+          sku,
+        });
+
+        if (!stockBalance) {
+          stockBalance = await StockBalance.create({
+            branchId: targetBranch._id,
+            stockLocationId: floorLocation._id,
+            sku,
+            variantId: variant._id,
+            onHand: stockQty,
+            reserved: 0,
+            reorderLevel: minStockQty,
+          });
+        } else {
+          stockBalance.onHand = stockQty;
+          stockBalance.reorderLevel = minStockQty;
+          stockBalance.variantId = variant._id;
+          await stockBalance.save();
+        }
+
+        if (stockQty > 0) {
+          await StockMovement.create({
+            movementNumber: `MOV-INIT-${sku}-${Date.now().toString().slice(-6)}`,
+            branchId: targetBranch._id,
+            stockLocationId: floorLocation._id,
+            sku,
+            movementType: 'OPENING_BALANCE',
+            quantityDifference: stockQty,
+            previousBalance: 0,
+            newBalance: stockQty,
+            referenceType: 'OPENING_BALANCE',
+            reason: 'Product catalogue opening stock registration',
+            performedBy: accountId || 'System',
+            timestamp: new Date(),
+          });
+        }
+        initialStockCreated = true;
+      }
+
+      return {
+        product: {
+          id: product._id.toString(),
+          name: product.name,
+          brand: { id: brand._id.toString(), name: brand.name, code: brand.code },
+          category: { id: category._id.toString(), name: category.name, code: category.code },
+        },
+        variant: {
+          id: variant._id.toString(),
+          sku: variant.sku,
+          size: { id: size._id.toString(), label: size.displayLabel },
+          thickness: { id: thickness._id.toString(), label: thickness.displayLabel },
+          listPrice: toRupees(variant.listPrice),
+          purchasePrice: toRupees(variant.purchasePrice),
+          purchaseDiscountPercent: variant.purchaseDiscountPercent,
+          retailPrice: toRupees(variant.retailPrice),
+          retailMarkupPercent: variant.retailMarkupPercent,
+          wholesalePrice: toRupees(variant.wholesalePrice),
+          wholesaleDiscountPercent: variant.wholesaleDiscountPercent,
+          distributorPrice: toRupees(variant.distributorPrice),
+          distributorDiscountPercent: variant.distributorDiscountPercent,
+          initialStockCommitted: initialStockCreated,
+          onHand: input.stock || 0,
+          minimumStock: input.minimumStock ?? 5,
+        },
+      };
+    } catch (variantErr) {
+      // Rollback newly created product if variant creation or stock balance failed
+      if (isNewlyCreatedProduct && product?._id) {
+        await Product.findByIdAndDelete(product._id).catch(() => {});
+      }
+      throw variantErr;
+    }
   }
 
   // ==========================================
@@ -983,6 +1159,7 @@ export class CatalogueService {
         populate: [
           { path: 'brandId', select: 'name code' },
           { path: 'categoryId', select: 'name code' },
+          { path: 'productLineId', select: 'name code' },
         ],
       })
       .populate('sizeId', 'length width displayLabel')
@@ -1010,8 +1187,10 @@ export class CatalogueService {
       const pId = p?._id ? p._id.toString() : p?.toString() || '';
       const b = p?.brandId;
       const c = p?.categoryId;
+      const pl = p?.productLineId;
       const bId = b?._id ? b._id.toString() : b?.toString() || '';
       const cId = c?._id ? c._id.toString() : c?.toString() || '';
+      const plId = pl?._id ? pl._id.toString() : pl?.toString() || '';
       const sId = v.sizeId?._id ? v.sizeId._id.toString() : v.sizeId?.toString() || '';
       const tId = v.thicknessId?._id ? v.thicknessId._id.toString() : v.thicknessId?.toString() || '';
 
@@ -1023,10 +1202,13 @@ export class CatalogueService {
         brandId: bId,
         branchId: p?.branchId?.toString() || '',
         categoryId: cId,
+        productLineId: plId,
+        productLineName: pl?.name || '',
         sizeId: sId,
         thicknessId: tId,
         brand: b,
         category: c,
+        productLine: pl,
         size: v.sizeId,
         thickness: v.thicknessId,
         listPrice: toRupees(v.listPrice),
@@ -1070,6 +1252,7 @@ export class CatalogueService {
         populate: [
           { path: 'brandId', select: 'name code' },
           { path: 'categoryId', select: 'name code' },
+          { path: 'productLineId', select: 'name code' },
         ],
       },
       { path: 'sizeId', select: 'length width displayLabel' },

@@ -88,9 +88,28 @@ export const branchParamSchema = z.object({
   }),
 });
 
+export const updateBranchDetailsSchema = z.object({
+  params: z.object({
+    id: z.string({ required_error: 'Branch ID or Code is required' }),
+  }),
+  body: z.object({
+    name: z.string().trim().min(2).optional(),
+    code: z.string().trim().min(2).optional(),
+    shopNumber: z.string().trim().min(1).optional(),
+    type: z.string().optional(),
+    city: z.string().trim().optional(),
+    address: z.string().trim().optional(),
+    phone: z.string().trim().optional(),
+    targetMonthlySales: z.number().optional(),
+    isActive: z.boolean().optional(),
+    settings: z.record(z.boolean()).optional(),
+  }),
+});
+
 export type CreateBranchInput = z.infer<typeof createBranchSchema>['body'];
 export type CreateBranchAccountInput = z.infer<typeof createBranchAccountSchema>['body'];
 export type UpdateBranchAccountInput = z.infer<typeof updateBranchAccountSchema>['body'];
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>['body'];
 export type UpdatePermissionsInput = z.infer<typeof updatePermissionsSchema>['body'];
+export type UpdateBranchDetailsInput = z.infer<typeof updateBranchDetailsSchema>['body'];
 

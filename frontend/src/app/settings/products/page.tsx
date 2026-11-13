@@ -13,24 +13,27 @@ import {
 import {
   useGetBrandsQuery as useGetBackendBrandsQuery,
   useGetCategoriesQuery as useGetBackendCategoriesQuery,
+  useGetProductLinesQuery as useGetBackendProductLinesQuery,
   useGetSizesQuery as useGetBackendSizesQuery,
   useGetThicknessesQuery as useGetBackendThicknessesQuery,
 } from '@/store/services/catalogueApi';
 import Toast, { ToastMessage } from '@/components/common/Toast';
 import BrandsTab from '@/components/products/BrandsTab';
 import CategoriesTab from '@/components/products/CategoriesTab';
+import ProductLinesTab from '@/components/products/ProductLinesTab';
 import SizesTab from '@/components/products/SizesTab';
 import ThicknessTab from '@/components/products/ThicknessTab';
 import {
   Award,
   Layers,
+  Network,
   Maximize2,
   Sliders,
   ShieldAlert,
   Settings,
 } from 'lucide-react';
 
-type MasterDataTab = 'brands' | 'categories' | 'sizes' | 'thickness';
+type MasterDataTab = 'brands' | 'categories' | 'productLines' | 'sizes' | 'thickness';
 
 function ProductSettingsContent() {
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
@@ -51,6 +54,9 @@ function ProductSettingsContent() {
   const { data: backendCategories = [] } = useGetBackendCategoriesQuery(undefined, { skip: !isBackendMode });
   const { data: demoCategories = [] } = useGetDemoCategoriesQuery(undefined, { skip: isBackendMode });
   const categories = isBackendMode ? (Array.isArray(backendCategories) ? backendCategories : (backendCategories as any)?.data || []) : demoCategories;
+
+  const { data: backendProductLines = [] } = useGetBackendProductLinesQuery(undefined, { skip: !isBackendMode });
+  const productLines = Array.isArray(backendProductLines) ? backendProductLines : (backendProductLines as any)?.data || [];
 
   const { data: backendSizes = [] } = useGetBackendSizesQuery(undefined, { skip: !isBackendMode });
   const { data: demoSizes = [] } = useGetDemoSizesQuery(undefined, { skip: isBackendMode });
@@ -77,6 +83,7 @@ function ProductSettingsContent() {
   }> = [
     { id: 'brands', label: 'Brands', icon: Award, count: brands.length },
     { id: 'categories', label: 'Categories', icon: Layers, count: categories.length },
+    { id: 'productLines', label: 'Product Lines', icon: Network, count: productLines.length },
     { id: 'sizes', label: 'Sizes', icon: Maximize2, count: sizes.length },
     { id: 'thickness', label: 'Thicknesses', icon: Sliders, count: thicknesses.length },
   ];
@@ -154,6 +161,10 @@ function ProductSettingsContent() {
 
         {activeTab === 'categories' && (
           <CategoriesTab canManage={canManageCatalogue} onToast={showToast} />
+        )}
+
+        {activeTab === 'productLines' && (
+          <ProductLinesTab canManage={canManageCatalogue} onToast={showToast} />
         )}
 
         {activeTab === 'sizes' && (

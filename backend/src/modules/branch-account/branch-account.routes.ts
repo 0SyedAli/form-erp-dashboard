@@ -6,6 +6,7 @@ import {
   createBranchSchema,
   createBranchAccountSchema,
   updateBranchAccountSchema,
+  updateBranchDetailsSchema,
   resetPasswordSchema,
   updatePermissionsSchema,
   branchParamSchema,
@@ -20,6 +21,12 @@ branchAccountRoutes.post(
   '/branches',
   validateRequest(createBranchSchema),
   BranchAccountController.createBranch
+);
+
+branchAccountRoutes.patch(
+  '/branches/:id',
+  validateRequest(updateBranchDetailsSchema),
+  BranchAccountController.updateBranch
 );
 
 branchAccountRoutes.get(

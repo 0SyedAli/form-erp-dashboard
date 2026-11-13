@@ -13,6 +13,7 @@ import {
 import {
   useGetBrandsQuery as useGetBackendBrandsQuery,
   useGetCategoriesQuery as useGetBackendCategoriesQuery,
+  useGetProductLinesQuery as useGetBackendProductLinesQuery,
   useGetSizesQuery as useGetBackendSizesQuery,
   useGetThicknessesQuery as useGetBackendThicknessesQuery,
   useGetBranchesQuery,
@@ -58,6 +59,14 @@ const getThicknessLabel = (t?: { displayLabel?: string; value?: number; id?: str
   return t.id || '—';
 };
 
+interface ProductLineOption {
+  id: string;
+  brandId: string;
+  categoryId: string;
+  name: string;
+  code: string;
+}
+
 function NewProductContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -77,6 +86,17 @@ function NewProductContent() {
     if (backendCategories && backendCategories.length > 0) return backendCategories;
     return demoCategories;
   }, [backendCategories, demoCategories]);
+
+  const { data: backendProductLines = [] } = useGetBackendProductLinesQuery();
+  const productLines: ProductLineOption[] = useMemo(() => {
+    return (Array.isArray(backendProductLines) ? backendProductLines : (backendProductLines as any)?.data || []).map((pl: any) => ({
+      id: String(pl.id || pl._id || ''),
+      brandId: String(pl.brandId?._id || pl.brandId || ''),
+      categoryId: String(pl.categoryId?._id || pl.categoryId || ''),
+      name: pl.name || '',
+      code: pl.code || '',
+    }));
+  }, [backendProductLines]);
 
   const { data: backendSizes } = useGetBackendSizesQuery();
   const { data: demoSizes = [] } = useGetDemoSizesQuery();
@@ -123,6 +143,7 @@ function NewProductContent() {
   );
   const [selectedBrandIdOverride, setSelectedBrandId] = useState<string>('');
   const [selectedCategoryIdOverride, setSelectedCategoryId] = useState<string>('');
+  const [selectedProductLineIdOverride, setSelectedProductLineId] = useState<string>('');
   const [selectedSizeIdOverride, setSelectedSizeId] = useState<string>('');
   const [selectedThicknessIdOverride, setSelectedThicknessId] = useState<string>('');
 
@@ -164,6 +185,25 @@ function NewProductContent() {
     return filteredCategories.length > 0 ? filteredCategories[0].id : '';
   }, [filteredCategories, selectedCategoryIdOverride, editingProduct]);
 
+  // Product Lines filtered by selected brand & category
+  const filteredProductLines = useMemo(() => {
+    if (!selectedBrandId || !selectedCategoryId) return [];
+    return productLines.filter(
+      (pl) => pl.brandId === selectedBrandId && pl.categoryId === selectedCategoryId
+    );
+  }, [productLines, selectedBrandId, selectedCategoryId]);
+
+  // Derived Product Line
+  const selectedProductLineId = useMemo(() => {
+    if (selectedProductLineIdOverride && filteredProductLines.some((pl) => pl.id === selectedProductLineIdOverride)) {
+      return selectedProductLineIdOverride;
+    }
+    if (editingProduct?.productLineId && filteredProductLines.some((pl) => pl.id === editingProduct.productLineId)) {
+      return editingProduct.productLineId;
+    }
+    return filteredProductLines.length > 0 ? filteredProductLines[0].id : '';
+  }, [filteredProductLines, selectedProductLineIdOverride, editingProduct]);
+
   // Derived Size
   const selectedSizeId = useMemo(() => {
     if (selectedSizeIdOverride) return selectedSizeIdOverride;
@@ -187,15 +227,17 @@ function NewProductContent() {
   // Entities
   const selectedBrand = useMemo(() => brands.find((b) => b.id === selectedBrandId), [brands, selectedBrandId]);
   const selectedCategory = useMemo(() => categories.find((c) => c.id === selectedCategoryId), [categories, selectedCategoryId]);
+  const selectedProductLine = useMemo(() => productLines.find((pl) => pl.id === selectedProductLineId), [productLines, selectedProductLineId]);
   const selectedSize = useMemo(() => sizes.find((s) => s.id === selectedSizeId), [sizes, selectedSizeId]);
   const selectedThickness = useMemo(() => thicknesses.find((t) => t.id === selectedThicknessId), [thicknesses, selectedThicknessId]);
 
   // Auto Generated Product Name
   const autoProductName = useMemo(() => {
+    if (selectedProductLine) return selectedProductLine.name;
     const brandName = selectedBrand?.name || 'Brand';
     const catName = selectedCategory?.name || 'Category';
     return `${brandName} - ${catName}`;
-  }, [selectedBrand, selectedCategory]);
+  }, [selectedProductLine, selectedBrand, selectedCategory]);
 
   // Sync state whenever backendSku or editingVariant is retrieved
   useEffect(() => {
@@ -457,8 +499,20 @@ function NewProductContent() {
     }
 
     // 2. CREATE NEW PRODUCT WORKFLOW
+    if (!selectedBranchId) {
+      showToast('error', 'Branch Required', 'Please select a destination branch. Every product must belong to a branch.');
+      return;
+    }
     if (!selectedBrandId || !selectedCategoryId || !selectedSizeId || !selectedThicknessId) {
       showToast('error', 'Missing Information', 'Please select brand, category, size and thickness.');
+      return;
+    }
+    if (!listPrice || listPrice <= 0) {
+      showToast('error', 'Invalid Price', 'List Price must be greater than zero.');
+      return;
+    }
+    if (!retailPrice || retailPrice <= 0) {
+      showToast('error', 'Invalid Price', 'Retail Price must be greater than zero.');
       return;
     }
 
@@ -472,6 +526,7 @@ function NewProductContent() {
         const backendRes = await createProductWithVariant({
           brandId: selectedBrandId,
           categoryId: selectedCategoryId,
+          productLineId: selectedProductLineId || undefined,
           sizeId: selectedSizeId,
           thicknessId: selectedThicknessId,
           destinationBranchId: selectedBranchId || undefined,
@@ -678,9 +733,10 @@ function NewProductContent() {
                   <select
                     value={selectedBranchId}
                     onChange={(e) => setSelectedBranchId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-blue-50/50 border border-blue-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-brand-blue cursor-pointer"
+                    disabled={currentUser?.role !== 'SUPER_ADMIN' && !!(currentUser?.assignedBranchId || (currentUser as any)?.branchId)}
+                    className="w-full px-3.5 py-2.5 bg-blue-50/50 border border-blue-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-brand-blue cursor-pointer disabled:bg-gray-100 disabled:cursor-not-allowed"
                   >
-                    <option value="">-- All Branches / Primary HQ --</option>
+                    <option value="">-- Select Destination Branch (Required) * --</option>
                     {branches.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.name} ({b.code || b.shopNumber})
@@ -759,6 +815,52 @@ function NewProductContent() {
                     ▼
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Step 2.5: Product Line (Sub-Category) */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm font-bold text-gray-900">Product Line</span>
+                  <span className="text-xs text-gray-400 font-normal">
+                    (Sub-category / Model e.g. Crest, Bravo, Molty)
+                  </span>
+                </div>
+              </div>
+              <div className="">
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                  Select Product Line <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedProductLineId}
+                    onChange={(e) => setSelectedProductLineId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-brand-blue cursor-pointer appearance-none pr-10"
+                  >
+                    {filteredProductLines.length > 0 ? (
+                      filteredProductLines.map((pl) => (
+                        <option key={pl.id} value={pl.id}>
+                          {pl.name} ({pl.code})
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">No product lines configured for this category</option>
+                    )}
+                  </select>
+                  <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                    ▼
+                  </div>
+                </div>
+                {filteredProductLines.length === 0 && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    Tip: Configure product lines in{' '}
+                    <Link href="/settings/products" className="underline font-semibold">
+                      Product Settings
+                    </Link>{' '}
+                    first.
+                  </p>
+                )}
               </div>
             </div>
 

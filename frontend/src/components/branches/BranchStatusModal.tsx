@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Branch } from '@/types';
-import { useToggleBranchStatusMutation } from '@/store/services/apiSlice';
+import { useToggleBranchStatusMutation } from '@/store/services/catalogueApi';
 import { AlertTriangle, Power, CheckCircle2, X } from 'lucide-react';
 
 interface BranchStatusModalProps {

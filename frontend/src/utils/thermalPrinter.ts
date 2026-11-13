@@ -108,13 +108,13 @@ export function generateReceiptHTML(
 </head>
 <body>
   <!-- Top Store Logo -->
-  <!-- <div class="text-center" style="margin: 0 auto 3px auto; padding-top: 0;">
+  <div class="text-center" style="margin: 0 auto 3px auto; padding-top: 0;">
     <img 
-      src="/assets/brands/brand-logo.png" 
+      src="/assets/brands/images.png" 
       alt="Store Logo" 
       style="max-height: 55px; max-width: 140px; display: inline-block; object-fit: contain; filter: grayscale(100%) contrast(250%) brightness(85%); margin: 0 auto;"
     />
-  </div> -->
+  </div>
 
   <!-- Header / Store Info -->
   <div class="text-center" style="padding-bottom: 2px;">
@@ -138,9 +138,9 @@ export function generateReceiptHTML(
     <div class="flex-center">
       <span>${formattedDate}</span>
     </div>
-    <div class="flex-center">
+    <!-- <div class="flex-center">
       <span>Billed By: ${cashierName}</span>
-    </div>
+    </div> -->
     <div class="flex-center">
       <span style="font-weight: bold;">${invoice.customerName || 'Walk-in'}</span>
     </div>
@@ -227,9 +227,9 @@ export function generateReceiptHTML(
   <!-- Terms & Urdu Greeting -->
   <div class="text-center" style="margin-top: 3px;">
     <div class="font-bold" style="font-size: 11.5px;">Thank you for your business!</div>
-    <div class="urdu-text">
+    <!-- <div class="urdu-text">
       خریدے ہوئے سامان کی واپسی کی مدت 7 دن ہے۔
-    </div>
+    </div> -->
   </div>
 
   <div class="divider"></div>

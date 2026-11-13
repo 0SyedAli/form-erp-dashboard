@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IProduct extends Document {
   brandId: mongoose.Types.ObjectId;
   categoryId: mongoose.Types.ObjectId;
+  productLineId?: mongoose.Types.ObjectId;
   name: string;
   description?: string;
   branchId?: mongoose.Types.ObjectId;
@@ -23,6 +24,11 @@ const ProductSchema = new Schema<IProduct>(
       type: Schema.Types.ObjectId,
       ref: 'Category',
       required: true,
+      index: true,
+    },
+    productLineId: {
+      type: Schema.Types.ObjectId,
+      ref: 'ProductLine',
       index: true,
     },
     branchId: {

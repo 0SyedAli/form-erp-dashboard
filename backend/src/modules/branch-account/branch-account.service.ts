@@ -9,6 +9,7 @@ import {
   UpdateBranchAccountInput,
   ResetPasswordInput,
   UpdatePermissionsInput,
+  UpdateBranchDetailsInput,
 } from './branch-account.schema.js';
 
 export class BranchAccountService {
@@ -438,6 +439,55 @@ export class BranchAccountService {
         loginId: account.loginId,
         role: account.role,
       },
+    };
+  }
+
+  public static async updateBranch(branchIdentifier: string, input: UpdateBranchDetailsInput) {
+    const branch = await this.findBranch(branchIdentifier);
+
+    // If code is being changed, check uniqueness
+    if (input.code && input.code.toUpperCase() !== branch.code) {
+      const existing = await Branch.findOne({
+        _id: { $ne: branch._id },
+        code: input.code.toUpperCase(),
+      });
+      if (existing) {
+        throw new AppError(`Branch code '${input.code}' is already in use.`, 409, 'BRANCH_CODE_EXISTS');
+      }
+      branch.code = input.code.toUpperCase();
+    }
+
+    if (input.name !== undefined) branch.name = input.name;
+    if (input.shopNumber !== undefined) branch.shopNumber = input.shopNumber;
+    if (input.type !== undefined) branch.type = input.type;
+    if (input.city !== undefined) branch.city = input.city;
+    if (input.address !== undefined) branch.address = input.address;
+    if (input.phone !== undefined) branch.phone = input.phone;
+    if (input.targetMonthlySales !== undefined) branch.targetMonthlySales = input.targetMonthlySales;
+    if (input.isActive !== undefined) branch.isActive = input.isActive;
+    if (input.settings) {
+      branch.permissions = { ...(branch.permissions || {}), ...input.settings } as any;
+    }
+
+    await branch.save();
+
+    return {
+      id: branch._id.toString(),
+      _id: branch._id.toString(),
+      code: branch.code,
+      name: branch.name,
+      shopNumber: branch.shopNumber,
+      type: branch.type,
+      city: branch.city,
+      address: branch.address,
+      phone: branch.phone,
+      loginId: branch.loginId,
+      targetMonthlySales: branch.targetMonthlySales,
+      permissions: branch.permissions,
+      settings: branch.permissions,
+      isActive: branch.isActive,
+      createdAt: branch.createdAt,
+      updatedAt: branch.updatedAt,
     };
   }
 }

@@ -275,19 +275,23 @@ export class PosService {
           );
         }
 
-        // Authoritative Selling Price based on Sale Type (Stored in Paisa)
+        // Authoritative Selling Price based on Sale Type (Stored in Paisa), or custom overridden unit price if provided
         let authoritativePricePaisa: number;
-        switch (input.saleType) {
-          case SALE_TYPES.WHOLESALE:
-            authoritativePricePaisa = variant.wholesalePrice;
-            break;
-          case SALE_TYPES.DISTRIBUTOR:
-            authoritativePricePaisa = variant.distributorPrice;
-            break;
-          case SALE_TYPES.WALK_IN:
-          default:
-            authoritativePricePaisa = variant.retailPrice;
-            break;
+        if (typeof item.unitPrice === 'number' && item.unitPrice > 0) {
+          authoritativePricePaisa = Math.round(item.unitPrice * 100);
+        } else {
+          switch (input.saleType) {
+            case SALE_TYPES.WHOLESALE:
+              authoritativePricePaisa = variant.wholesalePrice;
+              break;
+            case SALE_TYPES.DISTRIBUTOR:
+              authoritativePricePaisa = variant.distributorPrice;
+              break;
+            case SALE_TYPES.WALK_IN:
+            default:
+              authoritativePricePaisa = variant.retailPrice;
+              break;
+          }
         }
 
         const itemDiscountPaisa = Math.round((item.discount || 0) * 100);

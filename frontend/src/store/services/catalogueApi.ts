@@ -23,6 +23,20 @@ export interface Category {
   createdAt?: string;
 }
 
+export interface ProductLine {
+  _id?: string;
+  id: string;
+  brandId: string;
+  categoryId: string;
+  brand?: Brand;
+  category?: Category;
+  name: string;
+  code: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  description?: string;
+  createdAt?: string;
+}
+
 export interface Size {
   _id?: string;
   id: string;
@@ -73,6 +87,8 @@ export interface Product {
   code: string;
   brandId: string;
   categoryId: string;
+  productLineId?: string;
+  productLine?: ProductLine;
   brand?: Brand;
   category?: Category;
   description?: string;
@@ -103,6 +119,7 @@ export interface ApiResponse<T> {
 export interface CreateProductRequest {
   brandId: string;
   categoryId: string;
+  productLineId?: string;
   sizeId: string;
   thicknessId: string;
   listPrice: number;
@@ -153,7 +170,7 @@ export const catalogueApi = createApi({
     baseUrl: API_BASE_URL,
     credentials: 'include',
   }),
-  tagTypes: ['Branch', 'Brand', 'Category', 'Size', 'Thickness', 'Product', 'Variant', 'PriceHistory'],
+  tagTypes: ['Branch', 'Brand', 'Category', 'ProductLine', 'Size', 'Thickness', 'Product', 'Variant', 'PriceHistory'],
   endpoints: (builder) => ({
     getBranches: builder.query<Branch[], void>({
       query: () => '/branches',
@@ -202,6 +219,32 @@ export const catalogueApi = createApi({
         method: 'POST',
         body: { newPassword: newPassword || password, password: newPassword || password },
       }),
+      invalidatesTags: ['Branch'],
+    }),
+
+    updateBranch: builder.mutation<
+      Branch,
+      { id: string; input: any }
+    >({
+      query: ({ id, input }) => ({
+        url: `/admin/branches/${id}`,
+        method: 'PATCH',
+        body: input,
+      }),
+      transformResponse: (response: ApiResponse<Branch>) => response.data,
+      invalidatesTags: ['Branch'],
+    }),
+
+    toggleBranchStatus: builder.mutation<
+      Branch,
+      { id: string; isActive: boolean }
+    >({
+      query: ({ id, isActive }) => ({
+        url: `/admin/branches/${id}`,
+        method: 'PATCH',
+        body: { isActive },
+      }),
+      transformResponse: (response: ApiResponse<Branch>) => response.data,
       invalidatesTags: ['Branch'],
     }),
 
@@ -339,6 +382,71 @@ export const catalogueApi = createApi({
       invalidatesTags: ['Category', 'Product', 'Variant'],
     }),
 
+    getProductLines: builder.query<ProductLine[], { brandId?: string; categoryId?: string } | void>({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params && params.brandId) queryParams.append('brandId', params.brandId);
+        if (params && params.categoryId) queryParams.append('categoryId', params.categoryId);
+        const queryStr = queryParams.toString();
+        return `/product-lines${queryStr ? `?${queryStr}` : ''}`;
+      },
+      transformResponse: (response: ApiResponse<ProductLine[]>) =>
+        (response.data || []).map((pl: any) => ({
+          ...pl,
+          id: pl.id || pl._id || '',
+          brandId: typeof pl.brandId === 'object' && pl.brandId !== null
+            ? (pl.brandId._id || pl.brandId.id || '').toString()
+            : (pl.brandId || '').toString(),
+          categoryId: typeof pl.categoryId === 'object' && pl.categoryId !== null
+            ? (pl.categoryId._id || pl.categoryId.id || '').toString()
+            : (pl.categoryId || '').toString(),
+          brandName: typeof pl.brandId === 'object' && pl.brandId !== null ? pl.brandId.name : pl.brandName,
+          categoryName: typeof pl.categoryId === 'object' && pl.categoryId !== null ? pl.categoryId.name : pl.categoryName,
+        })),
+      providesTags: ['ProductLine'],
+    }),
+
+    createProductLine: builder.mutation<
+      ProductLine,
+      { brandId: string; categoryId: string; name: string; code: string; description?: string; status?: string }
+    >({
+      query: (body) => ({
+        url: '/product-lines',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['ProductLine'],
+    }),
+
+    updateProductLine: builder.mutation<
+      ProductLine,
+      { id: string; brandId?: string; categoryId?: string; name?: string; code?: string; description?: string; status?: string }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/product-lines/${id}`,
+        method: 'PATCH',
+        body,
+      }),
+      invalidatesTags: ['ProductLine', 'Product', 'Variant'],
+    }),
+
+    toggleProductLineStatus: builder.mutation<ProductLine, { id: string; status: 'ACTIVE' | 'INACTIVE' }>({
+      query: ({ id, status }) => ({
+        url: `/product-lines/${id}/status`,
+        method: 'PATCH',
+        body: { status },
+      }),
+      invalidatesTags: ['ProductLine', 'Product', 'Variant'],
+    }),
+
+    deleteProductLine: builder.mutation<ApiResponse<{ deleted: boolean; message: string }>, string>({
+      query: (id) => ({
+        url: `/product-lines/${id}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['ProductLine', 'Product', 'Variant'],
+    }),
+
     getSizes: builder.query<Size[], void>({
       query: () => '/sizes',
       transformResponse: (response: ApiResponse<Size[]>) =>
@@ -443,16 +551,17 @@ export const catalogueApi = createApi({
 
     getProducts: builder.query<
       PaginatedResponse<Product>,
-      { brandId?: string; categoryId?: string; search?: string; branchId?: string; page?: number; limit?: number } | void
+      { brandId?: string; categoryId?: string; productLineId?: string; search?: string; branchId?: string; page?: number; limit?: number } | void
     >({
       query: (params) => {
         const queryParams = new URLSearchParams();
         if (params?.brandId) queryParams.append('brandId', params.brandId);
         if (params?.categoryId) queryParams.append('categoryId', params.categoryId);
+        if (params?.productLineId) queryParams.append('productLineId', params.productLineId);
         if (params?.search) queryParams.append('search', params.search);
         if (params?.branchId) queryParams.append('branchId', params.branchId);
         if (params?.page) queryParams.append('page', params.page.toString());
-        if (params?.limit) queryParams.append('limit', params.limit.toString());
+        queryParams.append('limit', (params?.limit || 500).toString());
         const queryStr = queryParams.toString();
         return `/products${queryStr ? `?${queryStr}` : ''}`;
       },
@@ -614,6 +723,8 @@ export const catalogueApi = createApi({
 export const {
   useGetBranchesQuery,
   useCreateBranchMutation,
+  useUpdateBranchMutation,
+  useToggleBranchStatusMutation,
   useResetBranchPasswordMutation,
   useUpdateBranchPermissionsMutation,
   useGetBrandsQuery,
@@ -626,6 +737,11 @@ export const {
   useUpdateCategoryMutation,
   useToggleCategoryStatusMutation,
   useDeleteCategoryMutation,
+  useGetProductLinesQuery,
+  useCreateProductLineMutation,
+  useUpdateProductLineMutation,
+  useToggleProductLineStatusMutation,
+  useDeleteProductLineMutation,
   useGetSizesQuery,
   useCreateSizeMutation,
   useUpdateSizeMutation,

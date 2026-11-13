@@ -136,6 +136,74 @@ export class CatalogueController {
     }
   }
 
+  // PRODUCT LINES (SUB-CATEGORIES)
+  public static async getProductLines(req: Request, res: Response): Promise<void> {
+    try {
+      const branchId =
+        (req.query.branchId as string) ||
+        (req.account?.role !== 'SUPER_ADMIN' ? (req.account?.branchId as any)?._id?.toString() || req.account?.branchId?.toString() : undefined);
+      const data = await CatalogueService.getProductLines({
+        brandId: req.query.brandId as string,
+        categoryId: req.query.categoryId as string,
+        search: req.query.search as string,
+        status: req.query.status as string,
+        branchId,
+      });
+      sendSuccess(res, data);
+    } catch (error) {
+      sendError(res, (error as any).message || 'Failed to fetch product lines.', (error as any).statusCode || 500);
+    }
+  }
+
+  public static async getProductLineById(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const data = await CatalogueService.getProductLineById(id);
+      sendSuccess(res, data);
+    } catch (error) {
+      sendError(res, (error as any).message || 'Product line not found.', (error as any).statusCode || 404);
+    }
+  }
+
+  public static async createProductLine(req: Request, res: Response): Promise<void> {
+    try {
+      const data = await CatalogueService.createProductLine(req.body);
+      sendSuccess(res, data, 'Product line created successfully.', 201);
+    } catch (error) {
+      sendError(res, (error as any).message || 'Failed to create product line.', (error as any).statusCode || 500, (error as any).code);
+    }
+  }
+
+  public static async updateProductLine(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const data = await CatalogueService.updateProductLine(id, req.body);
+      sendSuccess(res, data, 'Product line updated successfully.');
+    } catch (error) {
+      sendError(res, (error as any).message || 'Failed to update product line.', (error as any).statusCode || 500, (error as any).code);
+    }
+  }
+
+  public static async toggleProductLineStatus(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const data = await CatalogueService.toggleProductLineStatus(id, req.body.status);
+      sendSuccess(res, data, `Product line marked as ${req.body.status}.`);
+    } catch (error) {
+      sendError(res, (error as any).message || 'Failed to toggle product line status.', (error as any).statusCode || 500);
+    }
+  }
+
+  public static async deleteProductLine(req: Request, res: Response): Promise<void> {
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const data = await CatalogueService.deleteProductLine(id);
+      sendSuccess(res, data, data.message);
+    } catch (error) {
+      sendError(res, (error as any).message || 'Failed to delete product line.', (error as any).statusCode || 500);
+    }
+  }
+
   // SIZES
   public static async getSizes(req: Request, res: Response): Promise<void> {
     try {
@@ -248,10 +316,11 @@ export class CatalogueController {
 
       const data = await CatalogueService.getProducts({
         page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
-        limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
+        limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 500,
         search: req.query.search as string,
         brandId: req.query.brandId as string,
         categoryId: req.query.categoryId as string,
+        productLineId: req.query.productLineId as string,
         status: req.query.status as string,
         branchId: effectiveBranchId,
       });

@@ -1,22 +1,22 @@
-export type DefaultRoleKey = 
-  | 'SUPER_ADMIN' 
-  | 'BRANCH_MANAGER' 
-  | 'CASHIER' 
-  | 'WHOLESALE_STAFF' 
-  | 'INVENTORY_OFFICER' 
+export type DefaultRoleKey =
+  | 'SUPER_ADMIN'
+  | 'BRANCH_MANAGER'
+  | 'CASHIER'
+  | 'WHOLESALE_STAFF'
+  | 'INVENTORY_OFFICER'
   | 'ACCOUNTANT';
 
 export type UserRole = DefaultRoleKey | (string & {});
 
 export type PermissionScope = 'GLOBAL' | 'BRANCH';
 
-export type PermissionCategory = 
-  | 'branches' 
-  | 'users' 
-  | 'pos' 
-  | 'wholesale' 
-  | 'inventory' 
-  | 'reports' 
+export type PermissionCategory =
+  | 'branches'
+  | 'users'
+  | 'pos'
+  | 'wholesale'
+  | 'inventory'
+  | 'reports'
   | 'settings';
 
 export interface Permission {
@@ -59,11 +59,11 @@ export interface User {
   updatedAt?: string;
 }
 
-export type BranchType = 
-  | 'RETAIL_STORE' 
-  | 'SHOWROOM' 
-  | 'WHOLESALE_DEPOT' 
-  | 'WAREHOUSE' 
+export type BranchType =
+  | 'RETAIL_STORE'
+  | 'SHOWROOM'
+  | 'WHOLESALE_DEPOT'
+  | 'WAREHOUSE'
   | 'EXPRESS_COUNTER';
 
 export interface BranchSettings {
@@ -115,12 +115,12 @@ export interface Branch {
   updatedAt?: string;
 }
 
-export type ProductCategory = 
-  | 'Original Foam' 
-  | 'Orthopedic' 
-  | 'Spring Luxury' 
-  | 'Medical Care' 
-  | 'Ergonomic Pillows' 
+export type ProductCategory =
+  | 'Original Foam'
+  | 'Orthopedic'
+  | 'Spring Luxury'
+  | 'Medical Care'
+  | 'Ergonomic Pillows'
   | 'Accessories'
   | (string & {});
 
@@ -145,6 +145,22 @@ export interface Category {
   name: string;
   code: string;
   description: string;
+  status: CatalogueItemStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProductLine {
+  id: string;
+  _id?: string;
+  brandId: string;
+  brandName?: string;
+  categoryId: string;
+  categoryName?: string;
+  name: string;
+  code: string;
+  description?: string;
+  branchId?: string;
   status: CatalogueItemStatus;
   createdAt: string;
   updatedAt: string;
@@ -186,11 +202,14 @@ export interface CatalogueProduct {
   code: string;
   brandId: string;
   categoryId: string;
+  productLineId?: string;
+  productLineName?: string;
   description: string;
   imageUrl?: string;
   status: CatalogueItemStatus;
   createdAt: string;
   updatedAt: string;
+  category?: any;
 }
 
 export interface ProductVariant {
@@ -217,6 +236,8 @@ export interface ProductVariant {
   brandName?: string;
   categoryId?: string;
   categoryName?: string;
+  productLineId?: string;
+  productLineName?: string;
   sizeLabel?: string;
   thicknessLabel?: string;
 }
@@ -265,11 +286,11 @@ export type PaymentArrangement = 'FULL' | 'PARTIAL' | 'CREDIT';
 
 export type CustomerStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
 
-export type PaymentMethod = 
-  | 'CASH' 
-  | 'BANK_TRANSFER' 
-  | 'PAYPAK_CARD' 
-  | 'CHEQUE' 
+export type PaymentMethod =
+  | 'CASH'
+  | 'BANK_TRANSFER'
+  | 'PAYPAK_CARD'
+  | 'CHEQUE'
   | 'CREDIT_30D';
 
 export type PaymentStatus = 'PAID' | 'PARTIAL' | 'PARTIALLY_PAID' | 'UNPAID' | 'REFUNDED' | 'OVERDUE';
@@ -634,6 +655,7 @@ export interface POSCartItem {
   dimensionInches?: string;
   thicknessInches?: number;
   thicknessLabel?: string;
+  originalPrice?: number;
   unitPrice: number;
   quantity: number;
   lineTotal: number;

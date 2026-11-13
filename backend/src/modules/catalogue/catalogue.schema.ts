@@ -46,6 +46,31 @@ export const updateCategorySchema = z.object({
   }),
 });
 
+export const productLineSchema = z.object({
+  body: z.object({
+    brandId: z.string({ required_error: 'Brand ID is required' }),
+    categoryId: z.string({ required_error: 'Category ID is required' }),
+    branchId: z.string().optional(),
+    code: z.string().trim().min(2).max(20).toUpperCase(),
+    name: z.string().trim().min(2).max(100),
+    description: z.string().trim().optional(),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
+  }),
+});
+
+export const updateProductLineSchema = z.object({
+  params: z.object({ id: z.string() }),
+  body: z.object({
+    brandId: z.string().optional(),
+    categoryId: z.string().optional(),
+    branchId: z.string().optional(),
+    code: z.string().trim().min(2).max(20).toUpperCase().optional(),
+    name: z.string().trim().min(2).max(100).optional(),
+    description: z.string().trim().optional(),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
+  }),
+});
+
 export const sizeSchema = z.object({
   body: z.object({
     length: z.coerce.number().positive(),
@@ -90,6 +115,7 @@ export const createProductWithVariantSchema = z.object({
   body: z.object({
     brandId: z.string({ required_error: 'Brand is required' }),
     categoryId: z.string({ required_error: 'Category is required' }),
+    productLineId: z.string().optional(),
     sizeId: z.string({ required_error: 'Size is required' }),
     thicknessId: z.string({ required_error: 'Thickness is required' }),
     // Financials in Rupees
@@ -114,6 +140,7 @@ export const updateSkuSchema = z.object({
   body: z.object({
     brandId: z.string().optional(),
     categoryId: z.string().optional(),
+    productLineId: z.string().optional(),
     sizeId: z.string().optional(),
     thicknessId: z.string().optional(),
     listPrice: z.coerce.number().min(0).optional(),
@@ -150,16 +177,19 @@ export const idParamSchema = z.object({
 export const paginationQuerySchema = z.object({
   query: z.object({
     page: z.coerce.number().int().positive().default(1),
-    limit: z.coerce.number().int().positive().max(100).default(20),
+    limit: z.coerce.number().int().positive().max(1000).default(500),
     search: z.string().trim().optional(),
-    status: z.enum(['ACTIVE', 'INACTIVE', 'ALL']).default('ACTIVE'),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'ALL', 'active', 'inactive', 'all']).default('ACTIVE'),
     brandId: z.string().optional(),
     categoryId: z.string().optional(),
+    productLineId: z.string().optional(),
+    branchId: z.string().optional(),
   }),
 });
 
 export type BrandInput = z.infer<typeof brandSchema>['body'];
 export type CategoryInput = z.infer<typeof categorySchema>['body'];
+export type ProductLineInput = z.infer<typeof productLineSchema>['body'];
 export type SizeInput = z.infer<typeof sizeSchema>['body'];
 export type ThicknessInput = z.infer<typeof thicknessSchema>['body'];
 export type CreateProductWithVariantInput = z.infer<typeof createProductWithVariantSchema>['body'];

@@ -4,6 +4,7 @@ export * from './auditLog.model.js';
 export * from './branch.model.js';
 export * from './brand.model.js';
 export * from './category.model.js';
+export * from './productLine.model.js';
 export * from './size.model.js';
 export * from './thickness.model.js';
 export * from './product.model.js';

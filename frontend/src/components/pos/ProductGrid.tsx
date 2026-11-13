@@ -288,7 +288,7 @@ export default function ProductGrid({
             {products.map((product, idx) => {
               const { startingPrice, inStock, totalAvailable } = getProductMetrics(product.id);
               const isSelected = selectedProductId === product.id;
-
+              // { console.log(product?.category?.name) }
               return (
                 <div
                   key={product.id}
@@ -326,12 +326,20 @@ export default function ProductGrid({
                   {/* Info */}
                   <div className="flex-1 flex flex-col justify-between">
                     <div>
-                      <h3 className="font-bold text-sm text-slate-900 leading-snug line-clamp-1 font-sans">
-                        {product.name}
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-0.5 line-clamp-1 font-sans">
-                        {product.description || 'Standard Foam'}
+                      {/* <div className="flex items-center gap-1.5 mb-1">
+                        <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 uppercase tracking-wider">
+                          Line: {product.productLineName || (product as any).productLine?.name || product.name}
+                        </span>
+                      </div> */}
+                      <p className="font-bold text-sm text-slate-500 leading-snug line-clamp-1 font-sans" style={{ fontSize: '14px' }}>
+                        {/* {product?.category?.name || 'Standard Foam'} */}
+                        [ {product?.category?.name} ]
                       </p>
+                      <h3 className="font-bold text-sm text-slate-900  font-sans" style={{ fontSize: '17px' }}>
+                        {/* {product.name} */}
+                        {product.productLineName || (product as any).productLine?.name || product.name}
+                      </h3>
+
                     </div>
 
                     <div className="pt-3">
@@ -340,9 +348,9 @@ export default function ProductGrid({
                         {startingPrice > 0 ? (
                           <div className="flex items-baseline gap-1 font-sans">
                             <span className="text-xs font-bold text-slate-900">Rs.</span>
-                            <span className="text-lg font-black text-slate-900 tracking-tight">
+                            {/* <span className="text-lg font-black text-slate-900 tracking-tight">
                               {startingPrice.toLocaleString()}
-                            </span>
+                            </span> */}
                           </div>
                         ) : (
                           <span className="text-xs font-medium text-amber-600 flex items-center gap-1">

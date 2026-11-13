@@ -1,0 +1,68 @@
+Item #,Brand,Category,Product Line,Display label,Length (in),Width (in),Thickness (in),List Price,Purchase price,Retail price,Wholesale price,Distributor Price,Minimum Stock,Current Stock
+1,MasterCeleste,Mattresses,Crest,72x36,72,36,8,19400,16500,19800,17450,16500,3,6
+2,MasterCeleste,Mattresses,Crest,72x48,72,48,8,24050,20450,24550,21650,20450,3,6
+3,MasterCeleste,Mattresses,Crest,72x60,72,60,8,28750,24450,29350,25900,24450,3,6
+4,MasterCeleste,Mattresses,Crest,72x72,72,72,8,33450,28450,34100,30100,28450,3,6
+5,MasterCeleste,Mattresses,Crest,78x72,78,72,8,35800,30450,36500,32200,30450,3,10
+6,MasterCeleste,Mattresses,Crest,78x42,78,42,8,23100,19650,23550,20800,19650,3,6
+7,MasterCeleste,Mattresses,Crest,78x60,78,60,8,30750,26150,31350,27700,26150,3,6
+8,MasterCeleste,Mattresses,Crest,Out Size,78,72,8,39350,33450,40150,35400,33450,2,3
+9,MasterCeleste,Mattresses,AIPA,72x36,72,36,8,22050,18750,22500,19850,18750,3,6
+10,MasterCeleste,Mattresses,AIPA,72x48,72,48,8,27400,23300,27950,24650,23300,3,6
+11,MasterCeleste,Mattresses,AIPA,72x60,72,60,8,32700,27800,33350,29450,27800,3,6
+12,MasterCeleste,Mattresses,AIPA,72x72,72,72,8,38050,32350,38800,34250,32350,3,6
+13,MasterCeleste,Mattresses,AIPA,78x72,78,72,8,40700,34600,41500,36650,34600,3,10
+14,MasterCeleste,Mattresses,AIPA,Out Size,78,72,8,44750,38050,45650,40300,38050,2,3
+15,MasterCeleste,Mattresses,Spring Air,72x60,72,60,8,37450,31850,38200,33700,31850,3,6
+16,MasterCeleste,Mattresses,Spring Air,72x72,72,72,8,43550,37000,44400,39200,37000,3,6
+17,MasterCeleste,Mattresses,Spring Air,78x72,78,72,8,46550,39550,47500,41900,39550,3,10
+18,MasterCeleste,Mattresses,Spring Air Plus,78x72,78,72,8,52450,44600,53500,47200,44600,3,10
+19,MasterCeleste,Mattresses,Bravo,78x72,78,72,8,55400,47100,56500,49850,47100,3,10
+20,MasterCeleste,Mattresses,Bravo,72x72,72,72,8,51750,44000,52800,46600,44000,3,6
+21,MasterCeleste,Mattresses,Bravo,Out Size,78,72,8,60950,51800,62150,54850,51800,2,3
+22,MasterCeleste,Mattresses,Bravo Plus,78x72,78,72,8,61250,52050,62500,55100,52050,3,10
+23,MasterCeleste,Mattresses,Bravo Executive 2in1,78x72,78,72,8,66200,56250,67500,59600,56250,3,10
+24,MasterCeleste,Mattresses,Cool Gel Bravo,78x72,78,72,8,70100,59600,71500,63100,59600,3,10
+25,MasterCeleste,Mattresses,Ultra Ortho,78x72,78,72,8,68150,57950,69500,61350,57950,3,10
+26,MasterCeleste,Mattresses,Molty Hybrid 2in1,78x72,78,72,8,73050,62100,74500,65750,62100,3,10
+27,MasterCeleste,Mattresses,Classique,78x72,78,72,8,76950,65400,78500,69250,65400,3,10
+28,MasterCeleste,Mattresses,Classique Executive 2in1,78x72,78,72,8,82850,70400,84500,74550,70400,3,10
+29,MasterCeleste,Mattresses,Celeste Memory Cool Gel,78x72,78,72,8,86750,73750,88500,78100,73750,3,10
+30,MasterCeleste,Mattresses,Eterna Firm 2in1,78x72,78,72,8,84800,72100,86500,76300,72100,3,10
+31,MasterCeleste,Mattresses,Eterna Soft 2in1,78x72,78,72,8,84800,72100,86500,76300,72100,3,10
+32,MasterCeleste,Mattresses,Eterna Memory 2in1,78x72,78,72,8,92650,78750,94500,83400,78750,3,10
+33,MasterCeleste,Mattresses,Master Piece,78x72,78,72,8,112750,95850,115000,101500,95850,3,10
+34,MasterCeleste,Mattresses,M. Spring 2in1,78x72,78,72,8,63250,53750,64500,56900,53750,3,10
+35,MasterCeleste,Pillows,SPNA Pillow Jet,Standard,29,19,10,1250,1050,1250,1100,1050,5,20
+36,MasterCeleste,Pillows,Molty Grow Pillow,Standard,29,19,10,1600,1350,1650,1450,1350,5,20
+37,MasterCeleste,Pillows,Fill Polyester Pillow,Standard,29,19,10,1400,1200,1450,1250,1200,5,20
+38,MasterCeleste,Pillows,Gold Pillow,Standard,29,19,10,1800,1550,1850,1600,1550,5,20
+39,MasterCeleste,Pillows,Celeste Microfiber Pillow,Standard,29,19,10,2400,2050,2450,2150,2050,5,20
+40,MasterCeleste,Pillows,Celeste Hotel Pillow,Standard,29,19,10,2900,2450,2950,2600,2450,5,20
+41,MasterCeleste,Pillows,Molty Contour Pillow,Standard,29,19,10,3600,3050,3650,3250,3050,5,20
+42,MasterCeleste,Ortho & Support,Molty Back Care,Standard,29,19,10,4350,3700,4450,3900,3700,5,12
+43,MasterCeleste,Pillows,Molty Sleep Pillow,Standard,29,19,10,2200,1850,2250,2000,1850,5,20
+44,MasterCeleste,Pillows,Molty Memory Pillow,Standard,29,19,10,4750,4050,4850,4300,4050,5,20
+45,MasterCeleste,Pillows,Molty Flex Pillow,Standard,29,19,10,3400,2900,3450,3050,2900,5,20
+46,MasterCeleste,Pillows,Molty Deluxe Pillow,Standard,29,19,10,2600,2200,2650,2350,2200,5,20
+47,MasterCeleste,Pillows,Molty Memory Cool Gel Pillow,Standard,29,19,10,5850,4950,5950,5250,4950,5,20
+48,MasterCeleste,Pillows,Molty Ortho Memory Pillow,Standard,29,19,10,5350,4550,5450,4800,4550,5,20
+49,MasterCeleste,Pillows,Latex Pillow,Standard,29,19,10,6700,5700,6850,6050,5700,5,20
+50,MasterCeleste,Ortho & Support,Molty Relaxor Cushion,Standard,29,19,10,3200,2700,3250,2900,2700,5,12
+51,MasterCeleste,Ortho & Support,Molty Ortho Cervical Collar,Standard,29,19,10,1600,1350,1650,1450,1350,5,12
+52,MasterCeleste,Pillows,Molty Memory Travel Pillow,Standard,29,19,10,2800,2400,2850,2500,2400,5,20
+53,MasterCeleste,Ortho & Support,Molty Ortho Coccyx Cushion,Standard,29,19,10,3400,2900,3450,3050,2900,5,12
+54,MasterCeleste,Ortho & Support,Molty Memory Coccyx Cushion,Standard,29,19,10,4150,3550,4250,3750,3550,5,12
+55,MasterCeleste,Ortho & Support,Molty Ortho Ring Cushion,Standard,29,19,10,2700,2300,2750,2450,2300,5,12
+56,MasterCeleste,Pillows,Molty Ortho Evolution Travel Pillow,Standard,29,19,10,3500,3000,3550,3150,3000,5,20
+57,MasterCeleste,Pillows,Molty Cool Gel Travel Pillow,Standard,29,19,10,3300,2800,3350,2950,2800,5,20
+58,MasterCeleste,Protectors & Pads,Mattress Pad,78x72,29,19,10,5750,4900,5850,5200,4900,5,12
+59,MasterCeleste,Protectors & Pads,Ultra Protector,Standard,29,19,10,4150,3550,4250,3750,3550,5,12
+60,MasterCeleste,Protectors & Pads,Ultra Protector Waterproof,Standard,29,19,10,4850,4100,4950,4350,4100,5,12
+61,MasterCeleste,Pillows,Molty Mom Pregnancy Pillow,Standard,29,19,10,6300,5350,6450,5650,5350,5,20
+62,MasterCeleste,Pillows,Molty Mom Pregnancy Total Body Pillow,Standard,29,19,10,8750,7450,8950,7900,7450,5,20
+63,MasterCeleste,Prayer Mats,Molty Foam Jai Namaz,Standard,29,19,10,2300,1950,2350,2050,1950,5,20
+64,MasterCeleste,Prayer Mats,Celeste Jai Namaz,Standard,29,19,10,2800,2400,2850,2500,2400,5,20
+65,MasterCeleste,Ortho & Support,Molty Care Wedge,Standard,29,19,10,4850,4100,4950,4350,4100,5,12
+66,MasterCeleste,Ortho & Support,Molty Memory Wool Bolster,Standard,29,19,10,3750,3200,3850,3400,3200,5,12
+

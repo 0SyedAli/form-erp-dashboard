@@ -140,7 +140,7 @@ function POSContent() {
   const { data: backendCategories = [] } = useGetBackendCategoriesQuery(undefined, { skip: !isBackendMode });
   const { data: backendSizes = [] } = useGetBackendSizesQuery(undefined, { skip: !isBackendMode });
   const { data: backendThicknesses = [] } = useGetBackendThicknessesQuery(undefined, { skip: !isBackendMode });
-  const { data: backendProducts = [], refetch: refetchProducts } = useGetBackendProductsQuery(undefined, { skip: !isBackendMode });
+  const { data: backendProducts = [], refetch: refetchProducts } = useGetBackendProductsQuery({ limit: 500 }, { skip: !isBackendMode });
   const { data: backendSkusResponse, refetch: refetchSkus } = useGetBackendSkusQuery(undefined, { skip: !isBackendMode });
 
   // Unified Branches
@@ -360,6 +360,9 @@ function POSContent() {
       id: String(p.id || p._id || ''),
       brandId: String(p.brandId?._id || p.brandId || p.brand?._id || p.brand?.id || ''),
       categoryId: String(p.categoryId?._id || p.categoryId || p.category?._id || p.category?.id || ''),
+      productLineId: String(p.productLineId?._id || p.productLineId || p.productLine?._id || p.productLine?.id || ''),
+      productLine: p.productLineId && typeof p.productLineId === 'object' ? p.productLineId : p.productLine,
+      productLineName: p.productLineName || (typeof p.productLineId === 'object' ? p.productLineId?.name : '') || p.productLine?.name || '',
       code: p.code || `${p.brand?.code || 'MF'}-${p.category?.code || 'CAT'}`.toUpperCase(),
       name: p.name || 'Unnamed Product',
       status: p.status || 'ACTIVE',
@@ -951,6 +954,22 @@ function POSContent() {
             ...item,
             quantity: clampedQty,
             lineTotal: item.unitPrice * clampedQty,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  const handleUpdateItemPrice = (variantId: string, newPrice: number) => {
+    setCartItems((prev) =>
+      prev.map((item) => {
+        if (item.variantId === variantId) {
+          const validPrice = Math.max(0, newPrice);
+          return {
+            ...item,
+            unitPrice: validPrice,
+            lineTotal: validPrice * item.quantity,
           };
         }
         return item;
@@ -1589,6 +1608,7 @@ function POSContent() {
           <POSCart
             items={cartItems}
             onUpdateQuantity={handleUpdateQuantity}
+            onUpdateUnitPrice={handleUpdateItemPrice}
             onRemoveItem={handleRemoveItem}
             onClearCart={handleClearCart}
             discountAmount={discountAmount}

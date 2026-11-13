@@ -19,6 +19,7 @@ import {
   useGetSkusQuery as useGetBackendSkusQuery,
   useGetBrandsQuery as useGetBackendBrandsQuery,
   useGetCategoriesQuery as useGetBackendCategoriesQuery,
+  useGetProductLinesQuery as useGetBackendProductLinesQuery,
   useGetSizesQuery as useGetBackendSizesQuery,
   useGetThicknessesQuery as useGetBackendThicknessesQuery,
   useToggleSkuStatusMutation,
@@ -60,6 +61,7 @@ export default function ProductsTab({
   const { data: demoBrands = [] } = useGetDemoBrandsQuery();
   const { data: backendCategories = [] } = useGetBackendCategoriesQuery();
   const { data: demoCategories = [] } = useGetDemoCategoriesQuery();
+  const { data: backendProductLines = [] } = useGetBackendProductLinesQuery();
   const { data: backendSizes = [] } = useGetBackendSizesQuery();
   const { data: demoSizes = [] } = useGetDemoSizesQuery();
   const { data: backendThicknesses = [] } = useGetBackendThicknessesQuery();
@@ -98,13 +100,15 @@ export default function ProductsTab({
       return rawBackendSkus.map((v: any) => ({
         id: v.id || v._id || '',
         productId: v.productId || v._id || '',
-        branchId: v.branchId || v.product?.branchId || '',
+        branchId: v.branchId || v.product?.branchId || (typeof v.productId === 'object' ? v.productId?.branchId : '') || '',
         sku: v.sku,
         productName: v.productName || `${v.brand?.name || ''} - ${v.category?.name || ''}`,
         brandId: v.brandId || v.brand?._id || v.brand?.id || '',
         brandName: v.brandName || v.brand?.name || '',
         categoryId: v.categoryId || v.category?._id || v.category?.id || '',
         categoryName: v.categoryName || v.category?.name || '',
+        productLineId: v.productLineId || v.product?.productLineId || '',
+        productLineName: v.productLineName || v.productLine?.name || (typeof v.productLineId === 'object' ? v.productLineId?.name : '') || '',
         sizeId: v.sizeId || v.size?._id || v.size?.id || '',
         sizeLabel: v.sizeLabel || v.size?.displayLabel || (v.size ? `${v.size.length} × ${v.size.width}` : ''),
         thicknessId: v.thicknessId || v.thickness?._id || v.thickness?.id || '',
@@ -125,7 +129,17 @@ export default function ProductsTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [brandFilter, setBrandFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [productLineFilter, setProductLineFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+
+  const productLines: Array<{ id: string; name: string; brandId: string; categoryId: string }> = useMemo(() => {
+    return (Array.isArray(backendProductLines) ? backendProductLines : (backendProductLines as any)?.data || []).map((pl: any) => ({
+      id: String(pl.id || pl._id || ''),
+      name: pl.name || '',
+      brandId: String(pl.brandId?._id || pl.brandId || ''),
+      categoryId: String(pl.categoryId?._id || pl.categoryId || ''),
+    }));
+  }, [backendProductLines]);
 
   // Fast lookups
   const sizeMap = useMemo(() => new Map(sizes.map((s) => [s.id || (s as any)._id, s.displayLabel || s.name || '78 × 78'])), [sizes]);
@@ -148,6 +162,15 @@ export default function ProductsTab({
     return categories.filter((c) => (c.brandId || (c as any).brand?._id) === brandFilter);
   }, [categories, brandFilter]);
 
+  // Product Lines available based on brand and category filter
+  const availableProductLines = useMemo(() => {
+    return productLines.filter((pl) => {
+      const matchesBrand = brandFilter === 'all' || pl.brandId === brandFilter;
+      const matchesCategory = categoryFilter === 'all' || pl.categoryId === categoryFilter;
+      return matchesBrand && matchesCategory;
+    });
+  }, [productLines, brandFilter, categoryFilter]);
+
   // Filtered variants list (each row is a simple concrete product)
   const filteredItems = useMemo(() => {
     return variants.filter((item) => {
@@ -161,6 +184,7 @@ export default function ProductsTab({
         (item.productName && item.productName.toLowerCase().includes(q)) ||
         (item.brandName && item.brandName.toLowerCase().includes(q)) ||
         (item.categoryName && item.categoryName.toLowerCase().includes(q)) ||
+        (item.productLineName && item.productLineName.toLowerCase().includes(q)) ||
         (item.sizeLabel && item.sizeLabel.toLowerCase().includes(q));
 
       const matchesBrand =
@@ -175,6 +199,12 @@ export default function ProductsTab({
         (cat && (cat.id === categoryFilter || (cat as any)._id === categoryFilter)) ||
         (item.categoryName && item.categoryName.toLowerCase().includes(categoryFilter.toLowerCase()));
 
+      const matchesProductLine =
+        productLineFilter === 'all' ||
+        item.productLineId === productLineFilter ||
+        item.productLineName?.toLowerCase() === productLineFilter.toLowerCase() ||
+        item.productName?.toLowerCase() === productLineFilter.toLowerCase();
+
       const isItemActive = item.status === 'active' || item.status === 'ACTIVE';
       const matchesStatus =
         statusFilter === 'all' ||
@@ -183,12 +213,13 @@ export default function ProductsTab({
 
       const matchesBranch =
         branchFilter === 'all' ||
+        Boolean(effectiveBranchId) ||
         (item as any).branchId === branchFilter ||
         balanceMap.has(item.sku.toUpperCase());
 
-      return matchesSearch && matchesBrand && matchesCategory && matchesStatus && matchesBranch;
+      return matchesSearch && matchesBrand && matchesCategory && matchesProductLine && matchesStatus && matchesBranch;
     });
-  }, [variants, searchQuery, brandFilter, categoryFilter, statusFilter, branchFilter, balanceMap, brands, categories]);
+  }, [variants, searchQuery, brandFilter, categoryFilter, productLineFilter, statusFilter, branchFilter, balanceMap, brands, categories]);
 
   // Client-Side Pagination (Only renders when products > 10)
   const { paginatedItems: paginatedProducts, PaginationComponent: ProductsPagination } =
@@ -221,8 +252,8 @@ export default function ProductsTab({
     <div className="space-y-4 font-sans">
       {/* Top Filter and Actions Bar */}
       <div className="bg-white rounded-2xl border border-gray-200/80 p-4 shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3 flex-1">
-          <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
+        <div className="flex flex-wrap flex-col gap-3 flex-1">
+          <div className="relative flex-1 w-[100%]">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -232,84 +263,103 @@ export default function ProductsTab({
               className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand-blue focus:bg-white"
             />
           </div>
-
-          <select
-            value={brandFilter}
-            onChange={(e) => {
-              setBrandFilter(e.target.value);
-              setCategoryFilter('all');
-            }}
-            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
-          >
-            <option value="all">All Brands</option>
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
-          >
-            <option value="all">All Categories</option>
-            {availableCategories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
-            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
-          >
-            <option value="all">All Status</option>
-            <option value="active">Active Only</option>
-            <option value="inactive">Inactive Only</option>
-          </select>
-
-          {isSuperAdmin && (
+          <div className="flex flex-wrap items-center gap-3 flex-1">
             <select
-              value={branchFilter}
-              onChange={(e) => setBranchFilter(e.target.value)}
+              value={brandFilter}
+              onChange={(e) => {
+                setBrandFilter(e.target.value);
+                setCategoryFilter('all');
+              }}
               className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
             >
-              <option value="all">All Branches</option>
-              {branches.map((b) => (
+              <option value="all">All Brands</option>
+              {brands.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name} ({b.code})
+                  {b.name}
                 </option>
               ))}
             </select>
-          )}
 
-          {(searchQuery ||
-            brandFilter !== 'all' ||
-            categoryFilter !== 'all' ||
-            statusFilter !== 'all' ||
-            (isSuperAdmin && branchFilter !== 'all')) && (
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setBrandFilter('all');
-                  setCategoryFilter('all');
-                  setStatusFilter('all');
-                  if (isSuperAdmin) setBranchFilter('all');
-                }}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+            <select
+              value={categoryFilter}
+              onChange={(e) => {
+                setCategoryFilter(e.target.value);
+                setProductLineFilter('all');
+              }}
+              className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Categories</option>
+              {availableCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={productLineFilter}
+              onChange={(e) => setProductLineFilter(e.target.value)}
+              className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Product Lines</option>
+              {availableProductLines.map((pl) => (
+                <option key={pl.id} value={pl.name}>
+                  {pl.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
+              className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active Only</option>
+              <option value="inactive">Inactive Only</option>
+            </select>
+
+            {isSuperAdmin && (
+              <select
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset</span>
-              </button>
+                <option value="all">All Branches</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.code})
+                  </option>
+                ))}
+              </select>
             )}
+
+            {(searchQuery ||
+              brandFilter !== 'all' ||
+              categoryFilter !== 'all' ||
+              productLineFilter !== 'all' ||
+              statusFilter !== 'all' ||
+              (isSuperAdmin && branchFilter !== 'all')) && (
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setBrandFilter('all');
+                    setCategoryFilter('all');
+                    setProductLineFilter('all');
+                    setStatusFilter('all');
+                    if (isSuperAdmin) setBranchFilter('all');
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset</span>
+                </button>
+              )}
+          </div>
         </div>
 
         {/* Global Add Product Button */}
-        {canManage && (
+        {/* {canManage && (
           <div className="flex items-center gap-2.5 shrink-0">
             <Link
               href="/products/new"
@@ -319,7 +369,7 @@ export default function ProductsTab({
               <span>Add Product</span>
             </Link>
           </div>
-        )}
+        )} */}
       </div>
 
       {/* Simplified Products Table */}
@@ -407,15 +457,20 @@ export default function ProductsTab({
                         </div>
                       </td>
 
-                      {/* Brand & Category */}
+                      {/* Brand, Category & Product Line */}
                       <td className="py-3.5 px-3">
                         <div className="flex flex-col gap-1 items-start">
                           <span className="px-2 py-0.5 rounded-md bg-blue-50 text-brand-blue text-[10px] font-bold border border-blue-100">
-                            {item.brandName || 'Molty Foam'}
+                            {item.brandName || 'Brand'}
                           </span>
                           <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 text-[10px] font-semibold border border-purple-100">
-                            {item.categoryName || 'Mattress'}
+                            {item.categoryName || 'Category'}
                           </span>
+                          {(item.productLineName || item.productName) && (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-semibold border border-amber-200">
+                              Line: {item.productLineName || item.productName}
+                            </span>
+                          )}
                         </div>
                       </td>
 

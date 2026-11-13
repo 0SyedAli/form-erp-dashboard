@@ -51,7 +51,7 @@ export default function BranchwiseRevenueDonut({ data = [], isLoading = false }:
           </p>
         </div>
       ) : (
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 my-auto">
+        <div className="flex flex-col items-center justify-center gap-4 my-auto">
           {/* Donut Chart with centered label */}
           <div className="relative w-44 h-44 shrink-0">
             <ResponsiveContainer width="100%" height="100%">

@@ -105,4 +105,18 @@ export class BranchAccountController {
       sendError(res, 'Failed to create branch.', 500, 'INTERNAL_ERROR');
     }
   }
+
+  public static async updateBranch(req: Request, res: Response): Promise<void> {
+    try {
+      const branchId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const result = await BranchAccountService.updateBranch(branchId, req.body);
+      sendSuccess(res, result, 'Branch updated successfully.');
+    } catch (error) {
+      if ((error as any).statusCode) {
+        sendError(res, (error as any).message, (error as any).statusCode, (error as any).code);
+        return;
+      }
+      sendError(res, (error as any).message || 'Failed to update branch.', 500, 'INTERNAL_ERROR');
+    }
+  }
 }
