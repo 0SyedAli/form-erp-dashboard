@@ -52,11 +52,14 @@ export class PosService {
       Category.find({ status: 'ACTIVE' }).select('brandId name code description').lean(),
       Size.find({ status: 'ACTIVE' }).select('displayLabel length width unit').lean(),
       Thickness.find({ status: 'ACTIVE' }).select('displayLabel value unit').lean(),
-      Product.find({ status: 'ACTIVE' }).select('name code brandId categoryId').lean(),
+      Product.find({ status: 'ACTIVE' })
+        .populate('productLineId', 'name code imageUrl')
+        .select('name code brandId categoryId productLineId imageUrl')
+        .lean(),
       Variant.find({ status: 'ACTIVE' })
         .populate('sizeId', 'displayLabel length width')
         .populate('thicknessId', 'displayLabel value')
-        .populate('productId', 'name code brandId categoryId')
+        .populate('productId', 'name code brandId categoryId imageUrl')
         .select('-purchasePrice -purchaseDiscountPercent')
         .lean(),
     ]);

@@ -65,6 +65,7 @@ interface ProductLineOption {
   categoryId: string;
   name: string;
   code: string;
+  imageUrl?: string;
 }
 
 function NewProductContent() {
@@ -95,6 +96,7 @@ function NewProductContent() {
       categoryId: String(pl.categoryId?._id || pl.categoryId || ''),
       name: pl.name || '',
       code: pl.code || '',
+      imageUrl: pl.imageUrl || '',
     }));
   }, [backendProductLines]);
 
@@ -1231,34 +1233,32 @@ function NewProductContent() {
               </h3>
             </div>
 
-            {/* Mattress Vector Card */}
-            <div className="bg-blue-50/60 border border-blue-100/70 rounded-2xl p-6 flex items-center justify-center">
-              <svg viewBox="0 0 160 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-40 h-24">
-                {/* Isometric Mattress Top */}
-                <path
-                  d="M40 25 L120 25 C132 25 142 32 142 40 L122 70 C120 74 114 77 106 77 L26 77 C16 77 8 72 8 64 L26 34 C28 29 33 25 40 25 Z"
-                  fill="#FFFFFF"
-                  stroke="#3B82F6"
-                  strokeWidth="2.5"
-                  strokeLinejoin="round"
+            {/* Product Line Image / Vector Card */}
+            <div className="bg-blue-50/60 border border-blue-100/70 rounded-2xl p-6 flex items-center justify-center min-h-[140px] overflow-hidden">
+              {selectedProductLine?.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={selectedProductLine.imageUrl}
+                  alt={autoProductName}
+                  className="max-h-32 max-w-full object-contain rounded-xl"
+                  onError={(e) => {
+                    e.currentTarget.src = '/assets/mattress/foam1.png';
+                  }}
                 />
-                {/* Mattress Bottom/Border Depth */}
-                <path
-                  d="M8 64 L8 73 C8 81 16 86 26 86 L106 86 C114 86 120 83 122 79 L142 49 L142 40"
-                  stroke="#3B82F6"
-                  strokeWidth="2.5"
-                  strokeLinejoin="round"
-                />
-                <path d="M26 77 L26 86" stroke="#3B82F6" strokeWidth="2.5" />
-                <path d="M122 70 L122 79" stroke="#3B82F6" strokeWidth="2.5" />
-                {/* Quilted Tuft Dots */}
-                <circle cx="50" cy="42" r="2.2" fill="#3B82F6" />
-                <circle cx="80" cy="42" r="2.2" fill="#3B82F6" />
-                <circle cx="110" cy="42" r="2.2" fill="#3B82F6" />
-                <circle cx="40" cy="56" r="2.2" fill="#3B82F6" />
-                <circle cx="70" cy="56" r="2.2" fill="#3B82F6" />
-                <circle cx="100" cy="56" r="2.2" fill="#3B82F6" />
-              </svg>
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/assets/mattress/foam1.png"
+                    alt="Dummy Mattress"
+                    className="max-h-24 max-w-full object-contain"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                  <span className="text-[10px] text-slate-400 font-medium">Default Display Image</span>
+                </div>
+              )}
             </div>
 
             {/* Product Title and Type Pill */}

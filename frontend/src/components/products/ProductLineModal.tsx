@@ -11,6 +11,7 @@ import {
   useGetBrandsQuery,
   useGetCategoriesQuery,
 } from '@/store/services/catalogueApi';
+import ProductImageUpload from './ProductImageUpload';
 import { X, Network } from 'lucide-react';
 
 const productLineSchema = z.object({
@@ -23,6 +24,7 @@ const productLineSchema = z.object({
     .max(20, 'Code cannot exceed 20 characters')
     .regex(/^[A-Za-z0-9_-]+$/, 'Code can only contain letters, numbers, hyphens or underscores'),
   description: z.string().optional(),
+  imageUrl: z.string().optional(),
   status: z.enum(['active', 'inactive']),
 });
 
@@ -86,11 +88,13 @@ export default function ProductLineModal({
       name: '',
       code: '',
       description: '',
+      imageUrl: '',
       status: 'active',
     },
   });
 
   const selectedBrandId = watch('brandId');
+  const imageUrlValue = watch('imageUrl');
 
   // Filter categories by selected brand
   const filteredCategories = useMemo(() => {
@@ -108,6 +112,7 @@ export default function ProductLineModal({
         name: productLine.name || '',
         code: productLine.code || '',
         description: productLine.description || '',
+        imageUrl: productLine.imageUrl || '',
         status: (productLine.status?.toLowerCase() as 'active' | 'inactive') || 'active',
       });
     } else {
@@ -117,6 +122,7 @@ export default function ProductLineModal({
         name: '',
         code: '',
         description: '',
+        imageUrl: '',
         status: 'active',
       });
     }
@@ -147,6 +153,7 @@ export default function ProductLineModal({
           name: data.name.trim(),
           code: data.code.trim().toUpperCase(),
           description: data.description?.trim(),
+          imageUrl: data.imageUrl?.trim() || undefined,
           status: data.status.toUpperCase(),
         }).unwrap();
         onSuccess(result as any);
@@ -157,6 +164,7 @@ export default function ProductLineModal({
           name: data.name.trim(),
           code: data.code.trim().toUpperCase(),
           description: data.description?.trim(),
+          imageUrl: data.imageUrl?.trim() || undefined,
           status: data.status.toUpperCase(),
         }).unwrap();
         onSuccess(result as any);
@@ -293,6 +301,19 @@ export default function ProductLineModal({
               {...register('description')}
               className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             />
+          </div>
+
+          {/* Product Line Image */}
+          <div className="pt-1">
+            <ProductImageUpload
+              label="Product Line Image (Optional)"
+              value={imageUrlValue}
+              onChange={(url) => setValue('imageUrl', url)}
+              uploadFolder="products"
+            />
+            {/* <p className="text-[11px] text-gray-400 mt-1">
+              This image will be displayed on POS counter product cards for this category &amp; line.
+            </p> */}
           </div>
 
           {/* Status */}

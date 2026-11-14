@@ -160,6 +160,7 @@ export interface ProductLine {
   name: string;
   code: string;
   description?: string;
+  imageUrl?: string;
   branchId?: string;
   status: CatalogueItemStatus;
   createdAt: string;
@@ -296,7 +297,7 @@ export type PaymentMethod =
 export type PaymentStatus = 'PAID' | 'PARTIAL' | 'PARTIALLY_PAID' | 'UNPAID' | 'REFUNDED' | 'OVERDUE';
 export type InvoicePaymentStatus = PaymentStatus;
 
-export type InvoiceStatus = 'COMPLETED' | 'PARTIAL' | 'REFUNDED' | 'CANCELLED';
+export type InvoiceStatus = 'COMPLETED' | 'CONFIRMED' | 'PARTIAL' | 'REFUNDED' | 'CANCELLED' | 'VOID';
 
 export interface InvoiceItem {
   productId: string;

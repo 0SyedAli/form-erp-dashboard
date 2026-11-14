@@ -435,7 +435,21 @@ export const posApi = createApi({
         method: 'DELETE',
         body: { returnStock },
       }),
-      invalidatesTags: ['SalesInvoice', 'Customer', 'PaymentCollection'],
+      invalidatesTags: [
+        'SalesInvoice',
+        'Customer',
+        'PaymentCollection',
+        'POSCatalogue',
+        'POSAvailability',
+        'StockBalance',
+      ],
+      async onQueryStarted(_args, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch(inventoryApi.util.invalidateTags(['StockBalance']));
+          dispatch(catalogueApi.util.invalidateTags(['Product', 'Variant']));
+        } catch {}
+      },
     }),
 
     getSalesSummary: builder.query<

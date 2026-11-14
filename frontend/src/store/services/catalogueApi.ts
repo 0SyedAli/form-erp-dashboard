@@ -89,6 +89,7 @@ export interface Product {
   categoryId: string;
   productLineId?: string;
   productLine?: ProductLine;
+  imageUrl?: string;
   brand?: Brand;
   category?: Category;
   description?: string;
@@ -136,6 +137,7 @@ export interface CreateProductRequest {
   stock?: number;
   targetBranchId?: string;
   destinationBranchId?: string;
+  imageUrl?: string;
 }
 
 export interface UpdatePricesRequest {
@@ -157,6 +159,7 @@ export interface UpdatePricesRequest {
   minimumStock?: number;
   status?: 'ACTIVE' | 'INACTIVE';
   reason?: string;
+  imageUrl?: string;
 }
 
 export type UpdateSkuRequest = UpdatePricesRequest;
@@ -408,7 +411,7 @@ export const catalogueApi = createApi({
 
     createProductLine: builder.mutation<
       ProductLine,
-      { brandId: string; categoryId: string; name: string; code: string; description?: string; status?: string }
+      { brandId: string; categoryId: string; name: string; code: string; description?: string; imageUrl?: string; status?: string }
     >({
       query: (body) => ({
         url: '/product-lines',
@@ -420,7 +423,7 @@ export const catalogueApi = createApi({
 
     updateProductLine: builder.mutation<
       ProductLine,
-      { id: string; brandId?: string; categoryId?: string; name?: string; code?: string; description?: string; status?: string }
+      { id: string; brandId?: string; categoryId?: string; name?: string; code?: string; description?: string; imageUrl?: string; status?: string }
     >({
       query: ({ id, ...body }) => ({
         url: `/product-lines/${id}`,

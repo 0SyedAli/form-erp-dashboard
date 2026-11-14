@@ -405,6 +405,7 @@ export class CatalogueService {
       code: input.code.toUpperCase(),
       name: input.name.trim(),
       description: input.description?.trim(),
+      imageUrl: (input as any).imageUrl?.trim() || '',
       status: 'ACTIVE',
       ...(input.branchId ? { branchId: input.branchId } : {}),
     });
@@ -422,6 +423,7 @@ export class CatalogueService {
     }
     if (input.name) productLine.name = input.name.trim();
     if (input.description !== undefined) productLine.description = input.description?.trim();
+    if ((input as any).imageUrl !== undefined) (productLine as any).imageUrl = (input as any).imageUrl?.trim() || '';
     if (input.brandId) (productLine as any).brandId = input.brandId;
     if (input.categoryId) (productLine as any).categoryId = input.categoryId;
     if ((input as any).status) productLine.status = (input as any).status.toUpperCase();
@@ -656,7 +658,7 @@ export class CatalogueService {
       Product.find(filter)
         .populate('brandId', 'name code logoUrl')
         .populate('categoryId', 'name code')
-        .populate('productLineId', 'name code')
+        .populate('productLineId', 'name code imageUrl')
         .populate('branchId', 'name code shopNumber city')
         .sort({ name: 1 })
         .skip(skip)
@@ -698,11 +700,14 @@ export class CatalogueService {
     const items = products.map((p: any) => {
       const b = p.brandId;
       const c = p.categoryId;
+      const pl = p.productLineId;
       const bCode = b?.code || 'MF';
       const cCode = c?.code || 'CAT';
       const code = p.code || `${bCode}-${cCode}`.toUpperCase();
       const bId = b?._id ? b._id.toString() : b?.toString() || '';
       const cId = c?._id ? c._id.toString() : c?.toString() || '';
+      const plId = pl?._id ? pl._id.toString() : pl?.toString() || '';
+      const plImage = (pl && typeof pl === 'object' && pl.imageUrl) ? pl.imageUrl : (p.imageUrl || undefined);
 
       return {
         id: p._id.toString(),
@@ -710,6 +715,9 @@ export class CatalogueService {
         code,
         brandId: bId,
         categoryId: cId,
+        productLineId: plId || undefined,
+        productLine: pl,
+        imageUrl: plImage,
         branchId: p.branchId?._id ? p.branchId._id.toString() : p.branchId?.toString() || undefined,
         branch: p.branchId,
         brand: b,
@@ -735,7 +743,7 @@ export class CatalogueService {
     const product = await Product.findById(id)
       .populate('brandId', 'name code logoUrl')
       .populate('categoryId', 'name code')
-      .populate('productLineId', 'name code');
+      .populate('productLineId', 'name code imageUrl');
     if (!product) throw new AppError(`Product '${id}' not found.`, 404, 'PRODUCT_NOT_FOUND');
 
     const variants = await Variant.find({ productId: product._id })
@@ -951,9 +959,13 @@ export class CatalogueService {
         ...(productLine ? { productLineId: productLine._id } : {}),
         name: productName,
         branchId: targetBranch._id,
+        imageUrl: input.imageUrl?.trim() || '',
         status: 'ACTIVE',
       });
       isNewlyCreatedProduct = true;
+    } else if (input.imageUrl && input.imageUrl.trim()) {
+      product.imageUrl = input.imageUrl.trim();
+      await product.save();
     }
 
     let variant: any;
@@ -1374,8 +1386,12 @@ export class CatalogueService {
         brandId: brand._id,
         categoryId: category._id,
         name: productName,
+        imageUrl: input.imageUrl?.trim() || '',
         status: 'ACTIVE',
       });
+    } else if (input.imageUrl && input.imageUrl.trim()) {
+      product.imageUrl = input.imageUrl.trim();
+      await product.save();
     }
 
     variant.productId = product._id;

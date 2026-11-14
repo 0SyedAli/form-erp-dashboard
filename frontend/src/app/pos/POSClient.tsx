@@ -36,6 +36,7 @@ import {
   catalogueApi,
   useGetBrandsQuery as useGetBackendBrandsQuery,
   useGetCategoriesQuery as useGetBackendCategoriesQuery,
+  useGetProductLinesQuery as useGetBackendProductLinesQuery,
   useGetSizesQuery as useGetBackendSizesQuery,
   useGetThicknessesQuery as useGetBackendThicknessesQuery,
   useGetProductsQuery as useGetBackendProductsQuery,
@@ -138,6 +139,7 @@ function POSContent() {
   const { data: backendBranches = [] } = useGetBackendBranchesQuery(undefined, { skip: !isBackendMode });
   const { data: backendBrands = [] } = useGetBackendBrandsQuery(undefined, { skip: !isBackendMode });
   const { data: backendCategories = [] } = useGetBackendCategoriesQuery(undefined, { skip: !isBackendMode });
+  const { data: backendProductLines = [] } = useGetBackendProductLinesQuery(undefined, { skip: !isBackendMode });
   const { data: backendSizes = [] } = useGetBackendSizesQuery(undefined, { skip: !isBackendMode });
   const { data: backendThicknesses = [] } = useGetBackendThicknessesQuery(undefined, { skip: !isBackendMode });
   const { data: backendProducts = [], refetch: refetchProducts } = useGetBackendProductsQuery({ limit: 500 }, { skip: !isBackendMode });
@@ -154,8 +156,8 @@ function POSContent() {
     const list = backendList.length > 0
       ? backendList
       : offlineList.length > 0
-      ? offlineList
-      : demoList;
+        ? offlineList
+        : demoList;
 
     return list.map((b: any) => ({
       ...b,
@@ -275,8 +277,8 @@ function POSContent() {
     const list = backendList.length > 0
       ? backendList
       : offlineList.length > 0
-      ? offlineList
-      : demoList;
+        ? offlineList
+        : demoList;
 
     return list.map((b: any) => ({
       ...b,
@@ -294,8 +296,8 @@ function POSContent() {
     const list = backendList.length > 0
       ? backendList
       : offlineList.length > 0
-      ? offlineList
-      : demoList;
+        ? offlineList
+        : demoList;
 
     return list.map((c: any) => ({
       ...c,
@@ -314,8 +316,8 @@ function POSContent() {
     const list = backendList.length > 0
       ? backendList
       : offlineList.length > 0
-      ? offlineList
-      : demoList;
+        ? offlineList
+        : demoList;
 
     return list.map((s: any) => ({
       ...s,
@@ -333,14 +335,31 @@ function POSContent() {
     const list = backendList.length > 0
       ? backendList
       : offlineList.length > 0
-      ? offlineList
-      : demoList;
+        ? offlineList
+        : demoList;
 
     return list.map((t: any) => ({
       ...t,
       id: String(t.id || t._id || ''),
     })) as MattressThickness[];
   }, [backendThicknesses, demoThicknesses, offlineSnapshot]);
+
+  const { productLineMap, productLineMapByCompound } = useMemo(() => {
+    const idMap = new Map<string, any>();
+    const compoundMap = new Map<string, any>();
+    (Array.isArray(backendProductLines) ? backendProductLines : (backendProductLines as any)?.data || []).forEach((pl: any) => {
+      const id = String(pl.id || pl._id || '');
+      if (id) idMap.set(id, pl);
+
+      const brandId = String(pl.brandId?._id || pl.brandId?.id || pl.brandId || '');
+      const categoryId = String(pl.categoryId?._id || pl.categoryId?.id || pl.categoryId || '');
+      const name = String(pl.name || '').trim().toLowerCase();
+      if (brandId && categoryId && name) {
+        compoundMap.set(`${brandId}_${categoryId}_${name}`, pl);
+      }
+    });
+    return { productLineMap: idMap, productLineMapByCompound: compoundMap };
+  }, [backendProductLines]);
 
   const products: CatalogueProduct[] = useMemo(() => {
     const backendList = Array.isArray(backendProducts)
@@ -352,22 +371,36 @@ function POSContent() {
     const list = backendList.length > 0
       ? backendList
       : offlineList.length > 0
-      ? offlineList
-      : demoList;
+        ? offlineList
+        : demoList;
 
-    return list.map((p: any) => ({
-      ...p,
-      id: String(p.id || p._id || ''),
-      brandId: String(p.brandId?._id || p.brandId || p.brand?._id || p.brand?.id || ''),
-      categoryId: String(p.categoryId?._id || p.categoryId || p.category?._id || p.category?.id || ''),
-      productLineId: String(p.productLineId?._id || p.productLineId || p.productLine?._id || p.productLine?.id || ''),
-      productLine: p.productLineId && typeof p.productLineId === 'object' ? p.productLineId : p.productLine,
-      productLineName: p.productLineName || (typeof p.productLineId === 'object' ? p.productLineId?.name : '') || p.productLine?.name || '',
-      code: p.code || `${p.brand?.code || 'MF'}-${p.category?.code || 'CAT'}`.toUpperCase(),
-      name: p.name || 'Unnamed Product',
-      status: p.status || 'ACTIVE',
-    })) as CatalogueProduct[];
-  }, [backendProducts, demoProducts, offlineSnapshot]);
+    return list.map((p: any) => {
+      const plId = String(p.productLineId?._id || p.productLineId || p.productLine?._id || p.productLine?.id || '');
+      const brandId = String(p.brandId?._id || p.brandId || p.brand?._id || p.brand?.id || '');
+      const categoryId = String(p.categoryId?._id || p.categoryId || p.category?._id || p.category?.id || '');
+      const prodName = String(p.name || '').trim().toLowerCase();
+      const compoundKey = `${brandId}_${categoryId}_${prodName}`;
+
+      const plObj = (p.productLineId && typeof p.productLineId === 'object' ? p.productLineId : null)
+        || productLineMap.get(plId)
+        || productLineMapByCompound.get(compoundKey);
+      const lineImg = plObj?.imageUrl || (p.productLine && typeof p.productLine === 'object' && p.productLine.imageUrl) || '';
+
+      return {
+        ...p,
+        id: String(p.id || p._id || ''),
+        brandId,
+        categoryId,
+        productLineId: plId || plObj?.id || plObj?._id,
+        productLine: plObj || p.productLine,
+        productLineName: p.productLineName || plObj?.name || p.productLine?.name || '',
+        imageUrl: lineImg || '/assets/mattress/foam1.png',
+        code: p.code || `${p.brand?.code || 'MF'}-${p.category?.code || 'CAT'}`.toUpperCase(),
+        name: p.name || 'Unnamed Product',
+        status: p.status || 'ACTIVE',
+      };
+    }) as CatalogueProduct[];
+  }, [backendProducts, demoProducts, offlineSnapshot, productLineMap, productLineMapByCompound]);
 
   const variants: ProductVariant[] = useMemo(() => {
     const backendList = Array.isArray(backendSkusResponse)
@@ -379,8 +412,8 @@ function POSContent() {
     const list = backendList.length > 0
       ? backendList
       : offlineList.length > 0
-      ? offlineList
-      : demoList;
+        ? offlineList
+        : demoList;
 
     return list.map((v: any) => {
       const pId = String(v.productId?._id || v.productId || v.product?._id || v.product?.id || '');
@@ -420,8 +453,8 @@ function POSContent() {
     return backendList.length > 0
       ? backendList
       : offlineList.length > 0
-      ? offlineList
-      : demoList;
+        ? offlineList
+        : demoList;
   }, [backendStockBalances, offlineSnapshot, demoInventoryBalances]);
 
   const inventoryBalances: InventoryBalance[] = useMemo(() => {
@@ -1030,8 +1063,8 @@ function POSContent() {
       submitData.paymentArrangement === 'FULL'
         ? finalGrandTotal
         : submitData.paymentArrangement === 'CREDIT'
-        ? 0
-        : Math.min(finalGrandTotal, submitData.amountReceived);
+          ? 0
+          : Math.min(finalGrandTotal, submitData.amountReceived);
 
     const outstanding = Math.max(0, finalGrandTotal - effectivePaid);
     const changeAmount =
@@ -1601,9 +1634,8 @@ function POSContent() {
 
         {/* Right: Cart Card (Aligned with the top of BrandSelector! Full Height!) */}
         <div
-          className={`fixed inset-y-0 right-0 z-40 lg:static lg:z-auto transition-transform duration-200 ${
-            isTabletCartOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
-          } flex shrink-0 shadow-2xl lg:shadow-none bg-slate-900/30 lg:bg-transparent h-full`}
+          className={`fixed inset-y-0 right-0 z-40 lg:static lg:z-auto transition-transform duration-200 ${isTabletCartOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
+            } flex shrink-0 shadow-2xl lg:shadow-none bg-slate-900/30 lg:bg-transparent h-full`}
         >
           <POSCart
             items={cartItems}
@@ -1680,8 +1712,8 @@ function POSContent() {
         existingCartQuantity={
           configModalProduct
             ? cartItems
-                .filter((item) => item.productId === configModalProduct.id)
-                .reduce((s, it) => s + it.quantity, 0)
+              .filter((item) => item.productId === configModalProduct.id)
+              .reduce((s, it) => s + it.quantity, 0)
             : 0
         }
         saleType={saleType}
@@ -1712,8 +1744,8 @@ function POSContent() {
           saleType === 'WHOLESALE'
             ? 'WHOLESALE'
             : saleType === 'DISTRIBUTOR'
-            ? 'DISTRIBUTOR'
-            : 'WALK_IN'
+              ? 'DISTRIBUTOR'
+              : 'WALK_IN'
         }
       />
 

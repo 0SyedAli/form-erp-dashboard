@@ -54,6 +54,7 @@ export const productLineSchema = z.object({
     code: z.string().trim().min(2).max(20).toUpperCase(),
     name: z.string().trim().min(2).max(100),
     description: z.string().trim().optional(),
+    imageUrl: z.string().optional(),
     status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
@@ -67,6 +68,7 @@ export const updateProductLineSchema = z.object({
     code: z.string().trim().min(2).max(20).toUpperCase().optional(),
     name: z.string().trim().min(2).max(100).optional(),
     description: z.string().trim().optional(),
+    imageUrl: z.string().optional(),
     status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
@@ -132,6 +134,7 @@ export const createProductWithVariantSchema = z.object({
     stock: z.coerce.number().int().min(0).default(0),
     minimumStock: z.coerce.number().int().min(0).default(5),
     destinationBranchId: z.string().optional(),
+    imageUrl: z.string().optional(),
   }),
 });
 
@@ -143,6 +146,7 @@ export const updateSkuSchema = z.object({
     productLineId: z.string().optional(),
     sizeId: z.string().optional(),
     thicknessId: z.string().optional(),
+    imageUrl: z.string().optional(),
     listPrice: z.coerce.number().min(0).optional(),
     purchasePercent: z.coerce.number().min(0).max(100).optional(),
     purchasePrice: z.coerce.number().min(0).optional(),

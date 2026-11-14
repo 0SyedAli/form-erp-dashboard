@@ -6,6 +6,7 @@ export interface IProduct extends Document {
   productLineId?: mongoose.Types.ObjectId;
   name: string;
   description?: string;
+  imageUrl?: string;
   branchId?: mongoose.Types.ObjectId;
   status: 'ACTIVE' | 'INACTIVE';
   createdAt: Date;
@@ -45,6 +46,11 @@ const ProductSchema = new Schema<IProduct>(
     description: {
       type: String,
       trim: true,
+    },
+    imageUrl: {
+      type: String,
+      trim: true,
+      default: '',
     },
     status: {
       type: String,

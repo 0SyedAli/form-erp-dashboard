@@ -307,14 +307,27 @@ export default function ProductLinesTab({ canManage, onToast }: ProductLinesTabP
 
                       {/* Name */}
                       <td className="py-3 px-4 font-bold text-gray-900">
-                        <div className="flex items-center gap-2">
-                          <span>{pl.name}</span>
-                        </div>
-                        {pl.description && (
-                          <div className="text-[11px] text-gray-400 font-normal line-clamp-1">
-                            {pl.description}
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center p-0.5">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={pl.imageUrl || '/assets/mattress/foam1.png'}
+                              alt={pl.name}
+                              className="w-full h-full object-contain"
+                              onError={(e) => {
+                                e.currentTarget.src = '/assets/mattress/foam1.png';
+                              }}
+                            />
                           </div>
-                        )}
+                          <div>
+                            <span>{pl.name}</span>
+                            {pl.description && (
+                              <div className="text-[11px] text-gray-400 font-normal line-clamp-1">
+                                {pl.description}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </td>
 
                       {/* Code */}

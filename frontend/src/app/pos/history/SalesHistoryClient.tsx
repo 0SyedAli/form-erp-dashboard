@@ -274,18 +274,26 @@ function SalesHistoryContent() {
         return false;
       }
 
-      // Payment Status filter
+      // Payment / Invoice Status filter
       if (selectedPaymentStatus !== 'ALL') {
-        const isOverdue =
-          inv.isOverdue ||
-          (inv.amountDue > 0 &&
-            inv.dueDate &&
-            new Date(inv.dueDate).getTime() < new Date().getTime());
+        const isVoided = inv.status === 'VOID' || inv.status === 'CANCELLED';
+        if (selectedPaymentStatus === 'ACTIVE') {
+          if (isVoided) return false;
+        } else if (selectedPaymentStatus === 'VOID') {
+          if (!isVoided) return false;
+        } else {
+          if (isVoided) return false;
+          const isOverdue =
+            inv.isOverdue ||
+            (inv.amountDue > 0 &&
+              inv.dueDate &&
+              new Date(inv.dueDate).getTime() < new Date().getTime());
 
-        if (selectedPaymentStatus === 'OVERDUE') {
-          if (!isOverdue) return false;
-        } else if (inv.paymentStatus !== selectedPaymentStatus) {
-          return false;
+          if (selectedPaymentStatus === 'OVERDUE') {
+            if (!isOverdue) return false;
+          } else if (inv.paymentStatus !== selectedPaymentStatus) {
+            return false;
+          }
         }
       }
 
@@ -319,18 +327,27 @@ function SalesHistoryContent() {
   const { paginatedItems: paginatedInvoices, PaginationComponent: InvoicesPagination } =
     useClientPagination(filteredInvoices, 10, 'invoices');
 
-  // Summary Metrics
-  const totalRevenue = useMemo(() => {
-    return filteredInvoices.reduce((sum, inv) => sum + (inv.netAmount ?? inv.grandTotal ?? 0), 0);
+  // Active (non-voided) invoices for authentic revenue calculation (matches Dashboard)
+  const activeInvoices = useMemo(() => {
+    return filteredInvoices.filter((inv) => inv.status !== 'VOID' && inv.status !== 'CANCELLED');
   }, [filteredInvoices]);
+
+  const voidedInvoicesCount = useMemo(() => {
+    return filteredInvoices.length - activeInvoices.length;
+  }, [filteredInvoices, activeInvoices]);
+
+  // Summary Metrics (strictly based on active, confirmed invoices)
+  const totalRevenue = useMemo(() => {
+    return activeInvoices.reduce((sum, inv) => sum + (inv.netAmount ?? inv.grandTotal ?? 0), 0);
+  }, [activeInvoices]);
 
   const totalCollected = useMemo(() => {
-    return filteredInvoices.reduce((sum, inv) => sum + (inv.amountPaid ?? 0), 0);
-  }, [filteredInvoices]);
+    return activeInvoices.reduce((sum, inv) => sum + (inv.amountPaid ?? 0), 0);
+  }, [activeInvoices]);
 
   const totalOutstanding = useMemo(() => {
-    return filteredInvoices.reduce((sum, inv) => sum + (inv.amountDue ?? 0), 0);
-  }, [filteredInvoices]);
+    return activeInvoices.reduce((sum, inv) => sum + (inv.amountDue ?? 0), 0);
+  }, [activeInvoices]);
 
   const activeBranch = useMemo(() => {
     if (!selectedInvoice) return null;
@@ -427,7 +444,10 @@ function SalesHistoryContent() {
                   Rs. {totalRevenue.toLocaleString()}
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  {filteredInvoices.length} Invoices
+                  {activeInvoices.length} Active Invoice{activeInvoices.length === 1 ? '' : 's'}
+                  {voidedInvoicesCount > 0 && (
+                    <span className="ml-1 text-slate-400 font-medium">({voidedInvoicesCount} voided)</span>
+                  )}
                 </p>
               </div>
               <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
@@ -466,11 +486,11 @@ function SalesHistoryContent() {
                 <p className="text-xs text-slate-500 font-semibold font-sans">Average Order Value</p>
                 <h3 className="text-xl font-black text-slate-900 mt-1 font-sans">
                   Rs.{' '}
-                  {filteredInvoices.length > 0
-                    ? Math.round(totalRevenue / filteredInvoices.length).toLocaleString()
+                  {activeInvoices.length > 0
+                    ? Math.round(totalRevenue / activeInvoices.length).toLocaleString()
                     : 0}
                 </h3>
-                <p className="text-[11px] text-slate-400 mt-0.5">Across filtered sales</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Across {activeInvoices.length} active sales</p>
               </div>
               <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
                 <TrendingUp className="w-5 h-5" />
@@ -548,11 +568,13 @@ function SalesHistoryContent() {
                 onChange={(e) => setSelectedPaymentStatus(e.target.value)}
                 className="bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold px-3 py-2 text-slate-700 focus:outline-hidden"
               >
-                <option value="ALL">All Payment Statuses</option>
+                <option value="ALL">All Invoices</option>
+                <option value="ACTIVE">Active Sales Only</option>
                 <option value="PAID">Paid</option>
                 <option value="PARTIALLY_PAID">Partially Paid</option>
                 <option value="UNPAID">Unpaid (Credit)</option>
                 <option value="OVERDUE">Overdue</option>
+                <option value="VOID">Voided / Cancelled</option>
               </select>
             </div>
 
@@ -641,6 +663,7 @@ function SalesHistoryContent() {
                   ) : (
                     paginatedInvoices.map((inv) => {
                       const formattedDate = formatDateTime(inv.date || inv.createdAt || inv.issueDate);
+                      const isVoided = inv.status === 'VOID' || inv.status === 'CANCELLED';
 
                       const branchName =
                         inv.branchName ||
@@ -716,7 +739,12 @@ function SalesHistoryContent() {
                       }
 
                       return (
-                        <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
+                        <tr
+                          key={inv.id}
+                          className={`transition-colors ${
+                            isVoided ? 'bg-slate-50/70 hover:bg-slate-100/60 opacity-75' : 'hover:bg-slate-50/80'
+                          }`}
+                        >
                           {/* 1. Invoice & Date */}
                           <td className="py-3 px-4">
                             <span className="font-mono font-bold text-slate-900 block">
@@ -773,18 +801,36 @@ function SalesHistoryContent() {
                           </td>
 
                           {/* 5. Net Total */}
-                          <td className="py-3 px-4 text-right font-black text-slate-900 font-sans">
-                            Rs. {(inv.netAmount || 0).toLocaleString()}
+                          <td className="py-3 px-4 text-right font-black font-sans">
+                            {isVoided ? (
+                              <span className="line-through text-slate-400">
+                                Rs. {(inv.netAmount || 0).toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="text-slate-900">
+                                Rs. {(inv.netAmount || 0).toLocaleString()}
+                              </span>
+                            )}
                           </td>
 
                           {/* 6. Paid */}
-                          <td className="py-3 px-4 text-right font-bold text-emerald-700 font-sans">
-                            Rs. {(inv.amountPaid || 0).toLocaleString()}
+                          <td className="py-3 px-4 text-right font-bold font-sans">
+                            {isVoided ? (
+                              <span className="line-through text-slate-400">
+                                Rs. {(inv.amountPaid || 0).toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="text-emerald-700">
+                                Rs. {(inv.amountPaid || 0).toLocaleString()}
+                              </span>
+                            )}
                           </td>
 
                           {/* 7. Balance Due */}
                           <td className="py-3 px-4 text-right font-black text-purple-800 font-sans">
-                            {(inv.amountDue || 0) > 0 ? (
+                            {isVoided ? (
+                              <span className="text-slate-400 font-medium">-</span>
+                            ) : (inv.amountDue || 0) > 0 ? (
                               <div>
                                 <span>Rs. {(inv.amountDue || 0).toLocaleString()}</span>
                                 {inv.dueDate && (
@@ -800,7 +846,12 @@ function SalesHistoryContent() {
 
                           {/* 8. Status */}
                           <td className="py-3 px-4 text-center">
-                            {isOverdue ? (
+                            {isVoided ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-300 inline-flex items-center gap-1">
+                                <RotateCcw className="w-3 h-3 text-slate-400" />
+                                Voided
+                              </span>
+                            ) : isOverdue ? (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 inline-flex items-center gap-1">
                                 <AlertCircle className="w-3 h-3" />
                                 Overdue
@@ -834,14 +885,23 @@ function SalesHistoryContent() {
                               </button>
 
                               {/* Edit Invoice in POS (Edit Button) */}
-                              <button
-                                type="button"
-                                onClick={() => router.push(`/pos?editInvoiceId=${encodeURIComponent(inv.id)}`)}
-                                className="p-1.5 text-slate-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
-                                title="Edit in POS Counter"
-                              >
-                                <Edit3 className="w-4 h-4" />
-                              </button>
+                              {isVoided ? (
+                                <span
+                                  className="p-1.5 text-slate-300 cursor-not-allowed inline-flex items-center"
+                                  title="Cannot edit a voided invoice"
+                                >
+                                  <Edit3 className="w-4 h-4 opacity-30" />
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => router.push(`/pos?editInvoiceId=${encodeURIComponent(inv.id)}`)}
+                                  className="p-1.5 text-slate-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Edit in POS Counter"
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+                              )}
 
                               {/* Print Receipt / Voucher */}
                               <button
@@ -856,15 +916,24 @@ function SalesHistoryContent() {
                                 <Printer className="w-4 h-4" />
                               </button>
 
-                              {/* Delete Invoice Modal (Trash Button) */}
-                              <button
-                                type="button"
-                                onClick={() => setDeletingInvoice(inv)}
-                                className="p-1.5 text-slate-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                title="Delete Invoice"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {/* Delete / Void Invoice Modal (Trash Button) */}
+                              {isVoided ? (
+                                <span
+                                  className="p-1.5 text-slate-300 cursor-not-allowed inline-flex items-center"
+                                  title="This invoice has already been voided/deleted"
+                                >
+                                  <Trash2 className="w-4 h-4 opacity-30" />
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setDeletingInvoice(inv)}
+                                  className="p-1.5 text-slate-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Void & Delete Invoice"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

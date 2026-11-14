@@ -7,6 +7,7 @@ export interface IProductLine extends Document {
   code: string;
   name: string;
   description?: string;
+  imageUrl?: string;
   status: 'ACTIVE' | 'INACTIVE';
   createdAt: Date;
   updatedAt: Date;
@@ -45,6 +46,11 @@ const ProductLineSchema = new Schema<IProductLine>(
     description: {
       type: String,
       trim: true,
+    },
+    imageUrl: {
+      type: String,
+      trim: true,
+      default: '',
     },
     status: {
       type: String,
