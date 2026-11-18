@@ -59,7 +59,7 @@ export default function InventoryOverviewPage() {
 
   return (
     <AppLayout title="Inventory Management" subtitle="Multi-Branch Real-Time Stock Tracking & Movements">
-      <InventoryNavTabs branchId={activeBranchFilter} />
+      {/* <InventoryNavTabs branchId={activeBranchFilter} /> */}
 
       <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Top Header & Branch Context Filter */}
@@ -478,15 +478,14 @@ export default function InventoryOverviewPage() {
                       <div>
                         <div className="flex items-center gap-2">
                           <span
-                            className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                              mov.movementType === 'STOCK_RECEIPT'
+                            className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${mov.movementType === 'STOCK_RECEIPT'
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 : mov.movementType === 'DAMAGED_STOCK'
-                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                : mov.movementType.includes('TRANSFER')
-                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                                : 'bg-blue-50 text-blue-700 border border-blue-200'
-                            }`}
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : mov.movementType.includes('TRANSFER')
+                                    ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                    : 'bg-blue-50 text-blue-700 border border-blue-200'
+                              }`}
                           >
                             {mov.movementType.replace(/_/g, ' ')}
                           </span>
@@ -499,9 +498,8 @@ export default function InventoryOverviewPage() {
 
                       <div className="text-right">
                         <span
-                          className={`text-sm font-bold ${
-                            isPositive ? 'text-emerald-600' : 'text-red-600'
-                          }`}
+                          className={`text-sm font-bold ${isPositive ? 'text-emerald-600' : 'text-red-600'
+                            }`}
                         >
                           {isPositive ? `+${mov.quantity}` : `-${mov.quantity}`} units
                         </span>

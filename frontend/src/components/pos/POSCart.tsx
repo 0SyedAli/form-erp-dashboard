@@ -183,7 +183,7 @@ export default function POSCart({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-1">
                     <h4 className="font-bold text-sm text-slate-900 truncate font-sans">
-                      {item.productName}
+                      {item.posDisplayName || item.productName}
                     </h4>
                     <button
                       type="button"

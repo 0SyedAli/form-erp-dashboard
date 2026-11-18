@@ -18,11 +18,12 @@ export function generateReceiptHTML(
     .map((item, idx) => {
       const lineTotal = item.lineTotal ?? item.total ?? ((item.unitPrice || 0) * (item.quantity || 1));
       const sizeInfo = item.sizeLabel ? ` [${item.sizeLabel}${item.thicknessLabel ? ` • ${item.thicknessLabel}` : ''}]` : '';
+      const displayName = (item as any).posDisplayName || `${item.productName}${sizeInfo}`;
       const isLast = idx === (invoice.items || []).length - 1;
       return `
         <div style="margin-bottom: 3px;">
           <div style="font-weight: bold; font-size: 11.5px; color: #000;">
-            <span>${idx + 1}.   ${item.productName}${sizeInfo}</span>
+            <span>${idx + 1}.   ${displayName}</span>
           </div>
           <div style="display: flex; justify-content: space-between; font-size: 11.5px; color: #000; margin-top: 1px; font-weight: bold;">
             <span style="padding-left: 18px;">${item.quantity} × Rs. ${(item.unitPrice || 0).toLocaleString()}</span>

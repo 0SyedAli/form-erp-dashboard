@@ -76,16 +76,25 @@ export function hasPermission(user: User | null | undefined, permissionKey: stri
 
   // Built-in role fallbacks for Flow 07 & Flow 08 permissions
   const roleCode = user.role.toUpperCase();
-  if (roleCode === 'BRANCH_MANAGER') {
+  if (roleCode === 'BRANCH_MANAGER' || roleCode === 'BRANCH') {
     const bmAllowed = [
+      'sales:view',
+      'pos:create',
+      'pos:view',
+      'catalogue:view',
+      'catalogue:manage',
+      'products:view',
+      'inventory:view',
+      'inventory:manage',
+      'inventory:transfer',
+      'customers:view',
+      'customers:manage',
       'sales.credit.create',
       'sales.credit.approve',
       'customers.credit.manage',
       'payments.collect',
       'ledger.view',
       'pricing.override',
-      'pos:create',
-      'pos:view',
       'suppliers.view',
       'suppliers.create',
       'suppliers.edit',
@@ -99,6 +108,7 @@ export function hasPermission(user: User | null | undefined, permissionKey: stri
       'bills.post',
       'purchases.returns.manage',
       'ledger.suppliers.view',
+      'reports:view',
     ];
     if (bmAllowed.includes(permissionKey)) return true;
   } else if (roleCode === 'CASHIER') {

@@ -397,6 +397,7 @@ function POSContent() {
         imageUrl: lineImg || '/assets/mattress/foam1.png',
         code: p.code || `${p.brand?.code || 'MF'}-${p.category?.code || 'CAT'}`.toUpperCase(),
         name: p.name || 'Unnamed Product',
+        posDisplayName: p.posDisplayName || plObj?.posDisplayName || '',
         status: p.status || 'ACTIVE',
       };
     }) as CatalogueProduct[];
@@ -880,7 +881,16 @@ function POSContent() {
         const matchesName = (p.name || '').toLowerCase().includes(query);
         const matchesDesc = (p.description || '').toLowerCase().includes(query);
         const matchesCode = (p.code || '').toLowerCase().includes(query);
-        if (!matchesName && !matchesDesc && !matchesCode) return false;
+        const matchesPosDisplay = ((p as any).posDisplayName || '').toLowerCase().includes(query);
+        const matchingVariants = variants.filter((v) => String(v.productId) === String(p.id));
+        const matchesVariant = matchingVariants.some(
+          (v) =>
+            ((v as any).posDisplayName || '').toLowerCase().includes(query) ||
+            (v.sku || '').toLowerCase().includes(query) ||
+            ((v as any).sizeLabel || (v as any).size?.displayLabel || '').toLowerCase().includes(query)
+        );
+
+        if (!matchesName && !matchesDesc && !matchesCode && !matchesPosDisplay && !matchesVariant) return false;
       }
       return true;
     });

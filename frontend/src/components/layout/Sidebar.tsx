@@ -24,6 +24,9 @@ import {
   History,
   AlertTriangle,
   LogOut,
+  ArrowDownToLine,
+  SlidersHorizontal,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 import { hasPermission } from '@/lib/permissions';
@@ -69,9 +72,18 @@ export default function Sidebar({
     router.push('/login');
   };
 
-  // Manage stock accordion open state
-  const isManageStockRoute = pathname?.startsWith('/manage-stock');
-  const [isManageStockExpanded, setIsManageStockExpanded] = useState(true);
+  // Accordion open states
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    'Stock & Inventory': true,
+    'Purchases': false,
+  });
+
+  const toggleSection = (title: string) => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [title]: !prev[title],
+    }));
+  };
 
   // Clean navigation list: No employee management or complex roles
   const navItems: NavItem[] = [
@@ -81,7 +93,7 @@ export default function Sidebar({
       icon: LayoutDashboard,
     },
     {
-      title: 'Unified POS',
+      title: 'Point of Sale (POS)',
       href: '/pos',
       icon: ShoppingBag,
       requiredPermission: 'pos:view',
@@ -98,12 +110,36 @@ export default function Sidebar({
       icon: Package,
       requiredPermission: 'catalogue:view',
     },
-    // {
-    //   title: 'Inventory',
-    //   href: '/inventory',
-    //   icon: Layers,
-    //   requiredPermission: 'inventory:view',
-    // },
+    {
+      title: 'Stock & Inventory',
+      href: '/inventory/stock',
+      icon: Layers,
+      requiredPermission: 'inventory:view',
+      subItems: [
+        { title: 'Stock Balances', href: '/inventory/stock', icon: Boxes },
+        { title: 'Receive Stock (Inward)', href: '/inventory/receiving', icon: ArrowDownToLine },
+        { title: 'Stock Adjustments', href: '/inventory/adjustments', icon: SlidersHorizontal },
+        { title: 'Stock Transfers', href: '/inventory/transfers', icon: ArrowLeftRight },
+        { title: 'Inventory Overview', href: '/inventory', icon: LayoutDashboard },
+      ],
+    },
+    {
+      title: 'Purchases',
+      href: '/purchases/orders',
+      icon: ShoppingCart,
+      requiredPermission: 'purchases.view',
+      subItems: [
+        { title: 'Purchase Orders', href: '/purchases/orders', icon: ShoppingCart },
+        { title: 'Receive Stock', href: '/purchases/receiving', icon: ArrowDownToLine },
+        { title: 'Purchase Bills', href: '/purchases/bills', icon: Receipt },
+      ],
+    },
+    {
+      title: 'Suppliers',
+      href: '/suppliers',
+      icon: Building,
+      requiredPermission: 'suppliers.view',
+    },
     {
       title: 'Customers',
       href: '/customers',
@@ -111,29 +147,11 @@ export default function Sidebar({
       requiredPermission: 'customers:view',
     },
     {
-      title: 'Collections',
+      title: 'Collections (Khata)',
       href: '/payments/collections',
-      icon: Receipt,
+      icon: CreditCard,
       requiredPermission: 'payments.collect',
     },
-    // {
-    //   title: 'Purchases',
-    //   href: '/purchases',
-    //   icon: ShoppingCart,
-    //   requiredPermission: 'purchases.view',
-    // },
-    // {
-    //   title: 'Suppliers',
-    //   href: '/suppliers',
-    //   icon: Building,
-    //   requiredPermission: 'suppliers.view',
-    // },
-    // {
-    //   title: 'Supplier Payments',
-    //   href: '/payments/suppliers',
-    //   icon: CreditCard,
-    //   requiredPermission: 'payments.suppliers.create',
-    // },
     ...(isSuperAdmin
       ? [
         {
@@ -174,8 +192,8 @@ export default function Sidebar({
     if (item.href === '/branch/dashboard' && pathname === '/branch/dashboard') return true;
     if (item.href === '/manage-stock' && pathname.startsWith('/manage-stock')) return true;
     if (item.href === '/products' && pathname.startsWith('/products')) return true;
-    // if (item.href === '/inventory' && pathname.startsWith('/inventory')) return true;
-    if (item.href === '/purchases' && pathname.startsWith('/purchases')) return true;
+    if (item.href === '/inventory' && pathname.startsWith('/inventory')) return true;
+    if (item.href.startsWith('/purchases') && pathname.startsWith('/purchases')) return true;
     if (item.href === '/suppliers' && pathname.startsWith('/suppliers')) return true;
     if (item.href === '/customers' && pathname.startsWith('/customers')) return true;
     if (item.href === '/admin/branches' && pathname.startsWith('/admin/branches')) return true;
@@ -227,45 +245,31 @@ export default function Sidebar({
             const hasSub = Array.isArray(item.subItems) && item.subItems.length > 0;
 
             if (hasSub) {
-              const showSubs = isManageStockRoute ? isManageStockExpanded : isManageStockExpanded && isActive;
+              const isSectionOpen = expandedSections[item.title] ?? isActive;
               return (
                 <div key={item.title} className="space-y-1">
-                  <div
-                    className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${isActive
-                      ? 'bg-brand-blue text-white font-semibold shadow-xs'
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(item.title)}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-all ${isActive
+                      ? 'bg-slate-800/80 text-white font-semibold'
                       : 'text-slate-300 hover:text-white hover:bg-slate-800/60 font-medium'
                       }`}
-                    onClick={() => setIsManageStockExpanded(!isManageStockExpanded)}
                   >
-                    <Link
-                      href={item.href}
-                      onClick={onMobileClose}
-                      className="flex items-center gap-3 flex-1"
-                    >
+                    <div className="flex items-center gap-3 flex-1 text-left">
                       <Icon
-                        className={`w-4.5 h-4.5 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'
-                          }`}
+                        className={`w-4.5 h-4.5 shrink-0 ${isActive ? 'text-blue-400' : 'text-slate-400'}`}
                       />
                       <span className="truncate">{item.title}</span>
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsManageStockExpanded(!isManageStockExpanded);
-                      }}
-                      className="p-1 text-slate-400 hover:text-white"
-                    >
-                      <ChevronDown
-                        className={`w-3.5 h-3.5 transition-transform ${showSubs ? 'rotate-180' : ''
-                          }`}
-                      />
-                    </button>
-                  </div>
+                    </div>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 transition-transform duration-200 ${isSectionOpen ? 'rotate-180 text-blue-400' : 'text-slate-400'}`}
+                    />
+                  </button>
 
                   {/* Submenu links */}
-                  {showSubs && item.subItems && (
-                    <div className="pl-6 pr-1 py-1 space-y-1 border-l border-slate-700/60 ml-4">
+                  {isSectionOpen && item.subItems && (
+                    <div className="pl-2 pr-1 py-1 space-y-1 border-l border-slate-700/60 ml-4 animate-in fade-in duration-150">
                       {item.subItems.map((sub) => {
                         const isSubActive = pathname === sub.href;
                         const SubIcon = sub.icon;
@@ -274,12 +278,12 @@ export default function Sidebar({
                             key={sub.href}
                             href={sub.href}
                             onClick={onMobileClose}
-                            className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${isSubActive
-                              ? 'bg-slate-800 text-blue-400 font-semibold'
-                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${isSubActive
+                              ? 'bg-brand-blue text-white font-semibold shadow-xs'
+                              : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/40'
                               }`}
                           >
-                            {SubIcon && <SubIcon className="w-3.5 h-3.5" />}
+                            {SubIcon && <SubIcon className="w-3.5 h-3.5 shrink-0" />}
                             <span>{sub.title}</span>
                           </Link>
                         );

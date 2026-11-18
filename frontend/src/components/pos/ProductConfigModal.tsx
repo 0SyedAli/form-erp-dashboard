@@ -81,7 +81,7 @@ export default function ProductConfigModal({
     return thicknesses.filter((t) => t.status === 'ACTIVE');
   }, [thicknesses]);
 
-  // Deduplicate and group sizes by dimension (length x width) for this product
+  // All unique sizes configured for this product (sorted dimensionally)
   const uniqueProductSizes = useMemo<UniqueSizeOption[]>(() => {
     const map = new Map<string, UniqueSizeOption>();
 
@@ -105,7 +105,11 @@ export default function ProductConfigModal({
       }
     }
 
-    return Array.from(map.values());
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.length && b.length && a.length !== b.length) return a.length - b.length;
+      if (a.width && b.width) return a.width - b.width;
+      return a.displayLabel.localeCompare(b.displayLabel);
+    });
   }, [productVariants, activeSizes]);
 
   // Helper: compute total stock for a unique dimension option
@@ -118,11 +122,10 @@ export default function ProductConfigModal({
     [productVariants, stockMap]
   );
 
-  // Available unique sizes with stock > 0
+  // Available unique sizes - show ALL product catalogue sizes
   const availableSizes = useMemo(() => {
-    const inStock = uniqueProductSizes.filter((s) => getSizeStock(s) > 0);
-    return inStock.length > 0 ? inStock : uniqueProductSizes;
-  }, [uniqueProductSizes, getSizeStock]);
+    return uniqueProductSizes;
+  }, [uniqueProductSizes]);
 
   // Selected state
   const [selectedDimKey, setSelectedDimKey] = useState<string>('');
@@ -134,7 +137,7 @@ export default function ProductConfigModal({
     return availableSizes.find((s) => s.dimKey === selectedDimKey) || availableSizes[0] || null;
   }, [availableSizes, selectedDimKey]);
 
-  // Available thicknesses for the selected size dimension that have variants & stock
+  // Available thicknesses for the selected size dimension
   const availableThicknesses = useMemo(() => {
     if (!selectedSize) return [];
     const matchingVariants = productVariants.filter((v) =>
@@ -159,9 +162,7 @@ export default function ProductConfigModal({
       }
     }
 
-    const list = Array.from(map.values()).sort((a, b) => a.value - b.value);
-    const inStock = list.filter((t) => t.stock > 0);
-    return inStock.length > 0 ? inStock : list;
+    return Array.from(map.values()).sort((a, b) => a.value - b.value);
   }, [selectedSize, productVariants, activeThicknesses, stockMap]);
 
   // Currently matching variant
@@ -278,10 +279,15 @@ export default function ProductConfigModal({
     const variantId =
       selectedVariant?.id || `synth-${product.id}-${selectedDimKey}-${selectedThicknessId}`;
     const finalUnitPrice = typeof customPrice === 'number' && customPrice >= 0 ? customPrice : unitPrice;
+    const posDisplayName = (selectedVariant as any)?.posDisplayName 
+      || product.posDisplayName 
+      || `${product.name} ${selectedSize?.displayLabel || ''}${selectedThickness?.value ? `x${selectedThickness.value}` : ''}`.trim();
+
     const cartItem: POSCartItem = {
       variantId,
       productId: product.id,
       productName: product.name,
+      posDisplayName,
       brandName: brandName || 'Foam',
       categoryName: categoryName || 'Foam',
       sizeLabel: selectedSize?.displayLabel || 'Standard',
@@ -377,28 +383,43 @@ export default function ProductConfigModal({
                     <button
                       key={size.dimKey}
                       type="button"
-                      disabled={!hasStock}
                       onClick={() => handleSelectSize(size.dimKey)}
-                      className={`py-2 px-1.5 rounded-xl border-2 flex flex-col items-center justify-center transition-all relative ${!hasStock
-                        ? 'opacity-40 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400'
-                        : isSelected
-                          ? 'border-[#1a73e8] bg-blue-50/40 shadow-xs ring-1 ring-blue-500/20 cursor-pointer'
-                          : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 cursor-pointer'
-                        }`}
+                      className={`py-2 px-1.5 rounded-xl border-2 flex flex-col items-center justify-center transition-all relative cursor-pointer ${
+                        isSelected
+                          ? hasStock
+                            ? 'border-[#1a73e8] bg-blue-50/40 shadow-xs ring-1 ring-blue-500/20'
+                            : 'border-slate-500 bg-slate-100 shadow-xs ring-1 ring-slate-400/20'
+                          : hasStock
+                            ? 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50'
+                            : 'border-slate-200/80 hover:border-slate-300 bg-slate-50/70 hover:bg-slate-100'
+                      }`}
                     >
                       {/* Small rounded stock badge */}
                       <span
-                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full mb-1 leading-none ${hasStock
-                          ? isSelected
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          : 'bg-slate-200 text-slate-500'
-                          }`}
+                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full mb-1 leading-none ${
+                          hasStock
+                            ? isSelected
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            : isSelected
+                              ? 'bg-slate-500 text-white'
+                              : 'bg-slate-200 text-slate-500'
+                        }`}
                       >
                         {sizeStock}
                       </span>
 
-                      <span className="text-[15px] font-bold text-slate-900 mt-0.5 whitespace-nowrap">
+                      <span
+                        className={`text-[15px] font-bold mt-0.5 whitespace-nowrap ${
+                          hasStock
+                            ? isSelected
+                              ? 'text-[#1a73e8]'
+                              : 'text-slate-900'
+                            : isSelected
+                              ? 'text-slate-800'
+                              : 'text-slate-600'
+                        }`}
+                      >
                         {size.displayLabel}
                       </span>
                     </button>
@@ -439,27 +460,32 @@ export default function ProductConfigModal({
                     <button
                       key={th.id}
                       type="button"
-                      disabled={!hasStock}
                       onClick={() => {
                         setSelectedThicknessId(th.id);
                         setQuantity(1);
                       }}
-                      className={`h-11 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1 transition-all relative ${!hasStock
-                        ? 'opacity-40 cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400'
-                        : isSelected
-                          ? 'border-[#1a73e8] bg-blue-50/40 text-[#1a73e8] shadow-xs ring-1 ring-blue-500/20 cursor-pointer'
-                          : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700 cursor-pointer'
-                        }`}
+                      className={`h-11 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1 transition-all relative cursor-pointer ${
+                        isSelected
+                          ? hasStock
+                            ? 'border-[#1a73e8] bg-blue-50/40 text-[#1a73e8] shadow-xs ring-1 ring-blue-500/20'
+                            : 'border-slate-500 bg-slate-100 text-slate-800 shadow-xs ring-1 ring-slate-400/20'
+                          : hasStock
+                            ? 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
+                            : 'border-slate-200/80 hover:border-slate-300 bg-slate-50 text-slate-500'
+                      }`}
                     >
                       <span style={{ fontSize: '18px', fontWeight: 'bold' }}>{th.value}&quot;</span>
                       {/* Small rounded stock badge */}
                       <span
-                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none ${hasStock
-                          ? isSelected
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          : 'bg-slate-200 text-slate-500'
-                          }`}
+                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
+                          hasStock
+                            ? isSelected
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            : isSelected
+                              ? 'bg-slate-500 text-white'
+                              : 'bg-slate-200 text-slate-500'
+                        }`}
                       >
                         {thickStock}
                       </span>

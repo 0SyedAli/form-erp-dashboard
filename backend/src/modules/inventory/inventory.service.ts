@@ -174,7 +174,7 @@ export class InventoryService {
   }
 
   public static async getStockLocations(branchId: string | undefined, userContext: UserContext) {
-    const filter: Record<string, unknown> = { isActive: true };
+    const filter: Record<string, unknown> = { isActive: { $ne: false } };
 
     if (userContext.role !== 'SUPER_ADMIN') {
       const bId = await resolveBranchObjectId(userContext.branchId);
@@ -408,10 +408,13 @@ export class InventoryService {
     let targetBranchId: string;
     if (userContext.role === 'SUPER_ADMIN') {
       targetBranchId = input.branchId || '';
-      if (!targetBranchId) {
+      if (!targetBranchId && input.stockLocationId) {
         const loc = await StockLocation.findById(input.stockLocationId);
-        if (!loc) throw new AppError('Stock location not found.', 404, 'LOCATION_NOT_FOUND');
-        targetBranchId = loc.branchId.toString();
+        if (loc) targetBranchId = loc.branchId.toString();
+      }
+      if (!targetBranchId) {
+        const firstBranch = await Branch.findOne({ isActive: true }).sort({ createdAt: 1 });
+        if (firstBranch) targetBranchId = firstBranch._id.toString();
       }
     } else {
       targetBranchId = userContext.branchId || '';
@@ -421,13 +424,28 @@ export class InventoryService {
       throw new AppError('Branch identity could not be established.', 400, 'BRANCH_REQUIRED');
     }
 
-    // Verify StockLocation
-    const location = await StockLocation.findOne({
-      _id: input.stockLocationId,
-      branchId: targetBranchId,
-    });
+    // Verify / Auto-resolve StockLocation
+    let location = null;
+    if (input.stockLocationId) {
+      location = await StockLocation.findOne({
+        _id: input.stockLocationId,
+        branchId: targetBranchId,
+      });
+    }
     if (!location) {
-      throw new AppError('Destination stock location does not belong to authorized branch.', 403, 'INVALID_LOCATION');
+      location = await StockLocation.findOne({
+        branchId: targetBranchId,
+        isActive: { $ne: false },
+      }).sort({ isDefault: -1, createdAt: 1 });
+    }
+    if (!location) {
+      location = await StockLocation.create({
+        branchId: targetBranchId,
+        code: `LOC-MAIN-${targetBranchId.slice(-6).toUpperCase()}`,
+        name: 'Main Store',
+        isDefault: true,
+        isActive: true,
+      });
     }
 
     // Validate SKUs and Quantities
@@ -666,10 +684,13 @@ export class InventoryService {
     let targetBranchId: string;
     if (userContext.role === 'SUPER_ADMIN') {
       targetBranchId = input.branchId || '';
-      if (!targetBranchId) {
+      if (!targetBranchId && input.stockLocationId) {
         const loc = await StockLocation.findById(input.stockLocationId);
-        if (!loc) throw new AppError('Stock location not found.', 404, 'LOCATION_NOT_FOUND');
-        targetBranchId = loc.branchId.toString();
+        if (loc) targetBranchId = loc.branchId.toString();
+      }
+      if (!targetBranchId) {
+        const firstBranch = await Branch.findOne({ isActive: true }).sort({ createdAt: 1 });
+        if (firstBranch) targetBranchId = firstBranch._id.toString();
       }
     } else {
       targetBranchId = userContext.branchId || '';
@@ -679,13 +700,28 @@ export class InventoryService {
       throw new AppError('Branch identity could not be established.', 400, 'BRANCH_REQUIRED');
     }
 
-    // Verify destination location
-    const location = await StockLocation.findOne({
-      _id: input.stockLocationId,
-      branchId: targetBranchId,
-    });
+    // Verify / Auto-resolve destination location
+    let location = null;
+    if (input.stockLocationId) {
+      location = await StockLocation.findOne({
+        _id: input.stockLocationId,
+        branchId: targetBranchId,
+      });
+    }
     if (!location) {
-      throw new AppError('Stock location does not belong to authorized branch.', 403, 'INVALID_LOCATION');
+      location = await StockLocation.findOne({
+        branchId: targetBranchId,
+        isActive: { $ne: false },
+      }).sort({ isDefault: -1, createdAt: 1 });
+    }
+    if (!location) {
+      location = await StockLocation.create({
+        branchId: targetBranchId,
+        code: `LOC-MAIN-${targetBranchId.slice(-6).toUpperCase()}`,
+        name: 'Main Store',
+        isDefault: true,
+        isActive: true,
+      });
     }
 
     // Execute atomic reconciliation

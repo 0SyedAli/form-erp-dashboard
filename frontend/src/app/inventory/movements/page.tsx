@@ -86,7 +86,7 @@ export default function StockMovementsPage() {
 
   return (
     <AppLayout title="Movement Ledger" subtitle="Auditable historical ledger of all stock transactions">
-      <InventoryNavTabs branchId={branchFilter === 'all' ? undefined : branchFilter} />
+      {/* <InventoryNavTabs branchId={branchFilter === 'all' ? undefined : branchFilter} /> */}
 
       <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Header Bar */}
@@ -283,11 +283,10 @@ export default function StockMovementsPage() {
                         {/* Quantity */}
                         <td className="py-3 px-3 text-center">
                           <span
-                            className={`inline-block font-bold text-xs px-2.5 py-0.5 rounded-md ${
-                              isPositive
+                            className={`inline-block font-bold text-xs px-2.5 py-0.5 rounded-md ${isPositive
                                 ? 'bg-emerald-50 text-emerald-700'
                                 : 'bg-red-50 text-red-700'
-                            }`}
+                              }`}
                           >
                             {isPositive ? `+${mov.quantity}` : `-${mov.quantity}`}
                           </span>

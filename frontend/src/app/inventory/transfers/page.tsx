@@ -290,7 +290,7 @@ export default function StockTransfersPage() {
 
   return (
     <AppLayout title="Stock Transfers" subtitle="Inter-branch replenishment & transit tracking">
-      <InventoryNavTabs branchId={branchFilter === 'all' ? undefined : branchFilter} />
+      {/* <InventoryNavTabs branchId={branchFilter === 'all' ? undefined : branchFilter} /> */}
 
       <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Header Bar */}
@@ -352,17 +352,16 @@ export default function StockTransfersPage() {
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
-                  className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                    statusFilter === status
+                  className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${statusFilter === status
                       ? 'bg-brand-blue text-white'
                       : 'text-gray-600 hover:bg-gray-100'
-                  }`}
+                    }`}
                 >
                   {status === 'all'
                     ? 'All Transfers'
                     : status === 'PENDING_APPROVAL'
-                    ? 'Pending'
-                    : status.charAt(0) + status.slice(1).toLowerCase()}
+                      ? 'Pending'
+                      : status.charAt(0) + status.slice(1).toLowerCase()}
                 </button>
               )
             )}
@@ -454,17 +453,16 @@ export default function StockTransfersPage() {
                         {/* Status Badge */}
                         <td className="py-3 px-4">
                           <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-bold rounded-full ${
-                              trf.status === 'PENDING_APPROVAL'
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-bold rounded-full ${trf.status === 'PENDING_APPROVAL'
                                 ? 'bg-amber-100 text-amber-800'
                                 : trf.status === 'APPROVED'
-                                ? 'bg-blue-100 text-blue-800'
-                                : trf.status === 'DISPATCHED'
-                                ? 'bg-purple-100 text-purple-800'
-                                : trf.status === 'RECEIVED'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-rose-100 text-rose-800'
-                            }`}
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : trf.status === 'DISPATCHED'
+                                    ? 'bg-purple-100 text-purple-800'
+                                    : trf.status === 'RECEIVED'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-rose-100 text-rose-800'
+                              }`}
                           >
                             {trf.status === 'DISPATCHED' && <Truck className="w-3 h-3" />}
                             {trf.status.replace(/_/g, ' ')}
@@ -706,9 +704,8 @@ export default function StockTransfersPage() {
 
                             <td className="p-2 font-medium text-gray-700">
                               <span
-                                className={`font-bold ${
-                                  available > 0 ? 'text-emerald-600' : 'text-red-600'
-                                }`}
+                                className={`font-bold ${available > 0 ? 'text-emerald-600' : 'text-red-600'
+                                  }`}
                               >
                                 {available} units available
                               </span>
@@ -723,9 +720,8 @@ export default function StockTransfersPage() {
                                 onChange={(e) =>
                                   handleUpdateItem(idx, 'requestedQuantity', parseInt(e.target.value) || 0)
                                 }
-                                className={`w-full px-2 py-1 text-center font-bold bg-white border rounded ${
-                                  isExceeded ? 'border-red-500 text-red-600' : 'border-gray-300'
-                                }`}
+                                className={`w-full px-2 py-1 text-center font-bold bg-white border rounded ${isExceeded ? 'border-red-500 text-red-600' : 'border-gray-300'
+                                  }`}
                               />
                             </td>
 

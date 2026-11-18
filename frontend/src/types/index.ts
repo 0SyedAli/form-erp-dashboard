@@ -200,6 +200,7 @@ export type Thickness = MattressThickness;
 export interface CatalogueProduct {
   id: string;
   name: string;
+  posDisplayName?: string;
   code: string;
   brandId: string;
   categoryId: string;
@@ -219,6 +220,7 @@ export interface ProductVariant {
   sizeId: string;
   thicknessId: string;
   sku: string;
+  posDisplayName?: string;
   barcode?: string;
   retailPrice: number;
   walkInPrice?: number; // alias for retailPrice
@@ -302,6 +304,7 @@ export type InvoiceStatus = 'COMPLETED' | 'CONFIRMED' | 'PARTIAL' | 'REFUNDED' |
 export interface InvoiceItem {
   productId: string;
   productName: string;
+  posDisplayName?: string;
   sku: string;
   quantity: number;
   unitPrice: number;
@@ -644,6 +647,7 @@ export interface POSCartItem {
   id?: string; // unique cart item id
   productId: string;
   productName: string;
+  posDisplayName?: string;
   productImageUrl?: string;
   imageUrl?: string;
   brandId?: string;

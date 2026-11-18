@@ -70,7 +70,7 @@ export default function InventoryReportsPage() {
 
   return (
     <AppLayout title="Inventory Reports" subtitle="Valuation, Stockout Risk & Movement Turnover Intelligence">
-      <InventoryNavTabs branchId={activeBranchFilter} />
+      {/* <InventoryNavTabs branchId={activeBranchFilter} /> */}
 
       <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Header Bar */}
@@ -114,11 +114,10 @@ export default function InventoryReportsPage() {
         <div className="flex border-b border-gray-200 bg-white px-5 pt-3 rounded-t-xl border border-gray-200/80 shadow-2xs print:hidden">
           <button
             onClick={() => setActiveReportTab('valuation')}
-            className={`flex items-center gap-2 pb-3 px-4 font-semibold text-sm border-b-2 transition-all ${
-              activeReportTab === 'valuation'
+            className={`flex items-center gap-2 pb-3 px-4 font-semibold text-sm border-b-2 transition-all ${activeReportTab === 'valuation'
                 ? 'border-brand-blue text-brand-blue'
                 : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
+              }`}
           >
             <DollarSign className="w-4 h-4" />
             <span>Inventory Valuation Report</span>
@@ -126,11 +125,10 @@ export default function InventoryReportsPage() {
 
           <button
             onClick={() => setActiveReportTab('lowstock')}
-            className={`flex items-center gap-2 pb-3 px-4 font-semibold text-sm border-b-2 transition-all ${
-              activeReportTab === 'lowstock'
+            className={`flex items-center gap-2 pb-3 px-4 font-semibold text-sm border-b-2 transition-all ${activeReportTab === 'lowstock'
                 ? 'border-amber-600 text-amber-600'
                 : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
+              }`}
           >
             <AlertTriangle className="w-4 h-4" />
             <span>Stockout Risk & Reorder Analysis</span>
@@ -138,11 +136,10 @@ export default function InventoryReportsPage() {
 
           <button
             onClick={() => setActiveReportTab('movement')}
-            className={`flex items-center gap-2 pb-3 px-4 font-semibold text-sm border-b-2 transition-all ${
-              activeReportTab === 'movement'
+            className={`flex items-center gap-2 pb-3 px-4 font-semibold text-sm border-b-2 transition-all ${activeReportTab === 'movement'
                 ? 'border-purple-600 text-purple-600'
                 : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
+              }`}
           >
             <History className="w-4 h-4" />
             <span>Turnover & Movement Frequency</span>
@@ -287,11 +284,10 @@ export default function InventoryReportsPage() {
                           <td className="py-3 px-3 text-center font-bold text-amber-700">+{deficit} needed</td>
                           <td className="py-3 px-4">
                             <span
-                              className={`inline-block px-2.5 py-0.5 text-xs font-bold rounded-full ${
-                                item.stockStatus === 'OUT_OF_STOCK'
+                              className={`inline-block px-2.5 py-0.5 text-xs font-bold rounded-full ${item.stockStatus === 'OUT_OF_STOCK'
                                   ? 'bg-red-100 text-red-800'
                                   : 'bg-amber-100 text-amber-800'
-                              }`}
+                                }`}
                             >
                               {item.stockStatus.replace('_', ' ')}
                             </span>

@@ -200,6 +200,7 @@ const API_BASE_URL =
 
 export const inventoryApi = createApi({
   reducerPath: 'inventoryApi',
+  keepUnusedDataFor: 3600,
   baseQuery: fetchBaseQuery({
     baseUrl: API_BASE_URL,
     credentials: 'include',
@@ -327,13 +328,19 @@ export const inventoryApi = createApi({
     createStockReceipt: builder.mutation<
       StockReceipt,
       {
-        branchId: string;
-        locationId: string;
+        branchId?: string;
+        stockLocationId?: string;
         supplierId?: string;
         supplierReference?: string;
+        receiptNumber?: string;
         notes?: string;
         idempotencyKey?: string;
-        items: Array<{ skuId: string; quantity: number; unitCost?: number }>;
+        items: Array<{
+          sku: string;
+          quantityReceived: number;
+          quantityOrdered?: number;
+          unitCost?: number;
+        }>;
       }
     >({
       query: (body) => ({
@@ -374,15 +381,14 @@ export const inventoryApi = createApi({
     createAdjustments: builder.mutation<
       StockAdjustment,
       {
-        branchId: string;
-        stockLocationId: string;
-        reason: string;
-        notes?: string;
+        branchId?: string;
+        stockLocationId?: string;
+        idempotencyKey?: string;
         items: Array<{
           sku: string;
-          systemQuantity?: number;
-          countedQuantity: number;
-          physicalQuantity?: number;
+          newPhysicalQuantity: number;
+          adjustmentType?: 'PHYSICAL_COUNT' | 'ADMINISTRATIVE' | 'DAMAGE_WRITE_OFF';
+          reason: string;
         }>;
       }
     >({

@@ -288,7 +288,7 @@ export class PosService {
               authoritativePricePaisa = variant.wholesalePrice;
               break;
             case SALE_TYPES.DISTRIBUTOR:
-              authoritativePricePaisa = variant.distributorPrice;
+              authoritativePricePaisa = variant.distributorPrice || variant.wholesalePrice || variant.retailPrice;
               break;
             case SALE_TYPES.WALK_IN:
             default:

@@ -235,7 +235,6 @@ export default function POSHeader({
               >
                 <option value="WALK_IN">Walk-in</option>
                 <option value="WHOLESALE">Wholesale</option>
-                <option value="DISTRIBUTOR">Distributor</option>
               </select>
             </div>
           </div>

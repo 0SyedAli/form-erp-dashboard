@@ -85,7 +85,7 @@ export default function InvoiceReceiptModal({
         <div className="flex-1 overflow-y-auto p-4 bg-slate-100 flex justify-center">
           <div
             id="printable-pos-invoice"
-            className={`bg-white shadow-md border border-slate-300 p-5 font-sans font-semibold text-slate-900 transition-all ${format === 'THERMAL_80MM'
+            className={`bg-white overflow-auto shadow-md border border-slate-300 p-5 font-sans font-semibold text-slate-900 transition-all ${format === 'THERMAL_80MM'
               ? 'w-[320px] rounded-sm text-[12px] leading-tight'
               : 'w-[420px] rounded-lg text-sm'
               }`}
@@ -159,11 +159,12 @@ export default function InvoiceReceiptModal({
               {(invoice.items || []).map((item, idx) => {
                 const lineTotal = item.lineTotal ?? item.total ?? ((item.unitPrice || 0) * (item.quantity || 1));
                 const sizeInfo = item.sizeLabel ? ` [${item.sizeLabel}${item.thicknessLabel ? ` • ${item.thicknessLabel}` : ''}]` : '';
+                const displayName = (item as any).posDisplayName || `${item.productName}${sizeInfo}`;
                 const isLast = idx === (invoice.items || []).length - 1;
                 return (
                   <div key={idx}>
                     <div className="font-bold text-[13px]">
-                      <span>{idx + 1}.   {item.productName}{sizeInfo}</span>
+                      <span>{idx + 1}.   {displayName}</span>
                     </div>
                     <div className="flex justify-between text-[12px] text-slate-800 mt-0.5">
                       <span className="pl-4">{item.quantity} × Rs. {(item.unitPrice || 0).toLocaleString()}</span>

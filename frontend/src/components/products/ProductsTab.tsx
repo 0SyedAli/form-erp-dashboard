@@ -466,11 +466,11 @@ export default function ProductsTab({
                           <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 text-[10px] font-semibold border border-purple-100">
                             {item.categoryName || 'Category'}
                           </span>
-                          {(item.productLineName || item.productName) && (
+                          {/* {(item.productLineName || item.productName) && (
                             <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-semibold border border-amber-200">
                               Line: {item.productLineName || item.productName}
                             </span>
-                          )}
+                          )} */}
                         </div>
                       </td>
 

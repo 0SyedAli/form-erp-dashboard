@@ -62,6 +62,8 @@ export interface ProductVariant {
   id: string;
   productId: string;
   sku: string;
+  posDisplayName?: string;
+  notes?: string;
   sizeId: string;
   thicknessId: string;
   size?: Size;
@@ -71,7 +73,7 @@ export interface ProductVariant {
   purchasePrice: number;
   retailPrice: number;
   wholesalePrice: number;
-  distributorPrice: number;
+  distributorPrice?: number;
   purchaseDiscountPercent?: number;
   retailMarkupPercent?: number;
   wholesaleDiscountPercent?: number;
@@ -84,6 +86,7 @@ export interface Product {
   _id?: string;
   id: string;
   name: string;
+  posDisplayName?: string;
   code: string;
   brandId: string;
   categoryId: string;
@@ -265,6 +268,7 @@ export const catalogueApi = createApi({
 
     getBrands: builder.query<Brand[], void>({
       query: () => '/brands',
+      keepUnusedDataFor: 3600,
       transformResponse: (response: ApiResponse<Brand[]>) =>
         (response.data || []).map((b) => ({
           ...b,
@@ -333,6 +337,7 @@ export const catalogueApi = createApi({
         const queryStr = queryParams.toString();
         return `/categories${queryStr ? `?${queryStr}` : ''}`;
       },
+      keepUnusedDataFor: 3600,
       transformResponse: (response: ApiResponse<Category[]>) =>
         (response.data || []).map((c: any) => ({
           ...c,
@@ -393,6 +398,7 @@ export const catalogueApi = createApi({
         const queryStr = queryParams.toString();
         return `/product-lines${queryStr ? `?${queryStr}` : ''}`;
       },
+      keepUnusedDataFor: 3600,
       transformResponse: (response: ApiResponse<ProductLine[]>) =>
         (response.data || []).map((pl: any) => ({
           ...pl,
@@ -452,6 +458,7 @@ export const catalogueApi = createApi({
 
     getSizes: builder.query<Size[], void>({
       query: () => '/sizes',
+      keepUnusedDataFor: 3600,
       transformResponse: (response: ApiResponse<Size[]>) =>
         (response.data || []).map((s) => ({
           ...s,
@@ -503,6 +510,7 @@ export const catalogueApi = createApi({
 
     getThicknesses: builder.query<Thickness[], void>({
       query: () => '/thicknesses',
+      keepUnusedDataFor: 3600,
       transformResponse: (response: ApiResponse<Thickness[]>) =>
         (response.data || []).map((t) => ({
           ...t,
@@ -568,6 +576,7 @@ export const catalogueApi = createApi({
         const queryStr = queryParams.toString();
         return `/products${queryStr ? `?${queryStr}` : ''}`;
       },
+      keepUnusedDataFor: 3600,
       transformResponse: (response: any) => {
         const rawList = Array.isArray(response?.data)
           ? response.data
@@ -630,6 +639,7 @@ export const catalogueApi = createApi({
         const queryStr = queryParams.toString();
         return `/skus${queryStr ? `?${queryStr}` : ''}`;
       },
+      keepUnusedDataFor: 3600,
       transformResponse: (response: any) => {
         const rawList = Array.isArray(response?.data)
           ? response.data
@@ -720,6 +730,33 @@ export const catalogueApi = createApi({
       query: (skuId) => `/skus/${skuId}/prices`,
       providesTags: ['PriceHistory'],
     }),
+
+    importCatalogueExcel: builder.mutation<
+      ApiResponse<{
+        totalRows: number;
+        successCount: number;
+        duplicateCount: number;
+        duplicates: Array<{
+          itemNo: string;
+          posDisplayName: string;
+          brand: string;
+          category: string;
+          productLine: string;
+          size: string;
+          height: number;
+          reason: string;
+        }>;
+        created: Array<any>;
+      }>,
+      { rows: any[]; branchId?: string }
+    >({
+      query: (body) => ({
+        url: '/products/import-excel',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['Product', 'Variant', 'Brand', 'Category', 'ProductLine'],
+    }),
   }),
 });
 
@@ -763,5 +800,6 @@ export const {
   useUpdateSkuMutation,
   useToggleSkuStatusMutation,
   useGetSkuPriceHistoryQuery,
+  useImportCatalogueExcelMutation,
 } = catalogueApi;
 

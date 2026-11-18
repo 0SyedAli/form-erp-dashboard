@@ -28,12 +28,6 @@ export default function SaleTypeSelector({
       icon: Building2,
       description: 'Dealer & bulk discounted rates',
     },
-    {
-      id: 'DISTRIBUTOR',
-      label: 'Distributor',
-      icon: Truck,
-      description: 'Primary distributor tier pricing',
-    },
   ];
 
   return (
@@ -79,12 +73,6 @@ export default function SaleTypeSelector({
           <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1 font-semibold">
             <AlertCircle className="w-3 h-3" />
             Wholesale Account Required
-          </span>
-        )}
-        {saleType === 'DISTRIBUTOR' && (
-          <span className="text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 flex items-center gap-1 font-semibold">
-            <Truck className="w-3 h-3" />
-            Distributor Tier Active
           </span>
         )}
       </div>

@@ -5,6 +5,7 @@ export interface IProduct extends Document {
   categoryId: mongoose.Types.ObjectId;
   productLineId?: mongoose.Types.ObjectId;
   name: string;
+  posDisplayName?: string;
   description?: string;
   imageUrl?: string;
   branchId?: mongoose.Types.ObjectId;
@@ -42,6 +43,10 @@ const ProductSchema = new Schema<IProduct>(
       required: true,
       trim: true,
       index: true,
+    },
+    posDisplayName: {
+      type: String,
+      trim: true,
     },
     description: {
       type: String,

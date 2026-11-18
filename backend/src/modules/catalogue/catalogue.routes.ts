@@ -288,6 +288,13 @@ catalogueRoutes.post(
   CatalogueController.createProductWithVariant
 );
 
+catalogueRoutes.post(
+  '/products/import-excel',
+  authenticate,
+  requireBranchPermission('addEditProducts'),
+  CatalogueController.importExcel
+);
+
 catalogueRoutes.get(
   '/products/:id/skus',
   authenticate,

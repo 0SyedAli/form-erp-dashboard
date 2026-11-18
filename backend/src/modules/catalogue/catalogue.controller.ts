@@ -446,5 +446,16 @@ export class CatalogueController {
       sendError(res, (error as any).message || 'Failed to fetch branches.', (error as any).statusCode || 500);
     }
   }
+
+  public static async importExcel(req: Request, res: Response): Promise<void> {
+    try {
+      const rows = req.body?.rows || req.body;
+      const branchId = req.body?.branchId || ((req.account as any)?.assignedBranchId || (req.account as any)?.branchId);
+      const result = await CatalogueService.importCatalogueFromRows(rows, branchId);
+      sendSuccess(res, result, `Excel import completed. ${result.successCount} items created, ${result.duplicateCount} duplicates skipped.`);
+    } catch (error) {
+      sendError(res, (error as any).message || 'Failed to import catalogue from Excel.', (error as any).statusCode || 500);
+    }
+  }
 }
 

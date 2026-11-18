@@ -15,10 +15,12 @@ import {
 } from '@/store/services/catalogueApi';
 import Toast, { ToastMessage } from '@/components/common/Toast';
 import ProductsTab from '@/components/products/ProductsTab';
+import ExcelImportModal from '@/components/products/ExcelImportModal';
 import {
   Plus,
   Settings,
   ShieldAlert,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 function ProductsPageContent() {
@@ -33,6 +35,7 @@ function ProductsPageContent() {
   const canViewCatalogue = hasPermission(currentUser, 'catalogue:view') || canManageCatalogue;
 
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Query high-level counts
   const { data: demoProducts = [] } = useGetProductsQuery();
@@ -111,13 +114,25 @@ function ProductsPageContent() {
           </Link>
 
           {canManageCatalogue && (
-            <Link
-              href="/products/new"
-              className="flex items-center gap-2 px-4 py-2 bg-brand-blue hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Product</span>
-            </Link>
+            <>
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                title="Import Catalogue from Excel"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>Import Excel</span>
+              </button>
+
+              <Link
+                href="/products/new"
+                className="flex items-center gap-2 px-4 py-2 bg-brand-blue hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Product</span>
+              </Link>
+            </>
           )}
         </div>
       </div>
@@ -141,6 +156,13 @@ function ProductsPageContent() {
         canManagePricing={canManagePricing}
         onToast={showToast}
         currentUserEmail={currentUser?.email}
+      />
+
+      {/* Excel Import Modal */}
+      <ExcelImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={(msg) => showToast(msg, 'success')}
       />
 
       {/* Toast Notification Container */}

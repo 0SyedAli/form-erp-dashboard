@@ -37,7 +37,7 @@ export const openingStockSchema = z.object({
 export const createStockReceiptSchema = z.object({
   body: z.object({
     branchId: z.string().optional(),
-    stockLocationId: z.string().min(1, 'Stock location ID is required'),
+    stockLocationId: z.string().optional(),
     receiptNumber: z.string().optional(),
     supplierId: z.string().optional(),
     supplierReference: z.string().optional(),
@@ -60,7 +60,7 @@ export const createStockReceiptSchema = z.object({
 export const createAdjustmentSchema = z.object({
   body: z.object({
     branchId: z.string().optional(),
-    stockLocationId: z.string().min(1, 'Stock location ID is required'),
+    stockLocationId: z.string().optional(),
     items: z
       .array(
         z.object({

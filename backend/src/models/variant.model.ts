@@ -6,6 +6,9 @@ export interface IVariant extends Document {
   thicknessId: mongoose.Types.ObjectId;
   sku: string;
   barcode?: string;
+  posDisplayName?: string;
+  notes?: string;
+  minStock?: number;
   listPrice: number; // in Paisa
   purchasePrice: number; // in Paisa
   purchaseDiscountPercent?: number;
@@ -13,7 +16,7 @@ export interface IVariant extends Document {
   retailMarkupPercent?: number;
   wholesalePrice: number; // in Paisa
   wholesaleDiscountPercent?: number;
-  distributorPrice: number; // in Paisa
+  distributorPrice?: number; // in Paisa (optional/deprecated)
   distributorDiscountPercent?: number;
   status: 'ACTIVE' | 'INACTIVE';
   createdAt: Date;
@@ -54,6 +57,20 @@ const VariantSchema = new Schema<IVariant>(
       sparse: true,
       unique: true,
     },
+    posDisplayName: {
+      type: String,
+      trim: true,
+      index: true,
+    },
+    notes: {
+      type: String,
+      trim: true,
+    },
+    minStock: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     listPrice: {
       type: Number,
       required: true,
@@ -92,13 +109,14 @@ const VariantSchema = new Schema<IVariant>(
     },
     distributorPrice: {
       type: Number,
-      required: true,
       min: 0,
+      default: 0,
     },
     distributorDiscountPercent: {
       type: Number,
       min: 0,
       max: 100,
+      default: 0,
     },
     status: {
       type: String,

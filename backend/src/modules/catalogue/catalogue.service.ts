@@ -46,16 +46,18 @@ export function generateSkuCode(
   brandCode: string,
   categoryCode: string,
   sizeDisplayLabel: string,
-  thicknessValue: number
+  thicknessValue: number,
+  productLineCode?: string
 ): string {
-  const bCode = brandCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4);
-  const cCode = categoryCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4);
+  const bCode = brandCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4) || 'MF';
+  const cCode = categoryCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4) || 'CAT';
+  const plCode = productLineCode ? productLineCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4) : '';
   const sLabel = sizeDisplayLabel
     .replace(/[\s×xX]/g, 'X')
     .replace(/[^0-9X]/g, '')
     .toUpperCase();
   const tVal = String(thicknessValue).replace(/[^0-9]/g, '');
-  return `${bCode}-${cCode}-${sLabel}-${tVal}`;
+  return plCode ? `${bCode}-${cCode}-${plCode}-${sLabel}-${tVal}` : `${bCode}-${cCode}-${sLabel}-${tVal}`;
 }
 
 export class CatalogueService {
@@ -692,7 +694,9 @@ export class CatalogueService {
         purchasePrice: toRupees(v.purchasePrice),
         retailPrice: toRupees(v.retailPrice),
         wholesalePrice: toRupees(v.wholesalePrice),
-        distributorPrice: toRupees(v.distributorPrice),
+        distributorPrice: toRupees(v.distributorPrice || 0),
+        posDisplayName: v.posDisplayName || '',
+        notes: v.notes || '',
         status: v.status,
       });
     }
@@ -769,8 +773,10 @@ export class CatalogueService {
         retailMarkupPercent: v.retailMarkupPercent,
         wholesalePrice: toRupees(v.wholesalePrice),
         wholesaleDiscountPercent: v.wholesaleDiscountPercent,
-        distributorPrice: toRupees(v.distributorPrice),
+        distributorPrice: toRupees(v.distributorPrice || 0),
         distributorDiscountPercent: v.distributorDiscountPercent,
+        posDisplayName: v.posDisplayName || '',
+        notes: v.notes || '',
         status: v.status,
       })),
       createdAt: product.createdAt,
@@ -1114,7 +1120,7 @@ export class CatalogueService {
           retailMarkupPercent: variant.retailMarkupPercent,
           wholesalePrice: toRupees(variant.wholesalePrice),
           wholesaleDiscountPercent: variant.wholesaleDiscountPercent,
-          distributorPrice: toRupees(variant.distributorPrice),
+          distributorPrice: toRupees(variant.distributorPrice || 0),
           distributorDiscountPercent: variant.distributorDiscountPercent,
           initialStockCommitted: initialStockCreated,
           onHand: input.stock || 0,
@@ -1286,7 +1292,7 @@ export class CatalogueService {
       retailMarkupPercent: variant.retailMarkupPercent,
       wholesalePrice: toRupees(variant.wholesalePrice),
       wholesaleDiscountPercent: variant.wholesaleDiscountPercent,
-      distributorPrice: toRupees(variant.distributorPrice),
+      distributorPrice: toRupees(variant.distributorPrice || 0),
       distributorDiscountPercent: variant.distributorDiscountPercent,
       status: variant.status,
       stock: stockDoc ? stockDoc.onHand : 0,
@@ -1630,7 +1636,7 @@ export class CatalogueService {
       retailMarkupPercent: variant.retailMarkupPercent,
       wholesalePrice: toRupees(variant.wholesalePrice),
       wholesaleDiscountPercent: variant.wholesaleDiscountPercent,
-      distributorPrice: toRupees(variant.distributorPrice),
+      distributorPrice: toRupees(variant.distributorPrice || 0),
       distributorDiscountPercent: variant.distributorDiscountPercent,
       stock: finalStockDoc ? finalStockDoc.onHand : 0,
       minimumStock: finalStockDoc?.reorderLevel ?? 5,
@@ -1684,5 +1690,401 @@ export class CatalogueService {
       id: b._id.toString(),
       _id: b._id.toString(),
     }));
+  }
+
+  public static async importCatalogueFromRows(
+    rows: any[],
+    callerBranchId?: string
+  ): Promise<{
+    totalRows: number;
+    successCount: number;
+    duplicateCount: number;
+    duplicates: Array<{
+      itemNo: string;
+      posDisplayName: string;
+      brand: string;
+      category: string;
+      productLine: string;
+      size: string;
+      height: number;
+      reason: string;
+    }>;
+    created: Array<any>;
+  }> {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new AppError('No rows provided for import.', 400, 'EMPTY_IMPORT_DATA');
+    }
+
+    // Resolve branch and stock location
+    let targetBranch: any = null;
+    if (callerBranchId && mongoose.Types.ObjectId.isValid(callerBranchId)) {
+      targetBranch = await Branch.findById(callerBranchId);
+    }
+    if (!targetBranch) {
+      targetBranch = await Branch.findOne({ isActive: true });
+    }
+    if (!targetBranch) {
+      targetBranch = await Branch.findOne({});
+    }
+
+    let targetLocation: any = null;
+    if (targetBranch) {
+      targetLocation = await StockLocation.findOne({ branchId: targetBranch._id, isDefault: true })
+        || await StockLocation.findOne({ branchId: targetBranch._id });
+      if (!targetLocation) {
+        targetLocation = await StockLocation.create({
+          branchId: targetBranch._id,
+          name: `${targetBranch.name} - Main Location`,
+          code: `LOC-MAIN-${targetBranch.code || 'MAIN'}`,
+          type: 'WAREHOUSE',
+          isDefault: true,
+        });
+      }
+    }
+
+    const brandsCache = new Map<string, any>();
+    const categoriesCache = new Map<string, any>();
+    const productLinesCache = new Map<string, any>();
+    const productsCache = new Map<string, any>();
+    const sizesCache = new Map<string, any>();
+    const thicknessesCache = new Map<string, any>();
+
+    const duplicates: Array<any> = [];
+    const created: Array<any> = [];
+    const seenInFile = new Set<string>();
+
+    const getCol = (row: any, ...keys: string[]): string => {
+      for (const k of keys) {
+        if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
+          return String(row[k]).trim();
+        }
+        const lowerKey = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        for (const rowKey of Object.keys(row)) {
+          if (rowKey.toLowerCase().replace(/[^a-z0-9]/g, '') === lowerKey) {
+            if (row[rowKey] !== undefined && row[rowKey] !== null && String(row[rowKey]).trim() !== '') {
+              return String(row[rowKey]).trim();
+            }
+          }
+        }
+      }
+      return '';
+    };
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const itemNo = getCol(row, 'Item #', 'Item', 'Item No', 'No', '#') || (i + 1).toString();
+      const brandRaw = getCol(row, 'Brand');
+      const categoryRaw = getCol(row, 'Category');
+      const productLineRaw = getCol(row, 'Product Line', 'ProductLine', 'Line');
+
+      // Skip completely empty lines
+      if (!brandRaw && !categoryRaw && !productLineRaw) continue;
+
+      const brandName = brandRaw || 'MoltyFoam';
+      const categoryName = categoryRaw || 'General';
+      const productLineName = productLineRaw || 'Standard';
+
+      const posDisplayNameRaw = getCol(row, 'POS Display Name', 'POSDisplayName', 'POS Name', 'DisplayName');
+      const lengthRaw = getCol(row, 'Length (in)', 'Length', 'L');
+      const widthRaw = getCol(row, 'Width (in)', 'Width', 'W');
+      const heightRaw = getCol(row, 'Height (in)', 'Height', 'Thickness (in)', 'Thickness', 'Depth');
+      const displayLabelRaw = getCol(row, 'Display label', 'Display Label', 'Size');
+      const notes = getCol(row, 'Variant / Notes', 'Variant', 'Notes', 'Description') || 'Standard';
+      const stockRaw = getCol(row, 'Current Stock', 'Stock', 'Qty', 'Quantity');
+      const minStockRaw = getCol(row, 'Minimum Stock', 'Min Stock', 'MinStock', 'Reorder Level');
+      const priceRaw = getCol(row, 'List Price', 'Price', 'Retail Price', 'ListPrice');
+      const effectiveDateRaw = getCol(row, 'Effective Date', 'Date');
+
+      let length = parseFloat(lengthRaw) || 0;
+      let width = parseFloat(widthRaw) || 0;
+      let height = parseFloat(heightRaw) || 0;
+
+      if ((length === 0 || width === 0) && displayLabelRaw) {
+        const parts = displayLabelRaw.toLowerCase().split(/[x*×]/);
+        if (parts.length >= 2) {
+          length = parseFloat(parts[0]) || 0;
+          width = parseFloat(parts[1]) || 0;
+          if (parts.length >= 3 && height === 0) {
+            height = parseFloat(parts[2]) || 0;
+          }
+        }
+      }
+
+      const displayLabel = (length > 0 && width > 0)
+        ? `${length}x${width}`
+        : (displayLabelRaw || 'Standard');
+
+      const posDisplayName = posDisplayNameRaw || `${productLineName} ${displayLabel}${height > 0 ? `x${height}` : ''}`;
+
+      const fileKey = `${brandName.toLowerCase()}::${categoryName.toLowerCase()}::${productLineName.toLowerCase()}::${displayLabel.toLowerCase()}::${height}`;
+      if (seenInFile.has(fileKey)) {
+        duplicates.push({
+          itemNo,
+          posDisplayName,
+          brand: brandName,
+          category: categoryName,
+          productLine: productLineName,
+          size: displayLabel,
+          height,
+          reason: 'Duplicate entry in uploaded file',
+        });
+        continue;
+      }
+      seenInFile.add(fileKey);
+
+      const cleanPriceStr = priceRaw.replace(/[^0-9.]/g, '');
+      const listPrice = parseFloat(cleanPriceStr) || 0;
+      const currentStock = parseInt(stockRaw.replace(/[^0-9-]/g, ''), 10) || 0;
+      const minStock = parseInt(minStockRaw.replace(/[^0-9-]/g, ''), 10) || 0;
+      let effectiveDate = new Date();
+      if (effectiveDateRaw) {
+        const parsedD = new Date(effectiveDateRaw);
+        if (!isNaN(parsedD.getTime())) effectiveDate = parsedD;
+      }
+
+      // 1. Resolve Brand
+      const brandKey = brandName.toLowerCase();
+      let brand = brandsCache.get(brandKey);
+      if (!brand) {
+        brand = await Brand.findOne({
+          $or: [
+            { name: { $regex: new RegExp(`^${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+            { code: brandName.toUpperCase() },
+          ],
+        });
+        if (!brand) {
+          const brandCode = brandName.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 6) || 'BRD';
+          brand = await Brand.create({
+            name: brandName,
+            code: brandCode,
+            status: 'ACTIVE',
+            ...(targetBranch ? { branchId: targetBranch._id } : {}),
+          });
+        }
+        brandsCache.set(brandKey, brand);
+      }
+
+      // 2. Resolve Category
+      const catKey = `${brand._id.toString()}::${categoryName.toLowerCase()}`;
+      let category = categoriesCache.get(catKey);
+      if (!category) {
+        category = await Category.findOne({
+          brandId: brand._id,
+          name: { $regex: new RegExp(`^${categoryName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        });
+        if (!category) {
+          const catCode = `${categoryName.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4)}-${brand.code.slice(0, 3)}`;
+          category = await Category.create({
+            brandId: brand._id,
+            name: categoryName,
+            code: catCode,
+            status: 'ACTIVE',
+            ...(targetBranch ? { branchId: targetBranch._id } : {}),
+          });
+        }
+        categoriesCache.set(catKey, category);
+      }
+
+      // 3. Resolve Product Line
+      const plKey = `${brand._id.toString()}::${category._id.toString()}::${productLineName.toLowerCase()}`;
+      let productLine = productLinesCache.get(plKey);
+      if (!productLine) {
+        productLine = await ProductLine.findOne({
+          brandId: brand._id,
+          categoryId: category._id,
+          name: { $regex: new RegExp(`^${productLineName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        });
+        if (!productLine) {
+          const plCode = `PL-${productLineName.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8)}`;
+          let candidateCode = plCode;
+          let plCount = 1;
+          while (await ProductLine.findOne({ code: candidateCode })) {
+            candidateCode = `${plCode}-${plCount++}`;
+          }
+          productLine = await ProductLine.create({
+            brandId: brand._id,
+            categoryId: category._id,
+            name: productLineName,
+            code: candidateCode,
+            status: 'ACTIVE',
+            ...(targetBranch ? { branchId: targetBranch._id } : {}),
+          });
+        }
+        productLinesCache.set(plKey, productLine);
+      }
+
+      // 4. Resolve Base Product
+      const prodKey = `${brand._id.toString()}::${category._id.toString()}::${productLine._id.toString()}`;
+      let product = productsCache.get(prodKey);
+      if (!product) {
+        product = await Product.findOne({
+          brandId: brand._id,
+          categoryId: category._id,
+          productLineId: productLine._id,
+        });
+        if (!product) {
+          product = await Product.create({
+            brandId: brand._id,
+            categoryId: category._id,
+            productLineId: productLine._id,
+            name: productLineName,
+            posDisplayName,
+            code: productLine.code,
+            status: 'ACTIVE',
+            ...(targetBranch ? { branchId: targetBranch._id } : {}),
+          });
+        }
+        productsCache.set(prodKey, product);
+      }
+
+      // 5. Resolve Size
+      const sizeKey = `${length}x${width}_${displayLabel.toLowerCase()}`;
+      let size = sizesCache.get(sizeKey);
+      if (!size) {
+        size = await Size.findOne({
+          $or: [
+            { length, width },
+            { displayLabel: { $regex: new RegExp(`^${displayLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+          ],
+        });
+        if (!size) {
+          size = await Size.create({
+            length: length > 0 ? length : 78,
+            width: width > 0 ? width : 72,
+            unit: 'in',
+            displayLabel,
+            status: 'ACTIVE',
+          });
+        }
+        sizesCache.set(sizeKey, size);
+      }
+
+      // 6. Resolve Thickness
+      const thickKey = `${height}`;
+      let thickness = thicknessesCache.get(thickKey);
+      if (!thickness) {
+        thickness = await Thickness.findOne({ value: height });
+        if (!thickness) {
+          thickness = await Thickness.create({
+            value: height > 0 ? height : 4,
+            unit: 'in',
+            displayLabel: `${height > 0 ? height : 4}"`,
+            status: 'ACTIVE',
+          });
+        }
+        thicknessesCache.set(thickKey, thickness);
+      }
+
+      // 7. Check Database Duplicate (Compound Unique Index: productId + sizeId + thicknessId)
+      const existingVariant = await Variant.findOne({
+        productId: product._id,
+        sizeId: size._id,
+        thicknessId: thickness._id,
+      });
+
+      if (existingVariant) {
+        duplicates.push({
+          itemNo,
+          posDisplayName,
+          brand: brandName,
+          category: categoryName,
+          productLine: productLineName,
+          size: displayLabel,
+          height,
+          reason: `Already exists in database (SKU: ${existingVariant.sku})`,
+        });
+        continue;
+      }
+
+      // 8. Generate SKU
+      const baseSku = generateSkuCode(brand.code, category.code, size.displayLabel, thickness.value, productLine.code);
+      let uniqueSku = baseSku;
+      let skuSuffix = 1;
+      while (await Variant.findOne({ sku: uniqueSku })) {
+        uniqueSku = `${baseSku}-${skuSuffix++}`;
+      }
+
+      // 9. Pricing rule: listPrice = retailPrice = wholesalePrice
+      const pricePaisa = toPaisa(listPrice);
+
+      const variant = await Variant.create({
+        productId: product._id,
+        sizeId: size._id,
+        thicknessId: thickness._id,
+        sku: uniqueSku,
+        posDisplayName,
+        notes,
+        minStock,
+        listPrice: pricePaisa,
+        purchasePrice: pricePaisa,
+        retailPrice: pricePaisa,
+        wholesalePrice: pricePaisa,
+        distributorPrice: pricePaisa,
+        status: 'ACTIVE',
+      });
+
+      // 10. Initial Price History Record
+      await PriceHistory.create({
+        variantId: variant._id,
+        sku: variant.sku,
+        tier: 'RETAIL',
+        previousPrice: 0,
+        newPrice: pricePaisa,
+        reason: 'EXCEL_CATALOGUE_IMPORT',
+      });
+
+      // 11. Initial Stock Balance
+      if (targetBranch && targetLocation) {
+        await StockBalance.create({
+          branchId: targetBranch._id,
+          stockLocationId: targetLocation._id,
+          locationId: targetLocation._id,
+          variantId: variant._id,
+          productId: product._id,
+          sku: variant.sku,
+          onHand: currentStock,
+          reserved: 0,
+          allocated: 0,
+          available: currentStock,
+          reorderLevel: minStock,
+        });
+
+        if (currentStock > 0) {
+          await StockMovement.create({
+            branchId: targetBranch._id,
+            locationId: targetLocation._id,
+            variantId: variant._id,
+            productId: product._id,
+            sku: variant.sku,
+            type: 'INITIAL_STOCK',
+            quantity: currentStock,
+            balanceAfter: currentStock,
+            referenceType: 'EXCEL_IMPORT',
+            description: `Excel catalogue initial stock import (${itemNo})`,
+          });
+        }
+      }
+
+      created.push({
+        itemNo,
+        sku: variant.sku,
+        posDisplayName,
+        brand: brandName,
+        category: categoryName,
+        productLine: productLineName,
+        size: displayLabel,
+        height,
+        price: listPrice,
+        stock: currentStock,
+      });
+    }
+
+    return {
+      totalRows: rows.length,
+      successCount: created.length,
+      duplicateCount: duplicates.length,
+      duplicates,
+      created,
+    };
   }
 }
