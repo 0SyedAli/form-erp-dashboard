@@ -13,6 +13,7 @@ import {
   ArrowRight,
   Info,
   Download,
+  RefreshCw,
 } from 'lucide-react';
 import { useImportCatalogueExcelMutation } from '@/store/services/catalogueApi';
 
@@ -37,8 +38,10 @@ interface ImportResult {
   totalRows: number;
   successCount: number;
   duplicateCount: number;
+  updatedCount?: number;
   duplicates: DuplicateReport[];
   created: any[];
+  updated?: any[];
 }
 
 export default function ExcelImportModal({
@@ -51,6 +54,8 @@ export default function ExcelImportModal({
   const [parseError, setParseError] = useState<string | null>(null);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [isUpdatingDuplicates, setIsUpdatingDuplicates] = useState(false);
+  const [updateSuccessMsg, setUpdateSuccessMsg] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -77,6 +82,7 @@ export default function ExcelImportModal({
   const processFile = (f: File) => {
     setParseError(null);
     setResult(null);
+    setUpdateSuccessMsg(null);
     setFile(f);
     setIsProcessingFile(true);
 
@@ -113,6 +119,8 @@ export default function ExcelImportModal({
 
   const handleUploadConfirm = async () => {
     if (parsedRows.length === 0) return;
+    setParseError(null);
+    setUpdateSuccessMsg(null);
 
     try {
       const res = await importExcel({ rows: parsedRows }).unwrap();
@@ -121,12 +129,45 @@ export default function ExcelImportModal({
         totalRows: importData.totalRows || parsedRows.length,
         successCount: importData.successCount || 0,
         duplicateCount: importData.duplicateCount || 0,
+        updatedCount: importData.updatedCount || 0,
         duplicates: importData.duplicates || [],
         created: importData.created || [],
+        updated: importData.updated || [],
       });
-      onSuccess(`Import finished: ${importData.successCount || 0} created, ${importData.duplicateCount || 0} duplicates skipped.`);
+      onSuccess(`Import finished: ${importData.successCount || 0} created, ${importData.duplicateCount || 0} duplicates found.`);
     } catch (err: any) {
-      setParseError(err?.data?.message || err?.message || 'Import operation failed.');
+      setParseError(err?.data?.error?.message || err?.data?.message || err?.message || 'Import operation failed.');
+    }
+  };
+
+  const handleUpdateDuplicates = async () => {
+    if (parsedRows.length === 0) return;
+    setIsUpdatingDuplicates(true);
+    setParseError(null);
+    setUpdateSuccessMsg(null);
+
+    try {
+      const res = await importExcel({
+        rows: parsedRows,
+        updateDuplicates: true,
+      }).unwrap();
+      const syncData = (res as any)?.data || res;
+      const count = syncData.updatedCount || syncData.updated?.length || result?.duplicates.length || 0;
+      setResult({
+        totalRows: syncData.totalRows || parsedRows.length,
+        successCount: syncData.successCount || result?.successCount || 0,
+        duplicateCount: 0,
+        updatedCount: count,
+        duplicates: [],
+        created: syncData.created || result?.created || [],
+        updated: syncData.updated || [],
+      });
+      setUpdateSuccessMsg(`Successfully synchronized and updated ${count} existing products with latest prices and stock!`);
+      onSuccess(`Catalogue sync completed: ${count} existing products updated.`);
+    } catch (err: any) {
+      setParseError(err?.data?.error?.message || err?.data?.message || err?.message || 'Failed to update existing products.');
+    } finally {
+      setIsUpdatingDuplicates(false);
     }
   };
 
@@ -135,6 +176,7 @@ export default function ExcelImportModal({
     setParsedRows([]);
     setResult(null);
     setParseError(null);
+    setUpdateSuccessMsg(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -384,20 +426,43 @@ export default function ExcelImportModal({
           {/* Import Result View (Success & Duplicate Report) */}
           {result && (
             <div className="space-y-4">
+              {/* Success Notification Banner if duplicates updated */}
+              {updateSuccessMsg && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 flex items-center gap-2.5 text-xs text-emerald-900 font-semibold animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{updateSuccessMsg}</span>
+                </div>
+              )}
+
               {/* Summary Cards */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className={`grid gap-3 ${result.updatedCount && result.updatedCount > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
                     <CheckCircle2 className="w-6 h-6" />
                   </div>
                   <div>
-                    <span className="text-xs text-emerald-800 font-semibold block">Successfully Added</span>
+                    <span className="text-xs text-emerald-800 font-semibold block">Newly Added</span>
                     <span className="text-xl font-bold text-emerald-900 font-mono">
                       {result.successCount}
                     </span>
-                    <span className="text-[11px] text-emerald-700 block">items stocked in catalogue</span>
+                    <span className="text-[11px] text-emerald-700 block">new items registered</span>
                   </div>
                 </div>
+
+                {result.updatedCount !== undefined && result.updatedCount > 0 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shrink-0">
+                      <RefreshCw className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-xs text-blue-800 font-semibold block">Updated & Synced</span>
+                      <span className="text-xl font-bold text-blue-900 font-mono">
+                        {result.updatedCount}
+                      </span>
+                      <span className="text-[11px] text-blue-700 block">prices & stock updated</span>
+                    </div>
+                  </div>
+                )}
 
                 <div className={`rounded-xl p-4 border flex items-center gap-3 ${
                   result.duplicateCount > 0
@@ -415,45 +480,84 @@ export default function ExcelImportModal({
                       {result.duplicateCount}
                     </span>
                     <span className="text-[11px] opacity-80 block">
-                      {result.duplicateCount > 0 ? 'Prevented multi-entry' : 'No duplicates found'}
+                      {result.duplicateCount > 0 ? 'multi-entry skipped' : 'zero duplicates'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Duplicates Detail Table */}
+              {/* Duplicates Detail Table & Update Button */}
               {result.duplicates.length > 0 && (
-                <div className="border border-amber-200 rounded-xl overflow-hidden bg-white">
-                  <div className="bg-amber-50/80 px-3.5 py-2.5 border-b border-amber-200 flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                      Duplicate Items Inspection ({result.duplicates.length})
-                    </span>
-                    <span className="text-[11px] text-amber-700">Safely skipped</span>
+                <div className="space-y-3">
+                  {/* Action Bar to Update Existing Products */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl shadow-2xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                        <RefreshCw className={`w-4 h-4 ${isUpdatingDuplicates ? 'animate-spin' : ''}`} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 font-sans">
+                          Update Existing Products with Excel Data?
+                        </h4>
+                        <p className="text-[11px] text-slate-600">
+                          Click to overwrite prices and sync stock for all {result.duplicates.length} existing items.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isUpdatingDuplicates}
+                      onClick={handleUpdateDuplicates}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all shrink-0 cursor-pointer disabled:bg-blue-400"
+                    >
+                      {isUpdatingDuplicates ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Updating Products...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-4 h-4" />
+                          <span>Update All {result.duplicates.length} Duplicates</span>
+                        </>
+                      )}
+                    </button>
                   </div>
-                  <div className="overflow-x-auto max-h-48 text-xs">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 text-[10px] text-slate-500 uppercase border-b border-slate-200">
-                          <th className="p-2 text-left font-semibold">Row #</th>
-                          <th className="p-2 text-left font-semibold">POS Display Name</th>
-                          <th className="p-2 text-left font-semibold">Brand / Category</th>
-                          <th className="p-2 text-left font-semibold">Size</th>
-                          <th className="p-2 text-left font-semibold">Reason</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-sans">
-                        {result.duplicates.map((d, idx) => (
-                          <tr key={idx} className="hover:bg-amber-50/40">
-                            <td className="p-2 font-mono text-slate-500">{d.itemNo}</td>
-                            <td className="p-2 font-semibold text-slate-800">{d.posDisplayName}</td>
-                            <td className="p-2 text-slate-600">{d.brand} • {d.category}</td>
-                            <td className="p-2 font-mono text-slate-600">{d.size}{d.height > 0 ? `x${d.height}` : ''}</td>
-                            <td className="p-2 text-amber-700 font-medium text-[11px]">{d.reason}</td>
+
+                  {/* Duplicates Inspection Table */}
+                  <div className="border border-amber-200 rounded-xl overflow-hidden bg-white">
+                    <div className="bg-amber-50/80 px-3.5 py-2.5 border-b border-amber-200 flex items-center justify-between">
+                      <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                        Duplicate Items Inspection ({result.duplicates.length})
+                      </span>
+                      <span className="text-[11px] text-amber-700">Currently skipped</span>
+                    </div>
+                    <div className="overflow-x-auto max-h-48 text-xs">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 text-[10px] text-slate-500 uppercase border-b border-slate-200">
+                            <th className="p-2 text-left font-semibold">Row #</th>
+                            <th className="p-2 text-left font-semibold">POS Display Name</th>
+                            <th className="p-2 text-left font-semibold">Brand / Category</th>
+                            <th className="p-2 text-left font-semibold">Size</th>
+                            <th className="p-2 text-left font-semibold">Reason</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-sans">
+                          {result.duplicates.map((d, idx) => (
+                            <tr key={idx} className="hover:bg-amber-50/40">
+                              <td className="p-2 font-mono text-slate-500">{d.itemNo}</td>
+                              <td className="p-2 font-semibold text-slate-800">{d.posDisplayName}</td>
+                              <td className="p-2 text-slate-600">{d.brand} • {d.category}</td>
+                              <td className="p-2 font-mono text-slate-600">{d.size}{d.height > 0 ? `x${d.height}` : ''}</td>
+                              <td className="p-2 text-amber-700 font-medium text-[11px]">{d.reason}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}

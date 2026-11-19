@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { useClientPagination } from '@/components/common/Pagination';
+import { Pagination } from '@/components/common/Pagination';
 import { ProductVariant } from '@/types';
 import { useAppSelector, RootState } from '@/store';
 import {
@@ -11,7 +11,6 @@ import {
   useGetCategoriesQuery as useGetDemoCategoriesQuery,
   useGetSizesQuery as useGetDemoSizesQuery,
   useGetThicknessQuery as useGetDemoThicknessQuery,
-  useGetInventoryBalancesQuery,
   useToggleVariantStatusMutation,
   useGetBranchesQuery,
 } from '@/store/services/apiSlice';
@@ -48,15 +47,56 @@ export default function ProductsTab({
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
   const assignedBranchId = currentUser?.assignedBranchId;
 
+  // Branch filter
   const [branchFilter, setBranchFilter] = useState<string>(!isSuperAdmin && assignedBranchId ? assignedBranchId : 'all');
   const effectiveBranchId = !isSuperAdmin ? assignedBranchId : (branchFilter !== 'all' ? branchFilter : undefined);
 
+  // Search & Filters state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [brandFilter, setBrandFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [productLineFilter, setProductLineFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [stockFilter, setStockFilter] = useState<'all' | 'in_stock' | 'out_of_stock'>('all');
+
+  // Server-side Pagination state
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
+
+  // 350ms Debounce on Search Query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Reset page to 1 whenever any search or filter criteria change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, brandFilter, categoryFilter, productLineFilter, statusFilter, stockFilter, branchFilter]);
+
   const { data: branches = [] } = useGetBranchesQuery(undefined, { skip: !isSuperAdmin });
   const { data: demoVariants = [], isLoading: isDemoLoading } = useGetVariantsQuery();
-  const { data: backendSkusResponse, isLoading: isBackendLoading } = useGetBackendSkusQuery({
-    status: 'ALL',
+
+  // Optimized Server-Side Paginated & Filtered Query
+  const {
+    data: backendSkusResponse,
+    isLoading: isBackendLoading,
+    isFetching: isBackendFetching,
+  } = useGetBackendSkusQuery({
+    page,
+    limit: pageSize,
+    search: debouncedSearch.trim() || undefined,
+    brandId: brandFilter !== 'all' ? brandFilter : undefined,
+    categoryId: categoryFilter !== 'all' ? categoryFilter : undefined,
+    productLineId: productLineFilter !== 'all' ? productLineFilter : undefined,
+    status: statusFilter === 'active' ? 'ACTIVE' : statusFilter === 'inactive' ? 'INACTIVE' : 'ALL',
+    stockStatus: stockFilter === 'in_stock' ? 'IN_STOCK' : stockFilter === 'out_of_stock' ? 'OUT_OF_STOCK' : undefined,
     ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
   });
+
   const { data: backendBrands = [] } = useGetBackendBrandsQuery();
   const { data: demoBrands = [] } = useGetDemoBrandsQuery();
   const { data: backendCategories = [] } = useGetBackendCategoriesQuery();
@@ -66,7 +106,6 @@ export default function ProductsTab({
   const { data: demoSizes = [] } = useGetDemoSizesQuery();
   const { data: backendThicknesses = [] } = useGetBackendThicknessesQuery();
   const { data: demoThicknesses = [] } = useGetDemoThicknessQuery();
-  const { data: balances = [] } = useGetInventoryBalancesQuery();
   const [toggleStatus] = useToggleVariantStatusMutation();
   const [toggleBackendSkuStatus] = useToggleSkuStatusMutation();
 
@@ -89,8 +128,8 @@ export default function ProductsTab({
   }, [backendThicknesses, demoThicknesses]);
 
   const rawBackendSkus = useMemo(() => {
+    if (Array.isArray(backendSkusResponse?.data)) return backendSkusResponse.data;
     if (Array.isArray(backendSkusResponse)) return backendSkusResponse;
-    if (Array.isArray((backendSkusResponse as any)?.data)) return (backendSkusResponse as any).data;
     if (Array.isArray((backendSkusResponse as any)?.items)) return (backendSkusResponse as any).items;
     return [];
   }, [backendSkusResponse]);
@@ -122,15 +161,21 @@ export default function ProductsTab({
         status: (v.status || 'ACTIVE'),
       }));
     }
-    return demoVariants;
-  }, [rawBackendSkus, demoVariants]);
+    if (!backendSkusResponse && demoVariants.length > 0) {
+      return demoVariants;
+    }
+    return [];
+  }, [rawBackendSkus, demoVariants, backendSkusResponse]);
 
-  // Filters
-  const [searchQuery, setSearchQuery] = useState('');
-  const [brandFilter, setBrandFilter] = useState<string>('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [productLineFilter, setProductLineFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  // Total items matching current search and filters
+  const totalItems = backendSkusResponse?.pagination?.total ?? variants.length;
+
+  // Fast lookups
+  const sizeMap = useMemo(() => new Map(sizes.map((s) => [s.id || (s as any)._id, s.displayLabel || s.name || '78 × 78'])), [sizes]);
+  const thicknessMap = useMemo(
+    () => new Map(thicknesses.map((t) => [t.id || (t as any)._id, t.displayLabel || `${t.value} inch`])),
+    [thicknesses]
+  );
 
   const productLines: Array<{ id: string; name: string; brandId: string; categoryId: string }> = useMemo(() => {
     return (Array.isArray(backendProductLines) ? backendProductLines : (backendProductLines as any)?.data || []).map((pl: any) => ({
@@ -140,21 +185,6 @@ export default function ProductsTab({
       categoryId: String(pl.categoryId?._id || pl.categoryId || ''),
     }));
   }, [backendProductLines]);
-
-  // Fast lookups
-  const sizeMap = useMemo(() => new Map(sizes.map((s) => [s.id || (s as any)._id, s.displayLabel || s.name || '78 × 78'])), [sizes]);
-  const thicknessMap = useMemo(
-    () => new Map(thicknesses.map((t) => [t.id || (t as any)._id, t.displayLabel || `${t.value} inch`])),
-    [thicknesses]
-  );
-  const balanceMap = useMemo(() => {
-    const map = new Map<string, number>();
-    balances.forEach((b) => {
-      const current = map.get(b.sku.toUpperCase()) || 0;
-      map.set(b.sku.toUpperCase(), current + b.onHand);
-    });
-    return map;
-  }, [balances]);
 
   // Categories available based on brand filter
   const availableCategories = useMemo(() => {
@@ -170,60 +200,6 @@ export default function ProductsTab({
       return matchesBrand && matchesCategory;
     });
   }, [productLines, brandFilter, categoryFilter]);
-
-  // Filtered variants list (each row is a simple concrete product)
-  const filteredItems = useMemo(() => {
-    return variants.filter((item) => {
-      const q = searchQuery.toLowerCase().trim();
-      const brand = brands.find((b) => (b.id === item.brandId || (b as any)._id === item.brandId || b.name === item.brandName));
-      const cat = categories.find((c) => (c.id === item.categoryId || (c as any)._id === item.categoryId || c.name === item.categoryName));
-
-      const matchesSearch =
-        !q ||
-        item.sku.toLowerCase().includes(q) ||
-        (item.productName && item.productName.toLowerCase().includes(q)) ||
-        (item.brandName && item.brandName.toLowerCase().includes(q)) ||
-        (item.categoryName && item.categoryName.toLowerCase().includes(q)) ||
-        (item.productLineName && item.productLineName.toLowerCase().includes(q)) ||
-        (item.sizeLabel && item.sizeLabel.toLowerCase().includes(q));
-
-      const matchesBrand =
-        brandFilter === 'all' ||
-        item.brandId === brandFilter ||
-        (brand && (brand.id === brandFilter || (brand as any)._id === brandFilter)) ||
-        (item.brandName && item.brandName.toLowerCase().includes(brandFilter.toLowerCase()));
-
-      const matchesCategory =
-        categoryFilter === 'all' ||
-        item.categoryId === categoryFilter ||
-        (cat && (cat.id === categoryFilter || (cat as any)._id === categoryFilter)) ||
-        (item.categoryName && item.categoryName.toLowerCase().includes(categoryFilter.toLowerCase()));
-
-      const matchesProductLine =
-        productLineFilter === 'all' ||
-        item.productLineId === productLineFilter ||
-        item.productLineName?.toLowerCase() === productLineFilter.toLowerCase() ||
-        item.productName?.toLowerCase() === productLineFilter.toLowerCase();
-
-      const isItemActive = item.status === 'active' || item.status === 'ACTIVE';
-      const matchesStatus =
-        statusFilter === 'all' ||
-        (statusFilter === 'active' && isItemActive) ||
-        (statusFilter === 'inactive' && !isItemActive);
-
-      const matchesBranch =
-        branchFilter === 'all' ||
-        Boolean(effectiveBranchId) ||
-        (item as any).branchId === branchFilter ||
-        balanceMap.has(item.sku.toUpperCase());
-
-      return matchesSearch && matchesBrand && matchesCategory && matchesProductLine && matchesStatus && matchesBranch;
-    });
-  }, [variants, searchQuery, brandFilter, categoryFilter, productLineFilter, statusFilter, branchFilter, balanceMap, brands, categories]);
-
-  // Client-Side Pagination (Only renders when products > 10)
-  const { paginatedItems: paginatedProducts, PaginationComponent: ProductsPagination } =
-    useClientPagination(filteredItems, 10, 'products');
 
   const handleToggleStatus = async (item: ProductVariant) => {
     const isCurrentlyActive = item.status === 'active' || item.status === 'ACTIVE';
@@ -257,11 +233,16 @@ export default function ProductsTab({
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search product name, SKU or size..."
+              placeholder="Search product name, SKU, brand, category, or size..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand-blue focus:bg-white"
+              className="w-full pl-9 pr-9 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand-blue focus:bg-white"
             />
+            {isBackendFetching && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                <RotateCcw className="w-3.5 h-3.5 text-brand-blue animate-spin" />
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-3 flex-1">
             <select
@@ -303,7 +284,7 @@ export default function ProductsTab({
             >
               <option value="all">All Product Lines</option>
               {availableProductLines.map((pl) => (
-                <option key={pl.id} value={pl.name}>
+                <option key={pl.id} value={pl.id}>
                   {pl.name}
                 </option>
               ))}
@@ -317,6 +298,16 @@ export default function ProductsTab({
               <option value="all">All Status</option>
               <option value="active">Active Only</option>
               <option value="inactive">Inactive Only</option>
+            </select>
+
+            <select
+              value={stockFilter}
+              onChange={(e) => setStockFilter(e.target.value as 'all' | 'in_stock' | 'out_of_stock')}
+              className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Stock</option>
+              <option value="in_stock">In Stock</option>
+              <option value="out_of_stock">Out of Stock</option>
             </select>
 
             {isSuperAdmin && (
@@ -339,6 +330,7 @@ export default function ProductsTab({
               categoryFilter !== 'all' ||
               productLineFilter !== 'all' ||
               statusFilter !== 'all' ||
+              stockFilter !== 'all' ||
               (isSuperAdmin && branchFilter !== 'all')) && (
                 <button
                   onClick={() => {
@@ -347,6 +339,7 @@ export default function ProductsTab({
                     setCategoryFilter('all');
                     setProductLineFilter('all');
                     setStatusFilter('all');
+                    setStockFilter('all');
                     if (isSuperAdmin) setBranchFilter('all');
                   }}
                   className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
@@ -357,19 +350,6 @@ export default function ProductsTab({
               )}
           </div>
         </div>
-
-        {/* Global Add Product Button */}
-        {/* {canManage && (
-          <div className="flex items-center gap-2.5 shrink-0">
-            <Link
-              href="/products/new"
-              className="flex items-center gap-2 px-4 py-2 bg-brand-blue hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Product</span>
-            </Link>
-          </div>
-        )} */}
       </div>
 
       {/* Simplified Products Table */}
@@ -392,35 +372,35 @@ export default function ProductsTab({
             <tbody className="divide-y divide-gray-100 text-gray-700">
               {isLoading ? (
                 <tr>
-                  <td colSpan={9} className="py-10 text-center text-gray-400">
-                    Loading products...
+                  <td colSpan={9} className="py-12 text-center text-gray-400">
+                    <div className="flex items-center justify-center gap-2">
+                      <RotateCcw className="w-4 h-4 animate-spin text-brand-blue" />
+                      <span>Loading products catalogue...</span>
+                    </div>
                   </td>
                 </tr>
-              ) : filteredItems.length === 0 ? (
+              ) : variants.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-12 text-center">
                     <Package className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                     <p className="text-gray-600 font-semibold text-xs">No products found</p>
                     <p className="text-[11px] text-gray-400 mt-0.5">
-                      {searchQuery || brandFilter !== 'all'
-                        ? 'Try clearing search filters'
+                      {searchQuery || brandFilter !== 'all' || categoryFilter !== 'all'
+                        ? 'Try adjusting or clearing your search filters'
                         : 'Click "+ Add Product" to add your first product'}
                     </p>
                   </td>
                 </tr>
               ) : (
-                paginatedProducts.map((item, idx) => {
-                  const onHandStock =
-                    (item as any).stock !== undefined
-                      ? (item as any).stock
-                      : (balanceMap.get(item.sku.toUpperCase()) ?? 0);
+                variants.map((item, idx) => {
+                  const onHandStock = item.stock ?? 0;
                   const isActive = item.status === 'active' || item.status === 'ACTIVE';
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
                       {/* Index */}
                       <td className="py-3.5 px-3 text-center text-gray-400 font-mono">
-                        {idx + 1}
+                        {(page - 1) * pageSize + idx + 1}
                       </td>
 
                       {/* Product Details (Thumbnail + Title + SKU) */}
@@ -545,12 +525,25 @@ export default function ProductsTab({
           </table>
         </div>
 
-        {/* Pagination Controls (renders when products > 10) */}
-        {ProductsPagination || (
+        {/* Server-Side Pagination Controls */}
+        <Pagination
+          currentPage={page}
+          totalItems={totalItems}
+          pageSize={pageSize}
+          onPageChange={(newPage) => setPage(newPage)}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          }}
+          pageSizeOptions={[10, 25, 50, 100]}
+          itemName="products"
+        />
+
+        {totalItems <= 10 && (
           <div className="p-3.5 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
             <span>
-              Showing <strong className="text-gray-800">{filteredItems.length}</strong> of{' '}
-              <strong className="text-gray-800">{variants.length}</strong> products
+              Showing <strong className="text-gray-800">{variants.length}</strong> of{' '}
+              <strong className="text-gray-800">{totalItems}</strong> products
             </span>
             <span className="text-[11px] text-gray-400">
               Click &quot;Edit&quot; to modify specifications or prices

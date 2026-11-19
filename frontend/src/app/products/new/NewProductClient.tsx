@@ -391,6 +391,7 @@ function NewProductContent() {
             id: skuIdToUpdate,
             brandId: selectedBrandId,
             categoryId: selectedCategoryId,
+            productLineId: selectedProductLineId || undefined,
             sizeId: selectedSizeId,
             thicknessId: selectedThicknessId,
             listPrice,

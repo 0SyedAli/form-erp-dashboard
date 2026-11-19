@@ -27,6 +27,7 @@ interface ProductConfigModalProps {
   existingCartQuantity?: number;
   saleType?: SaleType;
   variantStockMap?: Record<string, number>;
+  searchQuery?: string;
 }
 
 interface UniqueSizeOption {
@@ -51,14 +52,20 @@ export default function ProductConfigModal({
   existingCartQuantity = 0,
   saleType = 'WALK_IN',
   variantStockMap,
+  searchQuery = '',
 }: ProductConfigModalProps) {
   // 1. Stock map for variants
   const stockMap = useMemo(() => {
     if (variantStockMap) return variantStockMap;
     const map: Record<string, number> = {};
     variants.forEach((v) => {
-      const balance = inventoryBalances.find((b) => b.variantId === v.id);
-      const stock = balance?.available ?? v.stock ?? (v as any).onHand ?? 0;
+      const balance = inventoryBalances.find((b) => b.variantId === v.id || b.sku === v.sku);
+      const stock =
+        balance?.available !== undefined && balance.available !== null
+          ? balance.available
+          : balance?.onHand !== undefined
+            ? balance.onHand
+            : v.stock ?? (v as any).onHand ?? 0;
       map[v.id] = Math.max(0, stock);
     });
     return map;
@@ -191,8 +198,20 @@ export default function ProductConfigModal({
   useEffect(() => {
     if (!isOpen || !product || availableSizes.length === 0) return;
 
-    // Prefer size that has stock > 0
-    let bestSize = availableSizes.find((s) => getSizeStock(s) > 0);
+    // Check if searchQuery mentions a specific size dimension (e.g. "72x42", "78x60")
+    let bestSize: UniqueSizeOption | undefined;
+    if (searchQuery) {
+      const normQuery = searchQuery.toLowerCase().replace(/(\d+)\s*[xX*×]\s*(\d+)/g, '$1x$2');
+      bestSize = availableSizes.find((s) => {
+        const dim = s.dimKey.toLowerCase();
+        return normQuery.includes(dim);
+      });
+    }
+
+    if (!bestSize) {
+      // Prefer size that has stock > 0
+      bestSize = availableSizes.find((s) => getSizeStock(s) > 0);
+    }
     if (!bestSize) {
       bestSize = availableSizes[0];
     }
@@ -202,17 +221,34 @@ export default function ProductConfigModal({
 
     if (bestSize) {
       const matchingVariants = productVariants.filter((v) =>
-        bestSize.sizeIds.includes(String(v.sizeId))
+        bestSize!.sizeIds.includes(String(v.sizeId))
       );
-      const inStockVar = matchingVariants.find((v) => (stockMap[v.id] || 0) > 0);
-      const chosenVar = inStockVar || matchingVariants[0];
+
+      // If searchQuery mentions a thickness number (e.g. 5, 6, 8, 4), match it
+      let chosenVar: ProductVariant | undefined;
+      if (searchQuery) {
+        const thickMatch = searchQuery.match(/\b([1-9]|1[0-2])(?:"|''|inch)?\b/);
+        if (thickMatch) {
+          const targetVal = Number(thickMatch[1]);
+          chosenVar = matchingVariants.find((v) => {
+            const th = activeThicknesses.find((t) => String(t.id) === String(v.thicknessId));
+            return th && th.value === targetVal;
+          });
+        }
+      }
+
+      if (!chosenVar) {
+        const inStockVar = matchingVariants.find((v) => (stockMap[v.id] || 0) > 0);
+        chosenVar = inStockVar || matchingVariants[0];
+      }
+
       if (chosenVar) {
         setSelectedThicknessId(String(chosenVar.thicknessId));
       }
     }
 
     setQuantity(1);
-  }, [isOpen, product, availableSizes, productVariants, stockMap, getSizeStock]);
+  }, [isOpen, product, availableSizes, productVariants, stockMap, getSizeStock, searchQuery, activeThicknesses]);
 
   // Handle Size change
   const handleSelectSize = (dimKey: string) => {

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import {
   CatalogueProduct,
@@ -208,69 +208,192 @@ export default function ProductGrid({
   sizes = [],
   thicknesses = [],
 }: ProductGridProps) {
+  // 1. Stock Filter state: defaults to 'IN_STOCK' as requested
+  const [stockFilter, setStockFilter] = useState<'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK'>('IN_STOCK');
+
   // Helper to determine starting price, stock, and matching size/thickness for a product
-  const getProductMetrics = (productId: string) => {
-    const productVariants = variants.filter(
-      (v) => v.productId === productId && v.status === 'ACTIVE'
-    );
-    if (productVariants.length === 0) {
-      return {
-        startingPrice: 0,
-        inStock: false,
-        totalAvailable: 0,
-      };
-    }
-
-    const getVariantPrice = (v: ProductVariant) => {
-      if (saleType === 'WHOLESALE') return v.wholesalePrice || 0;
-      if (saleType === 'DISTRIBUTOR') return v.distributorPrice || v.wholesalePrice || 0;
-      return v.walkInPrice || v.retailPrice || 0;
-    };
-
-    let targetVariants = productVariants;
-    if (selectedSizeId && selectedSizeId !== 'ALL') {
-      const filtered = targetVariants.filter((v) => v.sizeId === selectedSizeId);
-      if (filtered.length > 0) targetVariants = filtered;
-    }
-    if (selectedThicknessId && selectedThicknessId !== 'ALL') {
-      const filtered = targetVariants.filter((v) => v.thicknessId === selectedThicknessId);
-      if (filtered.length > 0) targetVariants = filtered;
-    }
-
-    const sorted = [...targetVariants].sort((a, b) => getVariantPrice(a) - getVariantPrice(b));
-    const representative = sorted.find((v) => getVariantPrice(v) > 0) || sorted[0] || productVariants[0];
-
-    const startingPrice = representative ? getVariantPrice(representative) : 0;
-
-    const variantIds = new Set(productVariants.map((v) => v.id));
-    const matchingBalances = inventoryBalances.filter((b) => variantIds.has(b.variantId));
-    let totalAvailable = 0;
-    if (matchingBalances.length > 0) {
-      totalAvailable = matchingBalances.reduce((sum, b) => sum + Math.max(0, b.available || 0), 0);
-    } else {
-      totalAvailable = productVariants.reduce(
-        (sum, v) => sum + Math.max(0, v.stock ?? (v as any).onHand ?? 0),
-        0
+  const getProductMetrics = useCallback(
+    (productId: string) => {
+      const productVariants = variants.filter(
+        (v) => v.productId === productId && v.status === 'ACTIVE'
       );
-    }
+      if (productVariants.length === 0) {
+        return {
+          startingPrice: 0,
+          inStock: false,
+          totalAvailable: 0,
+        };
+      }
 
+      const getVariantPrice = (v: ProductVariant) => {
+        if (saleType === 'WHOLESALE') return v.wholesalePrice || 0;
+        if (saleType === 'DISTRIBUTOR') return v.distributorPrice || v.wholesalePrice || 0;
+        return v.walkInPrice || v.retailPrice || 0;
+      };
+
+      let targetVariants = productVariants;
+      if (selectedSizeId && selectedSizeId !== 'ALL') {
+        const filtered = targetVariants.filter((v) => v.sizeId === selectedSizeId);
+        if (filtered.length > 0) targetVariants = filtered;
+      }
+      if (selectedThicknessId && selectedThicknessId !== 'ALL') {
+        const filtered = targetVariants.filter((v) => v.thicknessId === selectedThicknessId);
+        if (filtered.length > 0) targetVariants = filtered;
+      }
+
+      const sorted = [...targetVariants].sort((a, b) => getVariantPrice(a) - getVariantPrice(b));
+      const representative = sorted.find((v) => getVariantPrice(v) > 0) || sorted[0] || productVariants[0];
+
+      const startingPrice = representative ? getVariantPrice(representative) : 0;
+
+      const variantIds = new Set(productVariants.map((v) => v.id));
+      const variantSkus = new Set(productVariants.map((v) => v.sku));
+      const matchingBalances = inventoryBalances.filter(
+        (b) => variantIds.has(b.variantId) || variantSkus.has(b.sku)
+      );
+      let totalAvailable = 0;
+      if (matchingBalances.length > 0) {
+        for (const v of productVariants) {
+          const bal = matchingBalances.find((b) => b.variantId === v.id || b.sku === v.sku);
+          const qty = bal
+            ? (bal.available !== undefined && bal.available !== null ? bal.available : bal.onHand)
+            : (v.stock ?? (v as any).onHand ?? 0);
+          totalAvailable += Math.max(0, qty || 0);
+        }
+      } else {
+        totalAvailable = productVariants.reduce(
+          (sum, v) => sum + Math.max(0, v.stock ?? (v as any).onHand ?? 0),
+          0
+        );
+      }
+
+      return {
+        startingPrice,
+        inStock: totalAvailable > 0,
+        totalAvailable,
+      };
+    },
+    [variants, saleType, selectedSizeId, selectedThicknessId, inventoryBalances]
+  );
+
+  // 2. Precompute metrics map for all products in-memory (O(1) lookups)
+  const productMetricsMap = useMemo(() => {
+    const map = new Map<string, { startingPrice: number; inStock: boolean; totalAvailable: number }>();
+    for (const p of products) {
+      map.set(p.id, getProductMetrics(p.id));
+    }
+    return map;
+  }, [products, getProductMetrics]);
+
+  // 3. Tab counts (All, In Stock, Out of Stock)
+  const counts = useMemo(() => {
+    let inStock = 0;
+    let outOfStock = 0;
+    for (const p of products) {
+      const m = productMetricsMap.get(p.id);
+      if (m?.inStock) inStock++;
+      else outOfStock++;
+    }
     return {
-      startingPrice,
-      inStock: totalAvailable > 0,
-      totalAvailable,
+      all: products.length,
+      inStock,
+      outOfStock,
     };
-  };
+  }, [products, productMetricsMap]);
+
+  // 4. In-memory filtered products list based on active tab
+  const filteredProducts = useMemo(() => {
+    if (stockFilter === 'ALL') return products;
+    if (stockFilter === 'IN_STOCK') {
+      return products.filter((p) => productMetricsMap.get(p.id)?.inStock);
+    }
+    return products.filter((p) => !productMetricsMap.get(p.id)?.inStock);
+  }, [products, stockFilter, productMetricsMap]);
 
   return (
     <div className="flex-1 bg-white rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col p-4 overflow-hidden select-none">
-      {/* Header matching reference mockup */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0 mb-3.5">
+      {/* Header with Title on Left, and Tabs + Count on Right */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 shrink-0 mb-3.5 gap-2.5">
         <h2 className="text-base sm:text-lg font-bold text-slate-900 font-sans tracking-tight">
           {brandName} Products
         </h2>
-        <span className="text-xs text-slate-400 font-medium font-sans">
-          {products.length} Products
-        </span>
+
+        <div className="flex items-center gap-3">
+          {/* Stock Filter Segmented Control Tabs */}
+          <div className="inline-flex items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 shadow-2xs select-none">
+            {/* In Stock Tab (Default) */}
+            <button
+              type="button"
+              onClick={() => setStockFilter('IN_STOCK')}
+              className={`relative px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
+                stockFilter === 'IN_STOCK'
+                  ? 'bg-white text-emerald-800 shadow-xs ring-1 ring-emerald-500/20'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span>In Stock</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
+                  stockFilter === 'IN_STOCK'
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                    : 'bg-slate-200 text-slate-600'
+                }`}
+              >
+                {counts.inStock}
+              </span>
+            </button>
+
+            {/* Out of Stock Tab */}
+            <button
+              type="button"
+              onClick={() => setStockFilter('OUT_OF_STOCK')}
+              className={`relative px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
+                stockFilter === 'OUT_OF_STOCK'
+                  ? 'bg-white text-rose-800 shadow-xs ring-1 ring-rose-500/20'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+              <span>Out of Stock</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
+                  stockFilter === 'OUT_OF_STOCK'
+                    ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                    : 'bg-slate-200 text-slate-600'
+                }`}
+              >
+                {counts.outOfStock}
+              </span>
+            </button>
+
+            {/* All Products Tab */}
+            <button
+              type="button"
+              onClick={() => setStockFilter('ALL')}
+              className={`relative px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
+                stockFilter === 'ALL'
+                  ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-300'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+            >
+              <span>All</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
+                  stockFilter === 'ALL'
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-slate-200 text-slate-600'
+                }`}
+              >
+                {counts.all}
+              </span>
+            </button>
+          </div>
+
+          <span className="text-xs text-slate-400 font-medium font-sans shrink-0 hidden sm:inline-block">
+            {filteredProducts.length} Products
+          </span>
+        </div>
       </div>
 
       {/* Product Cards Grid */}
@@ -282,11 +405,34 @@ export default function ProductGrid({
             This branch does not have stock or catalogue products assigned yet. Use the <strong>Stock Branch</strong> switcher in the header to view or sell products from sister branches.
           </p>
         </div>
+      ) : filteredProducts.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 animate-in fade-in duration-200">
+          <Package className="w-10 h-10 text-slate-300 mb-2" />
+          <p className="text-sm font-bold text-slate-700 font-sans">
+            {stockFilter === 'IN_STOCK'
+              ? 'No In-Stock Products Available'
+              : 'No Out-of-Stock Products Found'}
+          </p>
+          <p className="text-xs text-slate-400 mt-1 max-w-sm">
+            {stockFilter === 'IN_STOCK'
+              ? `All ${counts.all} items in this catalogue are currently out of stock at this branch.`
+              : 'All products currently have inventory on hand.'}
+          </p>
+          {counts.all > 0 && (
+            <button
+              type="button"
+              onClick={() => setStockFilter('ALL')}
+              className="mt-3 px-3.5 py-1.5 bg-white border border-slate-300 hover:border-slate-400 text-slate-700 text-xs font-bold rounded-xl shadow-2xs transition-all cursor-pointer"
+            >
+              Show All Products ({counts.all})
+            </button>
+          )}
+        </div>
       ) : (
         <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {products.map((product, idx) => {
-              const { startingPrice, inStock, totalAvailable } = getProductMetrics(product.id);
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 animate-in fade-in duration-200">
+            {filteredProducts.map((product, idx) => {
+              const { startingPrice, inStock, totalAvailable } = productMetricsMap.get(product.id) || getProductMetrics(product.id);
               const isSelected = selectedProductId === product.id;
               // { console.log(product?.category?.name) }
               return (
@@ -347,10 +493,10 @@ export default function ProductGrid({
                       <div className="flex items-baseline gap-1">
                         {startingPrice > 0 ? (
                           <div className="flex items-baseline gap-1 font-sans">
-                            <span className="text-xs font-bold text-slate-900">Rs.</span>
-                            {/* <span className="text-lg font-black text-slate-900 tracking-tight">
+                            <span className="text-xs font-semibold text-slate-500">Rs.</span>
+                            <span className="text-sm font-bold text-slate-900 tracking-tight">
                               {startingPrice.toLocaleString()}
-                            </span> */}
+                            </span>
                           </div>
                         ) : (
                           <span className="text-xs font-medium text-amber-600 flex items-center gap-1">

@@ -45,14 +45,15 @@ function ProductsPageContent() {
   );
   const { data: backendSkusData } = useGetBackendSkusQuery({
     status: 'ALL',
+    limit: 1,
     ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
   });
 
   const totalProducts = backendProductsData?.pagination?.total ?? demoProducts.length;
   const totalVariants = backendSkusData?.pagination?.total ?? demoVariants.length;
-  const activeVariantsCount = backendSkusData?.data
+  const activeVariantsCount = (backendSkusData as any)?.counts?.active ?? (backendSkusData?.data
     ? backendSkusData.data.filter((v) => v.status === 'ACTIVE').length
-    : demoVariants.filter((v) => v.status === 'active' || v.status === 'ACTIVE').length;
+    : demoVariants.filter((v) => v.status === 'active' || v.status === 'ACTIVE').length);
 
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({

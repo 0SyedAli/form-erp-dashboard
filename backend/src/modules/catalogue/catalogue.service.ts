@@ -1141,37 +1141,144 @@ export class CatalogueService {
   // ==========================================
 
   public static async getSkus(
-    query: { search?: string; productId?: string; status?: string; branchId?: string },
+    query: {
+      search?: string;
+      productId?: string;
+      brandId?: string;
+      categoryId?: string;
+      productLineId?: string;
+      status?: string;
+      stockStatus?: string;
+      branchId?: string;
+      page?: number;
+      limit?: number;
+      all?: boolean;
+    },
     isSuperAdmin = false
   ) {
-    const filter: any = {};
-    if (query.productId) filter.productId = query.productId;
+    const andConditions: any[] = [];
+
+    if (query.productId) {
+      andConditions.push({ productId: query.productId });
+    }
+
     if (isSuperAdmin) {
-      if (query.status && query.status !== 'ALL') filter.status = query.status;
+      if (query.status && query.status !== 'ALL') {
+        andConditions.push({ status: query.status });
+      }
     } else {
       // Non-admin branch accounts are strictly restricted to ACTIVE catalogue records
-      filter.status = 'ACTIVE';
-    }
-    if (query.search) {
-      filter.sku = { $regex: query.search, $options: 'i' };
+      andConditions.push({ status: 'ACTIVE' });
     }
 
     if (query.branchId) {
-      const branchProducts = await Product.find({ branchId: query.branchId }).select('_id');
+      const branchProducts = await Product.find({ branchId: query.branchId }).select('_id').lean();
       const branchProductIds = branchProducts.map((p) => p._id);
 
-      const branchStock = await StockBalance.find({ branchId: query.branchId }).select('variantId sku');
+      const branchStock = await StockBalance.find({ branchId: query.branchId }).select('variantId sku').lean();
       const stockedVariantIds = branchStock.map((s) => s.variantId).filter(Boolean);
       const stockedSkus = branchStock.map((s) => s.sku).filter(Boolean);
 
-      filter.$or = [
-        { productId: { $in: branchProductIds } },
-        { _id: { $in: stockedVariantIds } },
-        { sku: { $in: stockedSkus } },
-      ];
+      andConditions.push({
+        $or: [
+          { productId: { $in: branchProductIds } },
+          { _id: { $in: stockedVariantIds } },
+          { sku: { $in: stockedSkus } },
+        ],
+      });
     }
 
-    const variants = await Variant.find(filter)
+    // Direct Brand / Category / ProductLine filters
+    if (query.brandId || query.categoryId || query.productLineId) {
+      const prodQuery: any = {};
+      if (query.brandId) prodQuery.brandId = query.brandId;
+      if (query.categoryId) prodQuery.categoryId = query.categoryId;
+      if (query.productLineId) prodQuery.productLineId = query.productLineId;
+
+      const matchingProductDocs = await Product.find(prodQuery).select('_id').lean();
+      const pIds = matchingProductDocs.map((p) => p._id);
+      andConditions.push({ productId: { $in: pIds } });
+    }
+
+    // Multi-dimensional Fast Search Engine (SKU, Product, Brand, Category, Size, Thickness)
+    if (query.search && query.search.trim()) {
+      const rawTerm = query.search.trim();
+      const escapedTerm = rawTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escapedTerm, 'i');
+
+      const [mBrands, mCategories, mLines, mSizes, mThicknesses] = await Promise.all([
+        Brand.find({ name: regex }).select('_id').lean(),
+        Category.find({ name: regex }).select('_id').lean(),
+        ProductLine.find({ name: regex }).select('_id').lean(),
+        Size.find({ displayLabel: regex }).select('_id').lean(),
+        Thickness.find({ displayLabel: regex }).select('_id').lean(),
+      ]);
+
+      const mProductFilter: any = {
+        $or: [
+          { name: regex },
+          ...(mBrands.length > 0 ? [{ brandId: { $in: mBrands.map((b) => b._id) } }] : []),
+          ...(mCategories.length > 0 ? [{ categoryId: { $in: mCategories.map((c) => c._id) } }] : []),
+          ...(mLines.length > 0 ? [{ productLineId: { $in: mLines.map((l) => l._id) } }] : []),
+        ],
+      };
+      const mProducts = await Product.find(mProductFilter).select('_id').lean();
+
+      const searchOrClauses: any[] = [
+        { sku: regex },
+        { posDisplayName: regex },
+      ];
+
+      if (mProducts.length > 0) {
+        searchOrClauses.push({ productId: { $in: mProducts.map((p) => p._id) } });
+      }
+      if (mSizes.length > 0) {
+        searchOrClauses.push({ sizeId: { $in: mSizes.map((s) => s._id) } });
+      }
+      if (mThicknesses.length > 0) {
+        searchOrClauses.push({ thicknessId: { $in: mThicknesses.map((t) => t._id) } });
+      }
+
+      andConditions.push({ $or: searchOrClauses });
+    }
+
+    // Stock Status filter ('IN_STOCK' or 'OUT_OF_STOCK')
+    if (query.stockStatus === 'IN_STOCK' || query.stockStatus === 'in_stock') {
+      const stockCriteria: any = { onHand: { $gt: 0 } };
+      if (query.branchId) stockCriteria.branchId = query.branchId;
+      const inStockBalances = await StockBalance.find(stockCriteria).select('variantId sku').lean();
+      const inStockVariantIds = inStockBalances.map((s) => s.variantId).filter(Boolean);
+      const inStockSkus = inStockBalances.map((s) => s.sku).filter(Boolean);
+
+      andConditions.push({
+        $or: [
+          { _id: { $in: inStockVariantIds } },
+          { sku: { $in: inStockSkus } },
+        ],
+      });
+    } else if (query.stockStatus === 'OUT_OF_STOCK' || query.stockStatus === 'out_of_stock') {
+      const stockCriteria: any = { onHand: { $gt: 0 } };
+      if (query.branchId) stockCriteria.branchId = query.branchId;
+      const inStockBalances = await StockBalance.find(stockCriteria).select('variantId sku').lean();
+      const inStockVariantIds = inStockBalances.map((s) => s.variantId).filter(Boolean);
+      const inStockSkus = inStockBalances.map((s) => s.sku).filter(Boolean);
+
+      andConditions.push({
+        _id: { $nin: inStockVariantIds },
+        sku: { $nin: inStockSkus },
+      });
+    }
+
+    const filter: any = andConditions.length > 0 ? { $and: andConditions } : {};
+
+    // 1. Total matching count for pagination
+    const total = await Variant.countDocuments(filter);
+
+    // 2. Active count for high-level counter displays
+    const activeCount = await Variant.countDocuments({ ...filter, status: 'ACTIVE' });
+
+    // 3. Paginated Query Builder
+    let queryBuilder = Variant.find(filter)
       .populate({
         path: 'productId',
         populate: [
@@ -1184,22 +1291,36 @@ export class CatalogueService {
       .populate('thicknessId', 'value displayLabel')
       .sort({ sku: 1 });
 
-    const variantIds = variants.map((v) => v._id);
+    const page = Math.max(1, query.page || 1);
+    const isPaginated = Boolean(query.page || (query.limit && query.limit > 0));
+    const isFetchAll = query.all === true || query.limit === -1 || query.limit === 0 || !isPaginated;
+    const limit = isFetchAll ? 0 : (query.limit && query.limit > 0 ? query.limit : 25);
+
+    if (limit > 0) {
+      const skip = (page - 1) * limit;
+      queryBuilder = queryBuilder.skip(skip).limit(limit);
+    }
+
+    const variants = await queryBuilder.lean();
+
+    // 4. Stock balances only for the returned slice of items
+    const variantIds = variants.map((v: any) => v._id);
+    const variantSkus = variants.map((v: any) => v.sku);
     const stockQuery: any = {
-      $or: [{ variantId: { $in: variantIds } }, { sku: { $in: variants.map((v) => v.sku) } }],
+      $or: [{ variantId: { $in: variantIds } }, { sku: { $in: variantSkus } }],
     };
     if (query.branchId) {
       stockQuery.branchId = query.branchId;
     }
-    const stockBalances = await StockBalance.find(stockQuery);
+    const stockBalances = await StockBalance.find(stockQuery).lean();
     const stockMap = new Map<string, { onHand: number; reorderLevel: number }>();
-    stockBalances.forEach((sb) => {
+    stockBalances.forEach((sb: any) => {
       const existing = stockMap.get(sb.sku) || { onHand: 0, reorderLevel: sb.reorderLevel ?? 5 };
       existing.onHand += sb.onHand || 0;
       stockMap.set(sb.sku, existing);
     });
 
-    return variants.map((v: any) => {
+    const items = variants.map((v: any) => {
       const stockInfo = stockMap.get(v.sku) || { onHand: 0, reorderLevel: 5 };
       const p = v.productId;
       const pId = p?._id ? p._id.toString() : p?.toString() || '';
@@ -1215,6 +1336,7 @@ export class CatalogueService {
       const baseObj: any = {
         id: v._id.toString(),
         sku: v.sku,
+        posDisplayName: v.posDisplayName || '',
         productName: p?.name || 'Mattress',
         productId: pId,
         brandId: bId,
@@ -1247,6 +1369,21 @@ export class CatalogueService {
 
       return baseObj;
     });
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit: limit > 0 ? limit : total,
+        total,
+        totalPages: limit > 0 ? (Math.ceil(total / limit) || 1) : 1,
+      },
+      counts: {
+        total,
+        active: activeCount,
+        inactive: Math.max(0, total - activeCount),
+      },
+    };
   }
 
   public static async getSkuById(id: string, isSuperAdmin = false) {
@@ -1320,6 +1457,7 @@ export class CatalogueService {
         populate: [
           { path: 'brandId' },
           { path: 'categoryId' },
+          { path: 'productLineId' },
         ],
       },
       'sizeId',
@@ -1345,6 +1483,7 @@ export class CatalogueService {
     const currentProd = variant.productId as any;
     const currentBrand = currentProd?.brandId;
     const currentCat = currentProd?.categoryId;
+    const currentLine = currentProd?.productLineId;
     const currentSize = variant.sizeId as any;
     const currentThick = variant.thicknessId as any;
 
@@ -1354,6 +1493,9 @@ export class CatalogueService {
     const category = input.categoryId
       ? await resolveEntity(Category, input.categoryId)
       : currentCat;
+    const productLine = input.productLineId
+      ? await resolveEntity(ProductLine, input.productLineId)
+      : (currentLine?._id ? currentLine : (currentLine ? await resolveEntity(ProductLine, currentLine.toString()) : null));
     const size = input.sizeId
       ? await resolveEntity(Size, input.sizeId)
       : currentSize;
@@ -1381,21 +1523,55 @@ export class CatalogueService {
       throw new AppError('Thickness not found or inactive.', 400, 'INVALID_THICKNESS');
     }
 
-    // Find or create base product
-    const productName = `${brand.name} - ${category.name}`;
-    let product = await Product.findOne({
-      brandId: brand._id,
-      categoryId: category._id,
-    });
-    if (!product) {
-      product = await Product.create({
+    // Preserve product identity: do NOT reassign to an arbitrary product if hierarchy is unchanged
+    let product: any = null;
+    const currentBrandIdStr = (currentBrand?._id || currentBrand)?.toString();
+    const currentCatIdStr = (currentCat?._id || currentCat)?.toString();
+    const currentLineIdStr = (currentLine?._id || currentLine)?.toString();
+
+    const targetBrandIdStr = brand?._id?.toString();
+    const targetCatIdStr = category?._id?.toString();
+    const targetLineIdStr = productLine?._id?.toString();
+
+    const isProductHierarchySame =
+      currentProd &&
+      currentBrandIdStr === targetBrandIdStr &&
+      currentCatIdStr === targetCatIdStr &&
+      (!targetLineIdStr || currentLineIdStr === targetLineIdStr);
+
+    if (isProductHierarchySame) {
+      product = currentProd;
+      if (productLine && !currentProd.productLineId) {
+        product.productLineId = productLine._id;
+        await product.save();
+      }
+    } else {
+      const prodQuery: any = {
         brandId: brand._id,
         categoryId: category._id,
-        name: productName,
-        imageUrl: input.imageUrl?.trim() || '',
-        status: 'ACTIVE',
-      });
-    } else if (input.imageUrl && input.imageUrl.trim()) {
+      };
+      if (productLine) {
+        prodQuery.productLineId = productLine._id;
+      }
+      if (currentProd?.branchId) {
+        prodQuery.branchId = currentProd.branchId;
+      }
+      product = await Product.findOne(prodQuery);
+      if (!product) {
+        const lineSuffix = productLine?.name ? ` - ${productLine.name}` : '';
+        product = await Product.create({
+          brandId: brand._id,
+          categoryId: category._id,
+          ...(productLine ? { productLineId: productLine._id } : {}),
+          ...(currentProd?.branchId ? { branchId: currentProd.branchId } : {}),
+          name: `${brand.name} - ${category.name}${lineSuffix}`,
+          imageUrl: input.imageUrl?.trim() || '',
+          status: 'ACTIVE',
+        });
+      }
+    }
+
+    if (input.imageUrl && input.imageUrl.trim() && product) {
       product.imageUrl = input.imageUrl.trim();
       await product.save();
     }
@@ -1404,30 +1580,55 @@ export class CatalogueService {
     variant.sizeId = size._id;
     variant.thicknessId = thickness._id;
 
-    // Check SKU
-    const newSku = generateSkuCode(brand.code, category.code, size.displayLabel, thickness.value);
-    const oldSku = variant.sku;
+    // Check for duplicate variant under the target product
+    const duplicateVariant = await Variant.findOne({
+      _id: { $ne: variant._id },
+      productId: product._id,
+      sizeId: size._id,
+      thicknessId: thickness._id,
+    });
+    if (duplicateVariant) {
+      throw new AppError(
+        `A variant with size '${size.displayLabel}' and thickness '${thickness.displayLabel || thickness.value}' already exists for product '${product.name}' (SKU: ${duplicateVariant.sku}).`,
+        409,
+        'DUPLICATE_VARIANT'
+      );
+    }
 
-    if (newSku !== oldSku) {
-      const duplicate = await Variant.findOne({ sku: newSku, _id: { $ne: variant._id } });
-      if (duplicate) {
-        throw new AppError(
-          `A mattress variant with SKU '${newSku}' already exists.`,
-          409,
-          'DUPLICATE_SKU'
+    // Check if specifications actually changed before mutating SKU
+    const isSpecChanged =
+      (input.brandId && input.brandId !== currentBrandIdStr) ||
+      (input.categoryId && input.categoryId !== currentCatIdStr) ||
+      (input.productLineId && input.productLineId !== currentLineIdStr) ||
+      (input.sizeId && input.sizeId !== currentSize?._id?.toString()) ||
+      (input.thicknessId && input.thicknessId !== currentThick?._id?.toString());
+
+    if (isSpecChanged) {
+      const plCode = productLine?.code || (productLine?.name ? productLine.name.slice(0, 4) : undefined);
+      const newSku = generateSkuCode(brand.code, category.code, size.displayLabel, thickness.value, plCode);
+      const oldSku = variant.sku;
+
+      if (newSku !== oldSku) {
+        const duplicate = await Variant.findOne({ sku: newSku, _id: { $ne: variant._id } });
+        if (duplicate) {
+          throw new AppError(
+            `A mattress variant with SKU '${newSku}' already exists.`,
+            409,
+            'DUPLICATE_SKU'
+          );
+        }
+        variant.sku = newSku;
+
+        // Update associated stock records
+        await StockBalance.updateMany(
+          { $or: [{ variantId: variant._id }, { sku: oldSku }] },
+          { $set: { sku: newSku, variantId: variant._id } }
+        );
+        await StockMovement.updateMany(
+          { sku: oldSku },
+          { $set: { sku: newSku } }
         );
       }
-      variant.sku = newSku;
-
-      // Update associated stock records
-      await StockBalance.updateMany(
-        { $or: [{ variantId: variant._id }, { sku: oldSku }] },
-        { $set: { sku: newSku, variantId: variant._id } }
-      );
-      await StockMovement.updateMany(
-        { sku: oldSku },
-        { $set: { sku: newSku } }
-      );
     }
 
     if (input.status) {
@@ -1569,34 +1770,45 @@ export class CatalogueService {
         (await StockBalance.findOne({ variantId: variant._id })) ||
         (await StockBalance.findOne({ sku: variant.sku }));
 
-      if (!stockDoc) {
-        const branchAndLoc = await this.resolvePrimaryBranchAndLocation();
-        if (branchAndLoc) {
-          stockDoc = await StockBalance.create({
-            branchId: branchAndLoc.branch._id,
-            stockLocationId: branchAndLoc.location._id,
-            sku: variant.sku,
-            variantId: variant._id,
-            onHand: 0,
-            reserved: 0,
-            reorderLevel: 5,
-          });
-        }
+      const branchAndLoc = await this.resolvePrimaryBranchAndLocation();
+
+      if (!stockDoc && branchAndLoc) {
+        stockDoc = await StockBalance.create({
+          branchId: branchAndLoc.branch._id,
+          stockLocationId: branchAndLoc.location._id,
+          sku: variant.sku,
+          variantId: variant._id,
+          onHand: 0,
+          reserved: 0,
+          reorderLevel: 5,
+        });
       }
 
       if (stockDoc) {
         if (!stockDoc.variantId) {
           stockDoc.variantId = variant._id;
         }
+
+        // Auto-heal missing stockLocationId or branchId so location error never happens
+        if (!stockDoc.stockLocationId && branchAndLoc?.location) {
+          stockDoc.stockLocationId = branchAndLoc.location._id;
+        }
+        if (!stockDoc.branchId && branchAndLoc?.branch) {
+          stockDoc.branchId = branchAndLoc.branch._id;
+        }
+
+        const effectiveLocId = stockDoc.stockLocationId || branchAndLoc?.location?._id;
+        const effectiveBranchId = stockDoc.branchId || branchAndLoc?.branch?._id;
+
         if (input.stock !== undefined) {
           const oldOnHand = stockDoc.onHand || 0;
           const newOnHand = Math.max(0, input.stock);
-          if (oldOnHand !== newOnHand) {
+          if (oldOnHand !== newOnHand && effectiveLocId && effectiveBranchId) {
             stockDoc.onHand = newOnHand;
             await StockMovement.create({
               movementNumber: `MOV-EDIT-${variant.sku}-${Date.now().toString().slice(-6)}`,
-              branchId: stockDoc.branchId,
-              stockLocationId: stockDoc.stockLocationId,
+              branchId: effectiveBranchId,
+              stockLocationId: effectiveLocId,
               sku: variant.sku,
               movementType: 'ADMINISTRATIVE_ADJUSTMENT',
               quantityDifference: newOnHand - oldOnHand,
@@ -1616,7 +1828,18 @@ export class CatalogueService {
       }
     }
 
-    await variant.save();
+    try {
+      await variant.save();
+    } catch (saveErr: any) {
+      if (saveErr?.code === 11000) {
+        throw new AppError(
+          `A variant with these specifications or SKU already exists in this product catalogue.`,
+          409,
+          'DUPLICATE_VARIANT'
+        );
+      }
+      throw saveErr;
+    }
 
     if (auditHistoryRecords.length > 0) {
       await PriceHistory.insertMany(auditHistoryRecords);
@@ -1694,11 +1917,13 @@ export class CatalogueService {
 
   public static async importCatalogueFromRows(
     rows: any[],
-    callerBranchId?: string
+    callerBranchId?: string,
+    options?: { updateDuplicates?: boolean }
   ): Promise<{
     totalRows: number;
     successCount: number;
     duplicateCount: number;
+    updatedCount: number;
     duplicates: Array<{
       itemNo: string;
       posDisplayName: string;
@@ -1710,6 +1935,7 @@ export class CatalogueService {
       reason: string;
     }>;
     created: Array<any>;
+    updated: Array<any>;
   }> {
     if (!Array.isArray(rows) || rows.length === 0) {
       throw new AppError('No rows provided for import.', 400, 'EMPTY_IMPORT_DATA');
@@ -1742,6 +1968,18 @@ export class CatalogueService {
       }
     }
 
+    // Pre-load all catalogue metadata in parallel (1 single fast fetch)
+    const [allBrands, allCategories, allLines, allProducts, allSizes, allThicks, allVariants, allBalances] = await Promise.all([
+      Brand.find({}).lean(),
+      Category.find({}).lean(),
+      ProductLine.find({}).lean(),
+      Product.find({}).lean(),
+      Size.find({}).lean(),
+      Thickness.find({}).lean(),
+      Variant.find({}).select('_id productId sizeId thicknessId sku listPrice retailPrice wholesalePrice distributorPrice notes minStock posDisplayName').lean(),
+      targetBranch ? StockBalance.find({ branchId: targetBranch._id }).lean() : Promise.resolve([]),
+    ]);
+
     const brandsCache = new Map<string, any>();
     const categoriesCache = new Map<string, any>();
     const productLinesCache = new Map<string, any>();
@@ -1749,9 +1987,64 @@ export class CatalogueService {
     const sizesCache = new Map<string, any>();
     const thicknessesCache = new Map<string, any>();
 
+    // Seed caches from DB
+    for (const b of allBrands) {
+      brandsCache.set(b.name.toLowerCase(), b);
+      if (b.code) brandsCache.set(b.code.toLowerCase(), b);
+    }
+    for (const c of allCategories) {
+      categoriesCache.set(`${c.brandId.toString()}::${c.name.toLowerCase()}`, c);
+    }
+    for (const pl of allLines) {
+      productLinesCache.set(`${pl.brandId.toString()}::${pl.categoryId.toString()}::${pl.name.toLowerCase()}`, pl);
+      productLinesCache.set(pl.code.toUpperCase(), pl);
+    }
+    for (const p of allProducts) {
+      const plId = p.productLineId ? p.productLineId.toString() : '';
+      productsCache.set(`${p.brandId.toString()}::${p.categoryId.toString()}::${plId}`, p);
+    }
+    for (const s of allSizes) {
+      sizesCache.set(`${s.length}x${s.width}_${(s.displayLabel || '').toLowerCase()}`, s);
+      sizesCache.set(`${s.length}x${s.width}`, s);
+    }
+    for (const t of allThicks) {
+      thicknessesCache.set(`${t.value}`, t);
+    }
+
+    // Existing variants index by productId + sizeId + thicknessId
+    const existingVariantMap = new Map<string, any>();
+    const existingSkuSet = new Set<string>();
+
+    for (const v of allVariants) {
+      if (v.productId && v.sizeId && v.thicknessId) {
+        existingVariantMap.set(`${v.productId.toString()}::${v.sizeId.toString()}::${v.thicknessId.toString()}`, v);
+      }
+      if (v.sku) existingSkuSet.add(v.sku.toUpperCase());
+    }
+
+    // Existing balance index by variantId and sku
+    const existingBalanceMap = new Map<string, any>();
+    for (const b of allBalances) {
+      if (b.variantId) existingBalanceMap.set(b.variantId.toString(), b);
+      if (b.sku) existingBalanceMap.set(b.sku.toUpperCase(), b);
+    }
+
+    // Bulk collection buffers for high-speed batch operations
+    const variantsToInsert: any[] = [];
+    const priceHistoriesToInsert: any[] = [];
+    const stockBalancesToInsert: any[] = [];
+    const stockMovementsToInsert: any[] = [];
+
+    const variantBulkUpdates: any[] = [];
+    const balanceBulkOps: any[] = [];
+    const syncPriceHistories: any[] = [];
+    const syncStockMovements: any[] = [];
+
     const duplicates: Array<any> = [];
     const created: Array<any> = [];
+    const updated: Array<any> = [];
     const seenInFile = new Set<string>();
+    const now = new Date();
 
     const getCol = (row: any, ...keys: string[]): string => {
       for (const k of keys) {
@@ -1937,52 +2230,178 @@ export class CatalogueService {
         productsCache.set(prodKey, product);
       }
 
-      // 5. Resolve Size
-      const sizeKey = `${length}x${width}_${displayLabel.toLowerCase()}`;
+      // 5. Resolve Size (with smart fallback and race-safe catch)
+      const targetLength = length > 0 ? length : 78;
+      const targetWidth = width > 0 ? width : 72;
+      const sizeKey = `${targetLength}x${targetWidth}_${displayLabel.toLowerCase()}`;
       let size = sizesCache.get(sizeKey);
       if (!size) {
         size = await Size.findOne({
           $or: [
-            { length, width },
+            { length: targetLength, width: targetWidth },
             { displayLabel: { $regex: new RegExp(`^${displayLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
           ],
         });
         if (!size) {
-          size = await Size.create({
-            length: length > 0 ? length : 78,
-            width: width > 0 ? width : 72,
-            unit: 'in',
-            displayLabel,
-            status: 'ACTIVE',
-          });
+          try {
+            size = await Size.create({
+              length: targetLength,
+              width: targetWidth,
+              unit: 'in',
+              displayLabel,
+              status: 'ACTIVE',
+            });
+          } catch {
+            size = await Size.findOne({
+              $or: [
+                { length: targetLength, width: targetWidth },
+                { displayLabel },
+              ],
+            });
+            if (!size) size = await Size.findOne({});
+          }
         }
-        sizesCache.set(sizeKey, size);
+        if (size) sizesCache.set(sizeKey, size);
       }
 
-      // 6. Resolve Thickness
-      const thickKey = `${height}`;
+      // 6. Resolve Thickness (pehle targetHeight nikalenge taake value: 4 search ho aur duplicate error na aaye)
+      const targetHeight = height > 0 ? height : 4;
+      const thickKey = `${targetHeight}`;
       let thickness = thicknessesCache.get(thickKey);
       if (!thickness) {
-        thickness = await Thickness.findOne({ value: height });
+        thickness = await Thickness.findOne({ value: targetHeight });
         if (!thickness) {
-          thickness = await Thickness.create({
-            value: height > 0 ? height : 4,
-            unit: 'in',
-            displayLabel: `${height > 0 ? height : 4}"`,
-            status: 'ACTIVE',
-          });
+          try {
+            thickness = await Thickness.create({
+              value: targetHeight,
+              unit: 'in',
+              displayLabel: `${targetHeight}"`,
+              status: 'ACTIVE',
+            });
+          } catch {
+            thickness = await Thickness.findOne({ value: targetHeight });
+            if (!thickness) thickness = await Thickness.findOne({});
+          }
         }
-        thicknessesCache.set(thickKey, thickness);
+        if (thickness) thicknessesCache.set(thickKey, thickness);
       }
 
-      // 7. Check Database Duplicate (Compound Unique Index: productId + sizeId + thicknessId)
-      const existingVariant = await Variant.findOne({
-        productId: product._id,
-        sizeId: size._id,
-        thicknessId: thickness._id,
-      });
+      // 7. Instant In-Memory Duplicate Check (O(1))
+      const varKey = `${product._id.toString()}::${size._id.toString()}::${thickness._id.toString()}`;
+      const existingVariant = existingVariantMap.get(varKey);
 
       if (existingVariant) {
+        if (options?.updateDuplicates) {
+          const pricePaisa = toPaisa(listPrice);
+          const varId = existingVariant._id;
+
+          // Queue variant price & detail update
+          variantBulkUpdates.push({
+            updateOne: {
+              filter: { _id: varId },
+              update: {
+                $set: {
+                  listPrice: pricePaisa,
+                  purchasePrice: pricePaisa,
+                  retailPrice: pricePaisa,
+                  wholesalePrice: pricePaisa,
+                  distributorPrice: pricePaisa,
+                  ...(posDisplayNameRaw ? { posDisplayName } : {}),
+                  ...(notes ? { notes } : {}),
+                  minStock,
+                },
+              },
+            },
+          });
+
+          // Queue Price History
+          syncPriceHistories.push({
+            variantId: varId,
+            sku: existingVariant.sku,
+            tier: 'RETAIL',
+            previousPrice: existingVariant.retailPrice || 0,
+            newPrice: pricePaisa,
+            reason: 'EXCEL_CATALOGUE_SYNC',
+            createdAt: now,
+            updatedAt: now,
+          });
+
+          // Stock balance handling
+          if (targetBranch && targetLocation) {
+            const existingBal =
+              existingBalanceMap.get(varId.toString()) ||
+              existingBalanceMap.get((existingVariant.sku || '').toUpperCase());
+
+            const prevOnHand = existingBal ? (existingBal.onHand || 0) : 0;
+
+            if (existingBal) {
+              balanceBulkOps.push({
+                updateOne: {
+                  filter: { _id: existingBal._id },
+                  update: {
+                    $set: {
+                      onHand: currentStock,
+                      reorderLevel: minStock,
+                      stockLocationId: existingBal.stockLocationId || targetLocation._id,
+                    },
+                  },
+                },
+              });
+              existingBal.onHand = currentStock;
+            } else {
+              const newBalId = new mongoose.Types.ObjectId();
+              const newBalDoc = {
+                _id: newBalId,
+                branchId: targetBranch._id,
+                stockLocationId: targetLocation._id,
+                variantId: varId,
+                sku: existingVariant.sku,
+                onHand: currentStock,
+                reserved: 0,
+                reorderLevel: minStock,
+                createdAt: now,
+                updatedAt: now,
+              };
+              balanceBulkOps.push({ insertOne: { document: newBalDoc } });
+              existingBalanceMap.set(varId.toString(), newBalDoc);
+              existingBalanceMap.set((existingVariant.sku || '').toUpperCase(), newBalDoc);
+            }
+
+            if (currentStock !== prevOnHand) {
+              syncStockMovements.push({
+                movementNumber: `MOV-SYNC-${existingVariant.sku}-${Date.now().toString().slice(-6)}-${updated.length + 1}`,
+                branchId: targetBranch._id,
+                stockLocationId: targetLocation._id,
+                sku: existingVariant.sku,
+                movementType: 'ADMINISTRATIVE_ADJUSTMENT',
+                quantityDifference: currentStock - prevOnHand,
+                previousBalance: prevOnHand,
+                newBalance: currentStock,
+                referenceType: 'EXCEL_SYNC',
+                reason: `Excel catalogue sync stock update (${itemNo})`,
+                performedBy: 'System',
+                timestamp: now,
+                createdAt: now,
+                updatedAt: now,
+              });
+            }
+          }
+
+          updated.push({
+            itemNo,
+            sku: existingVariant.sku,
+            posDisplayName,
+            brand: brandName,
+            category: categoryName,
+            productLine: productLineName,
+            size: displayLabel,
+            height: targetHeight,
+            price: listPrice,
+            stock: currentStock,
+          });
+          continue;
+        }
+
         duplicates.push({
           itemNo,
           posDisplayName,
@@ -1990,24 +2409,27 @@ export class CatalogueService {
           category: categoryName,
           productLine: productLineName,
           size: displayLabel,
-          height,
+          height: targetHeight,
           reason: `Already exists in database (SKU: ${existingVariant.sku})`,
         });
         continue;
       }
 
-      // 8. Generate SKU
+      // 8. Generate Unique SKU (Instant in-memory uniqueness verification)
       const baseSku = generateSkuCode(brand.code, category.code, size.displayLabel, thickness.value, productLine.code);
       let uniqueSku = baseSku;
       let skuSuffix = 1;
-      while (await Variant.findOne({ sku: uniqueSku })) {
+      while (existingSkuSet.has(uniqueSku.toUpperCase())) {
         uniqueSku = `${baseSku}-${skuSuffix++}`;
       }
+      existingSkuSet.add(uniqueSku.toUpperCase());
 
       // 9. Pricing rule: listPrice = retailPrice = wholesalePrice
       const pricePaisa = toPaisa(listPrice);
+      const newVariantId = new mongoose.Types.ObjectId();
 
-      const variant = await Variant.create({
+      const newVariantDoc = {
+        _id: newVariantId,
         productId: product._id,
         sizeId: size._id,
         thicknessId: thickness._id,
@@ -2021,70 +2443,135 @@ export class CatalogueService {
         wholesalePrice: pricePaisa,
         distributorPrice: pricePaisa,
         status: 'ACTIVE',
-      });
+        createdAt: now,
+        updatedAt: now,
+      };
 
-      // 10. Initial Price History Record
-      await PriceHistory.create({
-        variantId: variant._id,
-        sku: variant.sku,
+      variantsToInsert.push(newVariantDoc);
+      existingVariantMap.set(varKey, newVariantDoc);
+
+      // 10. Initial Price History Record (in-memory buffer)
+      priceHistoriesToInsert.push({
+        variantId: newVariantId,
+        sku: uniqueSku,
         tier: 'RETAIL',
         previousPrice: 0,
         newPrice: pricePaisa,
         reason: 'EXCEL_CATALOGUE_IMPORT',
+        createdAt: now,
+        updatedAt: now,
       });
 
-      // 11. Initial Stock Balance
+      // 11. Initial Stock Balance (in-memory buffer)
       if (targetBranch && targetLocation) {
-        await StockBalance.create({
+        stockBalancesToInsert.push({
           branchId: targetBranch._id,
           stockLocationId: targetLocation._id,
-          locationId: targetLocation._id,
-          variantId: variant._id,
-          productId: product._id,
-          sku: variant.sku,
+          variantId: newVariantId,
+          sku: uniqueSku,
           onHand: currentStock,
           reserved: 0,
-          allocated: 0,
-          available: currentStock,
           reorderLevel: minStock,
+          createdAt: now,
+          updatedAt: now,
         });
 
         if (currentStock > 0) {
-          await StockMovement.create({
+          stockMovementsToInsert.push({
+            movementNumber: `MOV-INIT-${uniqueSku}-${Date.now().toString().slice(-6)}-${created.length + 1}`,
             branchId: targetBranch._id,
-            locationId: targetLocation._id,
-            variantId: variant._id,
-            productId: product._id,
-            sku: variant.sku,
-            type: 'INITIAL_STOCK',
-            quantity: currentStock,
-            balanceAfter: currentStock,
+            stockLocationId: targetLocation._id,
+            sku: uniqueSku,
+            movementType: 'OPENING_BALANCE',
+            quantityDifference: currentStock,
+            previousBalance: 0,
+            newBalance: currentStock,
             referenceType: 'EXCEL_IMPORT',
-            description: `Excel catalogue initial stock import (${itemNo})`,
+            reason: `Excel catalogue initial stock import (${itemNo})`,
+            performedBy: 'System',
+            timestamp: now,
+            createdAt: now,
+            updatedAt: now,
           });
         }
       }
 
       created.push({
         itemNo,
-        sku: variant.sku,
+        sku: uniqueSku,
         posDisplayName,
         brand: brandName,
         category: categoryName,
         productLine: productLineName,
         size: displayLabel,
-        height,
+        height: targetHeight,
         price: listPrice,
         stock: currentStock,
       });
+    }
+
+    // =========================================================================
+    // HIGH-SPEED BATCH EXECUTION: Flush all buffers in bulk chunks (1000 items)
+    // =========================================================================
+    const BATCH_SIZE = 1000;
+
+    if (variantsToInsert.length > 0) {
+      for (let b = 0; b < variantsToInsert.length; b += BATCH_SIZE) {
+        await Variant.insertMany(variantsToInsert.slice(b, b + BATCH_SIZE), { ordered: false });
+      }
+    }
+
+    if (priceHistoriesToInsert.length > 0) {
+      for (let b = 0; b < priceHistoriesToInsert.length; b += BATCH_SIZE) {
+        await PriceHistory.insertMany(priceHistoriesToInsert.slice(b, b + BATCH_SIZE), { ordered: false });
+      }
+    }
+
+    if (stockBalancesToInsert.length > 0) {
+      for (let b = 0; b < stockBalancesToInsert.length; b += BATCH_SIZE) {
+        await StockBalance.insertMany(stockBalancesToInsert.slice(b, b + BATCH_SIZE), { ordered: false });
+      }
+    }
+
+    if (stockMovementsToInsert.length > 0) {
+      for (let b = 0; b < stockMovementsToInsert.length; b += BATCH_SIZE) {
+        await StockMovement.insertMany(stockMovementsToInsert.slice(b, b + BATCH_SIZE), { ordered: false });
+      }
+    }
+
+    // Flush duplicate updates
+    if (variantBulkUpdates.length > 0) {
+      for (let b = 0; b < variantBulkUpdates.length; b += BATCH_SIZE) {
+        await Variant.bulkWrite(variantBulkUpdates.slice(b, b + BATCH_SIZE), { ordered: false });
+      }
+    }
+
+    if (balanceBulkOps.length > 0) {
+      for (let b = 0; b < balanceBulkOps.length; b += BATCH_SIZE) {
+        await StockBalance.bulkWrite(balanceBulkOps.slice(b, b + BATCH_SIZE), { ordered: false });
+      }
+    }
+
+    if (syncPriceHistories.length > 0) {
+      for (let b = 0; b < syncPriceHistories.length; b += BATCH_SIZE) {
+        await PriceHistory.insertMany(syncPriceHistories.slice(b, b + BATCH_SIZE), { ordered: false });
+      }
+    }
+
+    if (syncStockMovements.length > 0) {
+      for (let b = 0; b < syncStockMovements.length; b += BATCH_SIZE) {
+        await StockMovement.insertMany(syncStockMovements.slice(b, b + BATCH_SIZE), { ordered: false });
+      }
     }
 
     return {
       totalRows: rows.length,
       successCount: created.length,
       duplicateCount: duplicates.length,
+      updatedCount: updated.length,
       duplicates,
       created,
+      updated,
     };
   }
 }

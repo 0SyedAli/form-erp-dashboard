@@ -366,12 +366,23 @@ export class CatalogueController {
         ? (req.query.branchId as string)
         : (((req.account as any)?.assignedBranchId || (req.account as any)?.branchId)?.toString() || (req.query.branchId as string));
 
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+      const all = req.query.all === 'true' || req.query.all === '1';
+
       const data = await CatalogueService.getSkus(
         {
           search: req.query.search as string,
           productId: req.query.productId as string,
+          brandId: req.query.brandId as string,
+          categoryId: req.query.categoryId as string,
+          productLineId: req.query.productLineId as string,
           status: (req.query.status as string) || (canManageProducts ? 'ALL' : 'ACTIVE'),
+          stockStatus: req.query.stockStatus as string,
           branchId: effectiveBranchId,
+          page,
+          limit,
+          all,
         },
         canManageProducts
       );
@@ -450,9 +461,13 @@ export class CatalogueController {
   public static async importExcel(req: Request, res: Response): Promise<void> {
     try {
       const rows = req.body?.rows || req.body;
+      const updateDuplicates = !!req.body?.updateDuplicates;
       const branchId = req.body?.branchId || ((req.account as any)?.assignedBranchId || (req.account as any)?.branchId);
-      const result = await CatalogueService.importCatalogueFromRows(rows, branchId);
-      sendSuccess(res, result, `Excel import completed. ${result.successCount} items created, ${result.duplicateCount} duplicates skipped.`);
+      const result = await CatalogueService.importCatalogueFromRows(rows, branchId, { updateDuplicates });
+      const msg = updateDuplicates
+        ? `Excel sync completed. ${result.updatedCount || 0} existing items updated, ${result.successCount} new items created.`
+        : `Excel import completed. ${result.successCount} items created, ${result.duplicateCount} duplicates skipped.`;
+      sendSuccess(res, result, msg);
     } catch (error) {
       sendError(res, (error as any).message || 'Failed to import catalogue from Excel.', (error as any).statusCode || 500);
     }

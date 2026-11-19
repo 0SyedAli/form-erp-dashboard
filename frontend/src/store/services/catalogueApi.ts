@@ -112,6 +112,11 @@ export interface PaginatedResponse<T> {
   success: boolean;
   data: T[];
   pagination: PaginationMeta;
+  counts?: {
+    total: number;
+    active: number;
+    inactive: number;
+  };
 }
 
 export interface ApiResponse<T> {
@@ -147,6 +152,7 @@ export interface UpdatePricesRequest {
   id: string;
   brandId?: string;
   categoryId?: string;
+  productLineId?: string;
   sizeId?: string;
   thicknessId?: string;
   listPrice: number;
@@ -626,16 +632,33 @@ export const catalogueApi = createApi({
 
     getSkus: builder.query<
       PaginatedResponse<ProductVariant>,
-      { productId?: string; search?: string; status?: string; branchId?: string; page?: number; limit?: number } | void
+      {
+        productId?: string;
+        search?: string;
+        status?: string;
+        stockStatus?: string;
+        branchId?: string;
+        brandId?: string;
+        categoryId?: string;
+        productLineId?: string;
+        page?: number;
+        limit?: number;
+        all?: boolean;
+      } | void
     >({
       query: (params) => {
         const queryParams = new URLSearchParams();
         if (params?.productId) queryParams.append('productId', params.productId);
         if (params?.search) queryParams.append('search', params.search);
         if (params?.status) queryParams.append('status', params.status);
+        if (params?.stockStatus) queryParams.append('stockStatus', params.stockStatus);
         if (params?.branchId) queryParams.append('branchId', params.branchId);
+        if (params?.brandId) queryParams.append('brandId', params.brandId);
+        if (params?.categoryId) queryParams.append('categoryId', params.categoryId);
+        if (params?.productLineId) queryParams.append('productLineId', params.productLineId);
         if (params?.page) queryParams.append('page', params.page.toString());
         if (params?.limit) queryParams.append('limit', params.limit.toString());
+        if (params?.all) queryParams.append('all', 'true');
         const queryStr = queryParams.toString();
         return `/skus${queryStr ? `?${queryStr}` : ''}`;
       },
@@ -653,6 +676,11 @@ export const catalogueApi = createApi({
           page: 1,
           limit: rawList.length || 100,
           totalPages: 1,
+        };
+        const counts = response?.data?.counts || response?.counts || {
+          total: pagination.total,
+          active: pagination.total,
+          inactive: 0,
         };
         return {
           success: true,
@@ -673,10 +701,12 @@ export const catalogueApi = createApi({
               thicknessId: tId,
               retailPrice: retPrice,
               walkInPrice: v.walkInPrice || retPrice,
-              stock: v.stock ?? v.onHand ?? 0,
+              stock: v.stock !== undefined ? v.stock : v.onHand !== undefined ? v.onHand : 0,
+              onHand: v.onHand !== undefined ? v.onHand : v.stock !== undefined ? v.stock : 0,
             };
           }),
           pagination,
+          counts,
         };
       },
       providesTags: ['Variant'],
@@ -736,6 +766,7 @@ export const catalogueApi = createApi({
         totalRows: number;
         successCount: number;
         duplicateCount: number;
+        updatedCount?: number;
         duplicates: Array<{
           itemNo: string;
           posDisplayName: string;
@@ -747,8 +778,9 @@ export const catalogueApi = createApi({
           reason: string;
         }>;
         created: Array<any>;
+        updated?: Array<any>;
       }>,
-      { rows: any[]; branchId?: string }
+      { rows: any[]; branchId?: string; updateDuplicates?: boolean }
     >({
       query: (body) => ({
         url: '/products/import-excel',

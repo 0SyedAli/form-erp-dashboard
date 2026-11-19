@@ -143,7 +143,10 @@ function POSContent() {
   const { data: backendSizes = [] } = useGetBackendSizesQuery(undefined, { skip: !isBackendMode });
   const { data: backendThicknesses = [] } = useGetBackendThicknessesQuery(undefined, { skip: !isBackendMode });
   const { data: backendProducts = [], refetch: refetchProducts } = useGetBackendProductsQuery({ limit: 500 }, { skip: !isBackendMode });
-  const { data: backendSkusResponse, refetch: refetchSkus } = useGetBackendSkusQuery(undefined, { skip: !isBackendMode });
+  const { data: backendSkusResponse, refetch: refetchSkus } = useGetBackendSkusQuery(
+    { all: true, status: 'ACTIVE' },
+    { skip: !isBackendMode }
+  );
 
   // Unified Branches
   const branches: Branch[] = useMemo(() => {
@@ -427,6 +430,7 @@ function POSContent() {
         ...v,
         id: String(v.id || v._id || ''),
         sku: v.sku || '',
+        posDisplayName: v.posDisplayName || '',
         productId: pId,
         brandId: bId,
         categoryId: cId,
@@ -462,7 +466,8 @@ function POSContent() {
     const list = Array.isArray(rawStock) ? rawStock : [];
     return list.map((b: any) => {
       const soldQty = soldQuantitiesBySku[b.sku] || 0;
-      const av = Math.max(0, Number(b.available || 0) - soldQty);
+      const rawAvail = b.available !== undefined && b.available !== null ? Number(b.available) : Number(b.onHand || 0);
+      const av = Math.max(0, rawAvail - soldQty);
       return {
         id: String(b.id || b._id || ''),
         sku: b.sku || '',
@@ -520,8 +525,8 @@ function POSContent() {
       const soldQty = soldQuantitiesBySku[v.sku] || 0;
       let baseStock = 0;
       if (balance) {
-        baseStock = balance.available;
-      } else if (!isBackendMode && effectiveStockBranchId === 'BR-MAIN-01') {
+        baseStock = balance.available !== undefined && balance.available !== null ? balance.available : (balance.onHand || 0);
+      } else {
         baseStock = v.stock ?? (v as any).onHand ?? 0;
       }
       const stock = Math.max(0, baseStock - soldQty);
@@ -866,9 +871,54 @@ function POSContent() {
     }
   }, [selectedBrandId, branchCategories, selectedCategoryId]);
 
-  // Filter products strictly by Branch ownership, Brand, Category, and Debounced Search
+  // High-performance Offline Search Index (Precomputed O(1) in-memory lookup)
+  const productSearchStrings = useMemo(() => {
+    const map = new Map<string, string>();
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      const pId = String(p.id);
+      const cat = categories.find((c) => String(c.id) === String(p.categoryId));
+      const br = brands.find((b) => String(b.id) === String(p.brandId));
+      const plName = p.productLineName || '';
+
+      const pVars = variantsByProductId.get(pId) || [];
+      const varParts: string[] = [];
+      for (let j = 0; j < pVars.length; j++) {
+        const v = pVars[j];
+        const vPos = (v as any).posDisplayName || '';
+        const vSku = v.sku || '';
+        const sz = sizes.find((s) => String(s.id) === String(v.sizeId));
+        const th = thicknesses.find((t) => String(t.id) === String(v.thicknessId));
+        const szLabel = sz?.displayLabel || (v as any).sizeLabel || '';
+        const thLabel = th ? `${th.value} ${th.displayLabel || ''}` : '';
+        varParts.push(`${vPos} ${vSku} ${szLabel} ${thLabel}`);
+      }
+
+      const combined = [
+        p.name || '',
+        (p as any).posDisplayName || '',
+        p.code || '',
+        p.description || '',
+        cat?.name || '',
+        br?.name || '',
+        plName,
+        varParts.join(' '),
+      ].join(' ').toLowerCase();
+
+      // Normalize dimension spacing: "72 x 42" -> "72x42" and "72 * 42" -> "72x42"
+      const normalized = combined.replace(/(\d+)\s*[xX*×]\s*(\d+)/g, '$1x$2');
+      map.set(pId, `${combined} ${normalized}`);
+    }
+    return map;
+  }, [products, categories, brands, variantsByProductId, sizes, thicknesses]);
+
+  // Filter products strictly by Branch ownership, Brand, Category, and Debounced Offline Search
   const filteredProducts = useMemo(() => {
     if (!Array.isArray(products)) return [];
+    const query = debouncedSearchQuery.toLowerCase().trim();
+    const normalizedQuery = query.replace(/(\d+)\s*[xX*×]\s*(\d+)/g, '$1x$2');
+    const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+
     return products.filter((p) => {
       if (p.status !== 'ACTIVE') return false;
       // Strict branch isolation: Only show products belonging to or stocked in this branch!
@@ -876,25 +926,14 @@ function POSContent() {
       if (p.brandId !== selectedBrandId) return false;
       if (selectedCategoryId !== 'ALL' && p.categoryId !== selectedCategoryId) return false;
 
-      if (debouncedSearchQuery.trim()) {
-        const query = debouncedSearchQuery.toLowerCase().trim();
-        const matchesName = (p.name || '').toLowerCase().includes(query);
-        const matchesDesc = (p.description || '').toLowerCase().includes(query);
-        const matchesCode = (p.code || '').toLowerCase().includes(query);
-        const matchesPosDisplay = ((p as any).posDisplayName || '').toLowerCase().includes(query);
-        const matchingVariants = variants.filter((v) => String(v.productId) === String(p.id));
-        const matchesVariant = matchingVariants.some(
-          (v) =>
-            ((v as any).posDisplayName || '').toLowerCase().includes(query) ||
-            (v.sku || '').toLowerCase().includes(query) ||
-            ((v as any).sizeLabel || (v as any).size?.displayLabel || '').toLowerCase().includes(query)
-        );
-
-        if (!matchesName && !matchesDesc && !matchesCode && !matchesPosDisplay && !matchesVariant) return false;
+      if (tokens.length > 0) {
+        const doc = productSearchStrings.get(String(p.id)) || '';
+        const matchesAll = tokens.every((token) => doc.includes(token));
+        if (!matchesAll) return false;
       }
       return true;
     });
-  }, [products, branchProductIds, selectedBrandId, selectedCategoryId, debouncedSearchQuery]);
+  }, [products, branchProductIds, selectedBrandId, selectedCategoryId, debouncedSearchQuery, productSearchStrings]);
 
   // Cart Calculations
   const subtotal = useMemo(() => {
@@ -1728,6 +1767,7 @@ function POSContent() {
         }
         saleType={saleType}
         variantStockMap={variantStockMap}
+        searchQuery={searchQuery}
       />
 
       {/* 6. Flow 07 Reprice Confirmation Modal */}
