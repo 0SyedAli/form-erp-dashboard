@@ -40,6 +40,35 @@ export class PosController {
     sendError(res, msg, status, code, err.details);
   }
 
+  public static async getBootstrap(req: Request, res: Response): Promise<void> {
+    try {
+      const branchId = (req.query.branchId as string) || (req.account as any)?.assignedBranchId?.toString();
+      const clientVersion = (req.headers['if-none-match'] as string) || (req.query.version as string);
+      const data = await PosService.getPOSBootstrap(branchId, clientVersion);
+      if (data.notModified) {
+        res.status(304).end();
+        return;
+      }
+      if (data.versionHash) {
+        res.setHeader('ETag', data.versionHash);
+      }
+      sendSuccess(res, data, 'POS bootstrap data loaded successfully.');
+    } catch (error) {
+      PosController.handleError(res, error, 'Failed to retrieve POS bootstrap data.');
+    }
+  }
+
+  public static async getOutOfStock(req: Request, res: Response): Promise<void> {
+    try {
+      const userContext = PosController.getUserContext(req);
+      const branchId = (req.query.branchId as string) || userContext.branchId;
+      const data = await PosService.getPOSOutOfStockCatalogue(userContext, branchId);
+      sendSuccess(res, data, 'Out of stock catalogue retrieved successfully.');
+    } catch (error) {
+      PosController.handleError(res, error, 'Failed to retrieve out of stock catalogue.');
+    }
+  }
+
   public static async getCatalogue(req: Request, res: Response): Promise<void> {
     try {
       const userContext = PosController.getUserContext(req);

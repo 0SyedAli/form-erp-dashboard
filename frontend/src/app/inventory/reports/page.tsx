@@ -72,7 +72,7 @@ export default function InventoryReportsPage() {
     <AppLayout title="Inventory Reports" subtitle="Valuation, Stockout Risk & Movement Turnover Intelligence">
       {/* <InventoryNavTabs branchId={activeBranchFilter} /> */}
 
-      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className="space-y-6">
         {/* Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-gray-200/80 shadow-xs print:hidden">
           <div>
@@ -115,8 +115,8 @@ export default function InventoryReportsPage() {
           <button
             onClick={() => setActiveReportTab('valuation')}
             className={`flex items-center gap-2 pb-3 px-4 font-semibold text-sm border-b-2 transition-all ${activeReportTab === 'valuation'
-                ? 'border-brand-blue text-brand-blue'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
+              ? 'border-brand-blue text-brand-blue'
+              : 'border-transparent text-gray-500 hover:text-gray-800'
               }`}
           >
             <DollarSign className="w-4 h-4" />
@@ -126,8 +126,8 @@ export default function InventoryReportsPage() {
           <button
             onClick={() => setActiveReportTab('lowstock')}
             className={`flex items-center gap-2 pb-3 px-4 font-semibold text-sm border-b-2 transition-all ${activeReportTab === 'lowstock'
-                ? 'border-amber-600 text-amber-600'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
+              ? 'border-amber-600 text-amber-600'
+              : 'border-transparent text-gray-500 hover:text-gray-800'
               }`}
           >
             <AlertTriangle className="w-4 h-4" />
@@ -137,8 +137,8 @@ export default function InventoryReportsPage() {
           <button
             onClick={() => setActiveReportTab('movement')}
             className={`flex items-center gap-2 pb-3 px-4 font-semibold text-sm border-b-2 transition-all ${activeReportTab === 'movement'
-                ? 'border-purple-600 text-purple-600'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
+              ? 'border-purple-600 text-purple-600'
+              : 'border-transparent text-gray-500 hover:text-gray-800'
               }`}
           >
             <History className="w-4 h-4" />
@@ -285,8 +285,8 @@ export default function InventoryReportsPage() {
                           <td className="py-3 px-4">
                             <span
                               className={`inline-block px-2.5 py-0.5 text-xs font-bold rounded-full ${item.stockStatus === 'OUT_OF_STOCK'
-                                  ? 'bg-red-100 text-red-800'
-                                  : 'bg-amber-100 text-amber-800'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-amber-100 text-amber-800'
                                 }`}
                             >
                               {item.stockStatus.replace('_', ' ')}

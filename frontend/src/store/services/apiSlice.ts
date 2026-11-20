@@ -1126,7 +1126,7 @@ export const erpApi = createApi({
       async queryFn(filter) {
         try {
           const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
-          const res = await fetch(`${apiUrl}/products`, {
+          const res = await fetch(`${apiUrl}/products?limit=100`, {
             credentials: 'include',
           });
           if (res.ok) {
@@ -1239,7 +1239,7 @@ export const erpApi = createApi({
       async queryFn(filter) {
         try {
           const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
-          const res = await fetch(`${apiUrl}/skus`, {
+          const res = await fetch(`${apiUrl}/skus?limit=100`, {
             credentials: 'include',
           });
           if (res.ok) {

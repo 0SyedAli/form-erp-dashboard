@@ -75,17 +75,17 @@ export default function ProductConfigModal({
   const productVariants = useMemo(() => {
     if (!product) return [];
     return variants.filter(
-      (v) => String(v.productId) === String(product.id) && v.status === 'ACTIVE'
+      (v) => String(v.productId) === String(product.id) && (v.status === 'ACTIVE' || !v.status)
     );
   }, [product, variants]);
 
   // 3. Active sizes and thicknesses from DB
   const activeSizes = useMemo(() => {
-    return sizes.filter((s) => s.status === 'ACTIVE');
+    return sizes.filter((s) => s.status === 'ACTIVE' || !s.status);
   }, [sizes]);
 
   const activeThicknesses = useMemo(() => {
-    return thicknesses.filter((t) => t.status === 'ACTIVE');
+    return thicknesses.filter((t) => t.status === 'ACTIVE' || !t.status);
   }, [thicknesses]);
 
   // All unique sizes configured for this product (sorted dimensionally)
@@ -93,21 +93,29 @@ export default function ProductConfigModal({
     const map = new Map<string, UniqueSizeOption>();
 
     for (const v of productVariants) {
-      const s = activeSizes.find((sz) => String(sz.id) === String(v.sizeId));
-      if (!s) continue;
-      const dimKey = s.length && s.width ? `${s.length}x${s.width}` : s.displayLabel || s.id;
+      const s = activeSizes.find(
+        (sz) => String(sz.id) === String(v.sizeId) || String((sz as any)._id) === String(v.sizeId)
+      );
+      const dimKey = s && s.length && s.width
+        ? `${s.length}x${s.width}`
+        : s?.displayLabel || (v as any).sizeLabel || String(v.sizeId || 'default');
+      const displayLabel = s && s.length && s.width
+        ? `${s.length}" × ${s.width}"`
+        : s?.displayLabel || (v as any).sizeLabel || `${dimKey}`;
+      const sId = s ? String(s.id) : String(v.sizeId);
+
       if (!map.has(dimKey)) {
         map.set(dimKey, {
           dimKey,
-          length: s.length,
-          width: s.width,
-          displayLabel: s.length && s.width ? `${s.length}" × ${s.width}"` : s.displayLabel,
-          sizeIds: [String(s.id)],
+          length: s?.length || 0,
+          width: s?.width || 0,
+          displayLabel,
+          sizeIds: [sId],
         });
       } else {
         const existing = map.get(dimKey)!;
-        if (!existing.sizeIds.includes(String(s.id))) {
-          existing.sizeIds.push(String(s.id));
+        if (!existing.sizeIds.includes(sId)) {
+          existing.sizeIds.push(sId);
         }
       }
     }
@@ -129,22 +137,47 @@ export default function ProductConfigModal({
     [productVariants, stockMap]
   );
 
-  // Available unique sizes - show ALL product catalogue sizes
+  // Stock filter tab: 'in_stock' (default) vs 'out_of_stock'
+  const [stockTab, setStockTab] = useState<'in_stock' | 'out_of_stock'>('in_stock');
+
+  // Partition sizes into in-stock and out-of-stock
+  const inStockSizes = useMemo(() => {
+    return uniqueProductSizes.filter((s) => getSizeStock(s) > 0);
+  }, [uniqueProductSizes, getSizeStock]);
+
+  const outOfStockSizes = useMemo(() => {
+    return uniqueProductSizes.filter((s) => getSizeStock(s) === 0);
+  }, [uniqueProductSizes, getSizeStock]);
+
+  // Available unique sizes according to active tab
   const availableSizes = useMemo(() => {
-    return uniqueProductSizes;
-  }, [uniqueProductSizes]);
+    if (stockTab === 'in_stock') {
+      return inStockSizes;
+    }
+    return outOfStockSizes;
+  }, [stockTab, inStockSizes, outOfStockSizes]);
 
   // Selected state
   const [selectedDimKey, setSelectedDimKey] = useState<string>('');
   const [selectedThicknessId, setSelectedThicknessId] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
 
+  // Auto-switch stockTab on modal open or product change
+  useEffect(() => {
+    if (!isOpen || !product) return;
+    if (inStockSizes.length > 0) {
+      setStockTab('in_stock');
+    } else {
+      setStockTab('out_of_stock');
+    }
+  }, [isOpen, product?.id, inStockSizes.length]);
+
   // Currently selected unique size option
   const selectedSize = useMemo(() => {
     return availableSizes.find((s) => s.dimKey === selectedDimKey) || availableSizes[0] || null;
   }, [availableSizes, selectedDimKey]);
 
-  // Available thicknesses for the selected size dimension
+  // Available thicknesses for the selected size dimension, filtered by tab
   const availableThicknesses = useMemo(() => {
     if (!selectedSize) return [];
     const matchingVariants = productVariants.filter((v) =>
@@ -153,14 +186,17 @@ export default function ProductConfigModal({
 
     const map = new Map<string, { id: string; value: number; stock: number }>();
     for (const v of matchingVariants) {
-      const th = activeThicknesses.find((t) => String(t.id) === String(v.thicknessId));
-      if (!th) continue;
-      const thKey = String(th.value);
+      const th = activeThicknesses.find(
+        (t) => String(t.id) === String(v.thicknessId) || String((t as any)._id) === String(v.thicknessId)
+      );
+      const thVal = th ? th.value : (Number((v as any).thicknessLabel?.replace?.(/[^0-9.]/g, '')) || 0);
+      const thId = th ? String(th.id) : String(v.thicknessId);
+      const thKey = String(thVal || thId);
       const vStock = stockMap[v.id] || 0;
       if (!map.has(thKey)) {
         map.set(thKey, {
-          id: String(th.id),
-          value: th.value,
+          id: thId,
+          value: thVal,
           stock: vStock,
         });
       } else {
@@ -169,24 +205,46 @@ export default function ProductConfigModal({
       }
     }
 
-    return Array.from(map.values()).sort((a, b) => a.value - b.value);
-  }, [selectedSize, productVariants, activeThicknesses, stockMap]);
+    const allThicks = Array.from(map.values()).sort((a, b) => a.value - b.value);
+
+    if (stockTab === 'in_stock') {
+      const inStockThicks = allThicks.filter((t) => t.stock > 0);
+      return inStockThicks.length > 0 ? inStockThicks : allThicks;
+    } else {
+      const outStockThicks = allThicks.filter((t) => t.stock === 0);
+      return outStockThicks.length > 0 ? outStockThicks : allThicks;
+    }
+  }, [selectedSize, productVariants, activeThicknesses, stockMap, stockTab]);
 
   // Currently matching variant
   const selectedVariant = useMemo(() => {
-    if (!selectedSize || !selectedThicknessId) return null;
-    const targetThick = activeThicknesses.find((t) => String(t.id) === String(selectedThicknessId));
-    if (!targetThick) return null;
+    if (!selectedSize) return null;
+    if (availableThicknesses.length === 0) {
+      // Product or Brand does not have thickness specifications
+      return (
+        productVariants.find((v) => selectedSize.sizeIds.includes(String(v.sizeId))) || null
+      );
+    }
+    if (!selectedThicknessId) return null;
+    const targetThick = activeThicknesses.find(
+      (t) => String(t.id) === String(selectedThicknessId) || String((t as any)._id) === String(selectedThicknessId)
+    );
 
     return (
       productVariants.find((v) => {
         const matchesSize = selectedSize.sizeIds.includes(String(v.sizeId));
         if (!matchesSize) return false;
-        const vThick = activeThicknesses.find((t) => String(t.id) === String(v.thicknessId));
-        return vThick && vThick.value === targetThick.value;
+        if (String(v.thicknessId) === String(selectedThicknessId)) return true;
+        if (targetThick) {
+          const vThick = activeThicknesses.find(
+            (t) => String(t.id) === String(v.thicknessId) || String((t as any)._id) === String(v.thicknessId)
+          );
+          return vThick && vThick.value === targetThick.value;
+        }
+        return false;
       }) || null
     );
-  }, [productVariants, selectedSize, selectedThicknessId, activeThicknesses]);
+  }, [productVariants, selectedSize, selectedThicknessId, activeThicknesses, availableThicknesses]);
 
   // Available stock for selected configuration
   const currentAvailableStock = useMemo(() => {
@@ -209,8 +267,9 @@ export default function ProductConfigModal({
     }
 
     if (!bestSize) {
-      // Prefer size that has stock > 0
-      bestSize = availableSizes.find((s) => getSizeStock(s) > 0);
+      if (stockTab === 'in_stock') {
+        bestSize = availableSizes.find((s) => getSizeStock(s) > 0);
+      }
     }
     if (!bestSize) {
       bestSize = availableSizes[0];
@@ -238,8 +297,11 @@ export default function ProductConfigModal({
       }
 
       if (!chosenVar) {
-        const inStockVar = matchingVariants.find((v) => (stockMap[v.id] || 0) > 0);
-        chosenVar = inStockVar || matchingVariants[0];
+        if (stockTab === 'in_stock') {
+          chosenVar = matchingVariants.find((v) => (stockMap[v.id] || 0) > 0) || matchingVariants[0];
+        } else {
+          chosenVar = matchingVariants.find((v) => (stockMap[v.id] || 0) === 0) || matchingVariants[0];
+        }
       }
 
       if (chosenVar) {
@@ -248,7 +310,27 @@ export default function ProductConfigModal({
     }
 
     setQuantity(1);
-  }, [isOpen, product, availableSizes, productVariants, stockMap, getSizeStock, searchQuery, activeThicknesses]);
+  }, [isOpen, product, availableSizes, productVariants, stockMap, getSizeStock, searchQuery, activeThicknesses, stockTab]);
+
+  // Handle Tab Switch
+  const handleTabChange = (newTab: 'in_stock' | 'out_of_stock') => {
+    setStockTab(newTab);
+    const targetSizes = newTab === 'in_stock' ? inStockSizes : outOfStockSizes;
+    if (targetSizes.length > 0) {
+      const firstSize = targetSizes[0];
+      setSelectedDimKey(firstSize.dimKey);
+      const matchingVariants = productVariants.filter((v) =>
+        firstSize.sizeIds.includes(String(v.sizeId))
+      );
+      if (newTab === 'in_stock') {
+        const inStockVar = matchingVariants.find((v) => (stockMap[v.id] || 0) > 0);
+        setSelectedThicknessId(String(inStockVar ? inStockVar.thicknessId : (matchingVariants[0]?.thicknessId || '')));
+      } else {
+        const outStockVar = matchingVariants.find((v) => (stockMap[v.id] || 0) === 0);
+        setSelectedThicknessId(String(outStockVar ? outStockVar.thicknessId : (matchingVariants[0]?.thicknessId || '')));
+      }
+    }
+  };
 
   // Handle Size change
   const handleSelectSize = (dimKey: string) => {
@@ -258,11 +340,18 @@ export default function ProductConfigModal({
       const matchingVariants = productVariants.filter((v) =>
         newSize.sizeIds.includes(String(v.sizeId))
       );
-      // Auto-switch to thickness with stock > 0
-      const inStockVar = matchingVariants.find((v) => (stockMap[v.id] || 0) > 0);
-      const chosenVar = inStockVar || matchingVariants[0];
-      if (chosenVar) {
-        setSelectedThicknessId(String(chosenVar.thicknessId));
+      if (stockTab === 'in_stock') {
+        const inStockVar = matchingVariants.find((v) => (stockMap[v.id] || 0) > 0);
+        const chosenVar = inStockVar || matchingVariants[0];
+        if (chosenVar) {
+          setSelectedThicknessId(String(chosenVar.thicknessId));
+        }
+      } else {
+        const outStockVar = matchingVariants.find((v) => (stockMap[v.id] || 0) === 0);
+        const chosenVar = outStockVar || matchingVariants[0];
+        if (chosenVar) {
+          setSelectedThicknessId(String(chosenVar.thicknessId));
+        }
       }
     }
     setQuantity(1);
@@ -389,6 +478,53 @@ export default function ProductConfigModal({
             </div>
           </div>
 
+          {/* Stock Filter Tab Bar (In Stock / Out of Stock) */}
+          <div className="flex items-center gap-2 bg-slate-100/90 p-1 rounded-xl border border-slate-200 select-none">
+            <button
+              type="button"
+              onClick={() => handleTabChange('in_stock')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                stockTab === 'in_stock'
+                  ? 'bg-white text-emerald-700 shadow-xs border border-emerald-200 font-extrabold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${inStockSizes.length > 0 ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+              <span>In Stock</span>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                  stockTab === 'in_stock'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-slate-200 text-slate-600'
+                }`}
+              >
+                {inStockSizes.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleTabChange('out_of_stock')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                stockTab === 'out_of_stock'
+                  ? 'bg-white text-rose-700 shadow-xs border border-rose-200 font-extrabold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${outOfStockSizes.length > 0 ? 'bg-rose-500' : 'bg-slate-300'}`} />
+              <span>Out of Stock</span>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                  stockTab === 'out_of_stock'
+                    ? 'bg-rose-100 text-rose-800'
+                    : 'bg-slate-200 text-slate-600'
+                }`}
+              >
+                {outOfStockSizes.length}
+              </span>
+            </button>
+          </div>
+
           {/* Select Size */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -403,10 +539,21 @@ export default function ProductConfigModal({
             </div>
 
             {availableSizes.length === 0 ? (
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-center">
+              <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 text-center space-y-2">
                 <p className="text-xs font-semibold text-amber-800">
-                  No sizes available for this product at this branch.
+                  {stockTab === 'in_stock'
+                    ? 'No sizes currently in stock for this product at this branch.'
+                    : 'No out of stock sizes for this product.'}
                 </p>
+                {stockTab === 'in_stock' && outOfStockSizes.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleTabChange('out_of_stock')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-amber-300 text-amber-900 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors cursor-pointer"
+                  >
+                    View Out of Stock Sizes ({outOfStockSizes.length})
+                  </button>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">

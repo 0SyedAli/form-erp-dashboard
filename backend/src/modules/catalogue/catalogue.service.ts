@@ -20,6 +20,7 @@ import {
   IVariant,
 } from '../../models/index.js';
 import { AppError } from '../../utils/apiResponse.js';
+import { PosService } from '../pos/pos.service.js';
 import {
   toPaisa,
   toRupees,
@@ -42,22 +43,118 @@ import {
   UpdateSkuInput,
 } from './catalogue.schema.js';
 
+export function generateSmartProductLineAbbr(plNameOrCode?: string): string {
+  if (!plNameOrCode) return '';
+  let clean = plNameOrCode
+    .replace(/^PL[-_]?/i, '')
+    .replace(/[-_]\d+$/, '')
+    .replace(/\+\+/g, ' DPLUS ')
+    .replace(/\+/g, ' PLUS ')
+    .replace(/&/g, ' AND ')
+    .replace(/[^A-Za-z0-9\s]/g, ' ')
+    .trim();
+
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 'GEN';
+
+  if (words.length === 1) {
+    if (words[0].toLowerCase() === 'commander') return 'CMDR';
+    return words[0].slice(0, 4).toUpperCase();
+  }
+
+  // 2 words: e.g. "Flex Firm" -> "FLFM", "Flex Soft" -> "FLSF"
+  if (words.length === 2) {
+    const w1 = words[0].slice(0, 2);
+    let w2 = words[1].slice(0, 2);
+    if (words[1].toLowerCase() === 'firm') w2 = 'FM';
+    else if (words[1].toLowerCase() === 'soft') w2 = 'SF';
+    else if (words[1].toLowerCase() === 'foam') w2 = 'FO';
+    return (w1 + w2).toUpperCase().padEnd(4, 'X').slice(0, 4);
+  }
+
+  // 3 words: e.g. "Molty Sleep Memory" -> "MSPM"
+  if (words.length === 3) {
+    const w1 = words[0][0];
+    const w2 = words[1].slice(0, 2);
+    const w3 = words[2][0];
+    return (w1 + w2 + w3).toUpperCase().slice(0, 4);
+  }
+
+  // 4 words or more: specific distinctive abbreviations
+  const lower = clean.toLowerCase();
+  if (lower.includes('memory ortho')) return 'EFME'; // Ext Firm Memory Ortho
+  if (lower.includes('cool gel ortho')) return 'EFCG'; // Ext Firm Cool Gel Ortho
+  if (lower.includes('molty ortho duo')) return '3MOD'; // 3in1 Molty Ortho Duo
+  if (lower.includes('molty ortho fold')) return 'MOFB'; // Molty Ortho Fold-A-Bed
+  if (lower.includes('molty firm fold')) return 'MFMB'; // Molty Firm Fold-A-Bed
+  if (lower.includes('molty foam fold')) return 'MFFB'; // Molty Foam Fold-A-Bed
+  if (lower.includes('master fold')) return 'MAFB'; // Master Fold-A-Bed
+  if (lower.includes('jet khi fold')) return 'JKFB'; // Jet KHI Fold-A-Bed
+  if (lower.includes('molty ortho')) {
+    if (lower.includes('ext firm')) return 'EFMO';
+    return 'MOOR';
+  }
+
+  return words.slice(0, 4).map(w => w[0]).join('').toUpperCase().slice(0, 4);
+}
+
 export function generateSkuCode(
   brandCode: string,
   categoryCode: string,
   sizeDisplayLabel: string,
-  thicknessValue: number,
-  productLineCode?: string
+  thicknessValue?: number | null,
+  productLineCodeOrName?: string
 ): string {
-  const bCode = brandCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4) || 'MF';
-  const cCode = categoryCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4) || 'CAT';
-  const plCode = productLineCode ? productLineCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4) : '';
-  const sLabel = sizeDisplayLabel
+  const bCode = (brandCode || 'MOLT').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4) || 'MOLT';
+  const cCode = (categoryCode || 'CAT').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4) || 'CAT';
+  const plCode = productLineCodeOrName ? generateSmartProductLineAbbr(productLineCodeOrName) : '';
+  const sLabel = (sizeDisplayLabel || 'STD')
     .replace(/[\s×xX]/g, 'X')
     .replace(/[^0-9X]/g, '')
     .toUpperCase();
-  const tVal = String(thicknessValue).replace(/[^0-9]/g, '');
-  return plCode ? `${bCode}-${cCode}-${plCode}-${sLabel}-${tVal}` : `${bCode}-${cCode}-${sLabel}-${tVal}`;
+  const tVal = thicknessValue !== undefined && thicknessValue !== null ? String(thicknessValue).replace(/[^0-9]/g, '') : '';
+  const spec = tVal ? `${sLabel}-${tVal}` : sLabel;
+  return plCode ? `${bCode}-${cCode}-${plCode}-${spec}` : `${bCode}-${cCode}-${spec}`;
+}
+
+// In-memory master dictionary cache for instant search indexing (eliminates 5 DB queries per search)
+interface MasterMetadataCache {
+  timestamp: number;
+  brands: Array<{ _id: any; name: string }>;
+  categories: Array<{ _id: any; name: string }>;
+  lines: Array<{ _id: any; name: string }>;
+  sizes: Array<{ _id: any; displayLabel: string; length?: number; width?: number }>;
+  thicknesses: Array<{ _id: any; displayLabel: string; value?: number }>;
+}
+
+let masterMetadataCache: MasterMetadataCache | null = null;
+const MASTER_METADATA_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
+
+export function invalidateMasterMetadataCache() {
+  masterMetadataCache = null;
+}
+
+async function getMasterMetadata(): Promise<MasterMetadataCache> {
+  const now = Date.now();
+  if (masterMetadataCache && now - masterMetadataCache.timestamp < MASTER_METADATA_TTL_MS) {
+    return masterMetadataCache;
+  }
+  const [brands, categories, lines, sizes, thicknesses] = await Promise.all([
+    Brand.find().select('_id name').lean(),
+    Category.find().select('_id name').lean(),
+    ProductLine.find().select('_id name').lean(),
+    Size.find().select('_id displayLabel length width').lean(),
+    Thickness.find().select('_id displayLabel value').lean(),
+  ]);
+  masterMetadataCache = {
+    timestamp: now,
+    brands: brands as any,
+    categories: categories as any,
+    lines: lines as any,
+    sizes: sizes as any,
+    thicknesses: thicknesses as any,
+  };
+  return masterMetadataCache;
 }
 
 export class CatalogueService {
@@ -115,18 +212,23 @@ export class CatalogueService {
     const code = input.code.trim().toUpperCase();
     const existing = await Brand.findOne({ code });
     const targetStatus = (input as any).status ? (input as any).status.toUpperCase() : 'ACTIVE';
+    const hasThickness = input.hasThickness !== undefined ? input.hasThickness : true;
     if (existing) {
       if (input.name) existing.name = input.name.trim();
       if (input.description !== undefined) existing.description = input.description?.trim();
       if (input.logoUrl !== undefined) existing.logoUrl = input.logoUrl;
+      existing.hasThickness = hasThickness;
       existing.status = targetStatus;
+      invalidateMasterMetadataCache();
       return existing.save();
     }
+    invalidateMasterMetadataCache();
     return Brand.create({
       code,
       name: input.name.trim(),
       description: input.description?.trim(),
       logoUrl: input.logoUrl,
+      hasThickness,
       status: targetStatus,
     });
   }
@@ -141,7 +243,9 @@ export class CatalogueService {
     if (input.name) brand.name = input.name.trim();
     if (input.description !== undefined) brand.description = input.description.trim();
     if (input.logoUrl !== undefined) brand.logoUrl = input.logoUrl;
+    if (input.hasThickness !== undefined) brand.hasThickness = input.hasThickness;
     if ((input as any).status) brand.status = (input as any).status.toUpperCase();
+    invalidateMasterMetadataCache();
     return brand.save();
   }
 
@@ -626,7 +730,7 @@ export class CatalogueService {
     branchId?: string;
   }) {
     const page = Math.max(1, query.page || 1);
-    const limit = Math.max(1, Math.min(1000, query.limit || 500));
+    const limit = Math.max(1, Math.min(1000, query.limit || 10));
     const skip = (page - 1) * limit;
 
     const filter: any = {};
@@ -652,6 +756,8 @@ export class CatalogueService {
       const stockedProdIds = stockedVariants.map((v) => v.productId).filter(Boolean);
       filter.$or = [
         { branchId: query.branchId },
+        { branchId: { $exists: false } },
+        { branchId: null },
         { _id: { $in: stockedProdIds } },
       ];
     }
@@ -849,7 +955,7 @@ export class CatalogueService {
       resolveEntity(Category, input.categoryId),
       input.productLineId ? resolveEntity(ProductLine, input.productLineId) : Promise.resolve(null),
       resolveEntity(Size, input.sizeId),
-      resolveEntity(Thickness, input.thicknessId),
+      input.thicknessId ? resolveEntity(Thickness, input.thicknessId) : Promise.resolve(null),
     ]);
 
     if (!brand || brand.status !== 'ACTIVE') {
@@ -868,8 +974,12 @@ export class CatalogueService {
     if (!size || size.status !== 'ACTIVE') {
       throw new AppError('Size not found or inactive.', 400, 'INVALID_SIZE');
     }
-    if (!thickness || thickness.status !== 'ACTIVE') {
-      throw new AppError('Thickness not found or inactive.', 400, 'INVALID_THICKNESS');
+
+    const brandRequiresThickness = brand.hasThickness !== false;
+    if (brandRequiresThickness) {
+      if (!thickness || thickness.status !== 'ACTIVE') {
+        throw new AppError(`Thickness is required for Brand '${brand.name}'.`, 400, 'INVALID_THICKNESS');
+      }
     }
 
     // 2. Resolve primary branch and location for opening stock & product association
@@ -888,13 +998,14 @@ export class CatalogueService {
     const productName = productLine ? productLine.name : `${brand.name} - ${category.name}`;
 
     // 3. Generate unique SKU and validate variant does not already exist BEFORE touching products
-    const skuCodePrefix = productLine?.code || category.code;
-    const sku = generateSkuCode(brand.code, skuCodePrefix, size.displayLabel, thickness.value);
+    const plIdentifier = productLine?.name || productLine?.code || '';
+    const sku = generateSkuCode(brand.code, category.code, size.displayLabel, thickness ? thickness.value : undefined, plIdentifier);
 
     const existingVariant = await Variant.findOne({ sku });
     if (existingVariant) {
+      const thickText = thickness?.displayLabel ? `, ${thickness.displayLabel}` : '';
       throw new AppError(
-        `A mattress variant with SKU '${sku}' (${productName}, ${size.displayLabel}, ${thickness.displayLabel}) already exists.`,
+        `A variant with SKU '${sku}' (${productName}, ${size.displayLabel}${thickText}) already exists.`,
         409,
         'SKU_ALREADY_EXISTS'
       );
@@ -980,7 +1091,7 @@ export class CatalogueService {
       variant = await Variant.create({
         productId: product._id,
         sizeId: size._id,
-        thicknessId: thickness._id,
+        ...(thickness ? { thicknessId: thickness._id } : {}),
         sku,
         listPrice: listPricePaisa,
         purchasePrice: purchasePricePaisa,
@@ -1200,20 +1311,28 @@ export class CatalogueService {
       andConditions.push({ productId: { $in: pIds } });
     }
 
-    // Multi-dimensional Fast Search Engine (SKU, Product, Brand, Category, Size, Thickness)
+    // Multi-dimensional High-Speed Search Engine (Memory-cached dictionaries + indexed lookup)
     if (query.search && query.search.trim()) {
       const rawTerm = query.search.trim();
       const escapedTerm = rawTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(escapedTerm, 'i');
 
-      const [mBrands, mCategories, mLines, mSizes, mThicknesses] = await Promise.all([
-        Brand.find({ name: regex }).select('_id').lean(),
-        Category.find({ name: regex }).select('_id').lean(),
-        ProductLine.find({ name: regex }).select('_id').lean(),
-        Size.find({ displayLabel: regex }).select('_id').lean(),
-        Thickness.find({ displayLabel: regex }).select('_id').lean(),
-      ]);
+      // 1. Instant resolution from server in-memory master cache (< 0.1ms without 5 DB round-trips)
+      const meta = await getMasterMetadata();
+      const mBrands = meta.brands.filter((b) => regex.test(b.name));
+      const mCategories = meta.categories.filter((c) => regex.test(c.name));
+      const mLines = meta.lines.filter((l) => regex.test(l.name));
+      const mSizes = meta.sizes.filter(
+        (s) =>
+          regex.test(s.displayLabel) ||
+          (s.length && s.width && regex.test(`${s.length}x${s.width}`)) ||
+          (s.length && s.width && regex.test(`${s.length} × ${s.width}`))
+      );
+      const mThicknesses = meta.thicknesses.filter(
+        (t) => regex.test(t.displayLabel) || (t.value !== undefined && regex.test(String(t.value)))
+      );
 
+      // 2. Targeted product query
       const mProductFilter: any = {
         $or: [
           { name: regex },
@@ -1271,11 +1390,11 @@ export class CatalogueService {
 
     const filter: any = andConditions.length > 0 ? { $and: andConditions } : {};
 
-    // 1. Total matching count for pagination
-    const total = await Variant.countDocuments(filter);
-
-    // 2. Active count for high-level counter displays
-    const activeCount = await Variant.countDocuments({ ...filter, status: 'ACTIVE' });
+    // Parallel count queries for 2x faster pagination metadata
+    const [total, activeCount] = await Promise.all([
+      Variant.countDocuments(filter),
+      Variant.countDocuments({ ...filter, status: 'ACTIVE' }),
+    ]);
 
     // 3. Paginated Query Builder
     let queryBuilder = Variant.find(filter)
@@ -1294,7 +1413,7 @@ export class CatalogueService {
     const page = Math.max(1, query.page || 1);
     const isPaginated = Boolean(query.page || (query.limit && query.limit > 0));
     const isFetchAll = query.all === true || query.limit === -1 || query.limit === 0 || !isPaginated;
-    const limit = isFetchAll ? 0 : (query.limit && query.limit > 0 ? query.limit : 25);
+    const limit = isFetchAll ? 0 : (query.limit && query.limit > 0 ? query.limit : 10);
 
     if (limit > 0) {
       const skip = (page - 1) * limit;
@@ -1604,7 +1723,7 @@ export class CatalogueService {
       (input.thicknessId && input.thicknessId !== currentThick?._id?.toString());
 
     if (isSpecChanged) {
-      const plCode = productLine?.code || (productLine?.name ? productLine.name.slice(0, 4) : undefined);
+      const plCode = productLine?.name || productLine?.code;
       const newSku = generateSkuCode(brand.code, category.code, size.displayLabel, thickness.value, plCode);
       const oldSku = variant.sku;
 
@@ -1848,6 +1967,8 @@ export class CatalogueService {
     const finalStockDoc =
       (await StockBalance.findOne({ variantId: variant._id })) ||
       (await StockBalance.findOne({ sku: variant.sku }));
+
+    PosService.invalidatePOSCache();
 
     return {
       id: variant._id.toString(),
@@ -2416,7 +2537,7 @@ export class CatalogueService {
       }
 
       // 8. Generate Unique SKU (Instant in-memory uniqueness verification)
-      const baseSku = generateSkuCode(brand.code, category.code, size.displayLabel, thickness.value, productLine.code);
+      const baseSku = generateSkuCode(brand.code, category.code, size.displayLabel, thickness.value, productLine.name || productLine.code);
       let uniqueSku = baseSku;
       let skuSuffix = 1;
       while (existingSkuSet.has(uniqueSku.toUpperCase())) {
@@ -2563,6 +2684,8 @@ export class CatalogueService {
         await StockMovement.insertMany(syncStockMovements.slice(b, b + BATCH_SIZE), { ordered: false });
       }
     }
+
+    PosService.invalidatePOSCache();
 
     return {
       totalRows: rows.length,

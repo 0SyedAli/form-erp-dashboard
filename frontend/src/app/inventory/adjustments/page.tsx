@@ -143,9 +143,7 @@ export default function StockAdjustmentsPage() {
       title="Stock Adjustments"
       subtitle="Physical count corrections, damage write-offs, and audit adjustments"
     >
-      <InventoryNavTabs branchId={activeBranchId} />
-
-      <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-4xl mx-auto">
+      <div className="space-y-6 max-w-4xl mx-auto">
         {/* Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
           <div>
@@ -186,8 +184,7 @@ export default function StockAdjustmentsPage() {
                 {allSkus.map((sku: any) => {
                   const display =
                     sku.posDisplayName ||
-                    `${sku.productName || sku.sku} (${sku.sizeLabel || ''} ${
-                      sku.thicknessInches ? sku.thicknessInches + '"' : ''
+                    `${sku.productName || sku.sku} (${sku.sizeLabel || ''} ${sku.thicknessInches ? sku.thicknessInches + '"' : ''
                     })`;
                   return (
                     <option key={sku.id || sku.sku} value={sku.sku}>
@@ -251,13 +248,12 @@ export default function StockAdjustmentsPage() {
                   className="w-full px-3.5 py-2 text-sm font-bold bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:border-brand-blue text-slate-900 shadow-2xs"
                 />
                 <span
-                  className={`text-xs font-bold whitespace-nowrap px-3 py-2 rounded-xl border ${
-                    qtyDifference > 0
-                      ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                      : qtyDifference < 0
+                  className={`text-xs font-bold whitespace-nowrap px-3 py-2 rounded-xl border ${qtyDifference > 0
+                    ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                    : qtyDifference < 0
                       ? 'text-rose-700 bg-rose-50 border-rose-200'
                       : 'text-slate-500 bg-slate-50 border-slate-200'
-                  }`}
+                    }`}
                 >
                   {qtyDifference > 0 ? `+${qtyDifference}` : qtyDifference} diff
                 </span>

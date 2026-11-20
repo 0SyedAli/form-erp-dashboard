@@ -7,6 +7,7 @@ export const brandSchema = z.object({
     description: z.string().trim().optional(),
     logoUrl: z.string().trim().optional().or(z.literal('')),
     branchId: z.string().optional(),
+    hasThickness: z.boolean().optional(),
     status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
@@ -19,6 +20,7 @@ export const updateBrandSchema = z.object({
     description: z.string().trim().optional(),
     logoUrl: z.string().trim().optional().or(z.literal('')),
     branchId: z.string().optional(),
+    hasThickness: z.boolean().optional(),
     status: z.enum(['ACTIVE', 'INACTIVE', 'active', 'inactive']).optional(),
   }),
 });
@@ -119,7 +121,7 @@ export const createProductWithVariantSchema = z.object({
     categoryId: z.string({ required_error: 'Category is required' }),
     productLineId: z.string().optional(),
     sizeId: z.string({ required_error: 'Size is required' }),
-    thicknessId: z.string({ required_error: 'Thickness is required' }),
+    thicknessId: z.string().optional(),
     // Financials in Rupees
     listPrice: z.coerce.number().min(0, 'List Price must be positive'),
     purchasePercent: z.coerce.number().min(0).max(100).optional(),

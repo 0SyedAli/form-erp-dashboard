@@ -202,7 +202,7 @@ export default function StockCountsPage() {
     <AppLayout title="Stock Counting & Reconciliation" subtitle="Physical cycle counting, variance analysis & reconciliation">
       {/* <InventoryNavTabs branchId={selectedBranchId} /> */}
 
-      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className="space-y-6">
         {/* Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-gray-200/80 shadow-xs">
           <div>
@@ -253,8 +253,8 @@ export default function StockCountsPage() {
                   </span>
                   <span
                     className={`text-xs font-bold px-2 py-0.5 rounded-full ${activeSession.status === 'COMPLETED'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-amber-100 text-amber-800'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-amber-100 text-amber-800'
                       }`}
                   >
                     {activeSession.status}
@@ -344,10 +344,10 @@ export default function StockCountsPage() {
                         <td className="py-2.5 px-3 text-center">
                           <span
                             className={`inline-block px-2 py-0.5 text-xs font-bold rounded-md ${diff === 0
-                                ? 'bg-gray-100 text-gray-700'
-                                : diff > 0
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-red-100 text-red-800'
+                              ? 'bg-gray-100 text-gray-700'
+                              : diff > 0
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-red-100 text-red-800'
                               }`}
                           >
                             {diff > 0 ? `+${diff}` : diff}
@@ -431,8 +431,8 @@ export default function StockCountsPage() {
                         <td className="py-3 px-4 text-center">
                           <span
                             className={`inline-block px-2.5 py-0.5 text-xs font-bold rounded-full ${cnt.totalDiscrepancy === 0
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-amber-100 text-amber-800'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-800'
                               }`}
                           >
                             {cnt.totalDiscrepancy} units
@@ -441,8 +441,8 @@ export default function StockCountsPage() {
                         <td className="py-3 px-4">
                           <span
                             className={`inline-block px-2 py-0.5 text-xs font-bold rounded-full ${cnt.status === 'COMPLETED'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-blue-100 text-blue-800'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-blue-100 text-blue-800'
                               }`}
                           >
                             {cnt.status}
@@ -639,10 +639,10 @@ export default function StockCountsPage() {
                         <td className="p-2 text-center">
                           <span
                             className={`font-bold ${i.variance === 0
-                                ? 'text-gray-500'
-                                : i.variance > 0
-                                  ? 'text-emerald-600'
-                                  : 'text-red-600'
+                              ? 'text-gray-500'
+                              : i.variance > 0
+                                ? 'text-emerald-600'
+                                : 'text-red-600'
                               }`}
                           >
                             {i.variance > 0 ? `+${i.variance}` : i.variance}

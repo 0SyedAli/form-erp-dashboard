@@ -23,8 +23,8 @@ import {
 } from '@/store/services/apiSlice';
 import {
   posApi,
-  useGetBranchesQuery as useGetBackendBranchesQuery,
-  useGetPOSCatalogueQuery as useGetBackendPOSCatalogueQuery,
+  useGetPOSBootstrapQuery,
+  useGetPOSOutOfStockQuery,
   useGetHeldSalesQuery as useGetBackendHeldSalesQuery,
   useHoldSaleMutation as useHoldSaleBackendMutation,
   useDeleteHeldSaleMutation as useDeleteHeldSaleBackendMutation,
@@ -32,20 +32,8 @@ import {
   useGetInvoiceByIdQuery as useGetBackendInvoiceByIdQuery,
   POSCheckoutInput,
 } from '@/store/services/posApi';
-import {
-  catalogueApi,
-  useGetBrandsQuery as useGetBackendBrandsQuery,
-  useGetCategoriesQuery as useGetBackendCategoriesQuery,
-  useGetProductLinesQuery as useGetBackendProductLinesQuery,
-  useGetSizesQuery as useGetBackendSizesQuery,
-  useGetThicknessesQuery as useGetBackendThicknessesQuery,
-  useGetProductsQuery as useGetBackendProductsQuery,
-  useGetSkusQuery as useGetBackendSkusQuery,
-} from '@/store/services/catalogueApi';
-import {
-  inventoryApi,
-  useGetStockBalancesQuery as useGetBackendStockBalancesQuery,
-} from '@/store/services/inventoryApi';
+import { catalogueApi } from '@/store/services/catalogueApi';
+import { inventoryApi } from '@/store/services/inventoryApi';
 import {
   saveMasterSnapshot,
   getMasterSnapshot,
@@ -89,6 +77,7 @@ import HeldSalesModal from '@/components/pos/HeldSalesModal';
 import POSSettingsModal from '@/components/pos/POSSettingsModal';
 import NewSaleConfirmModal from '@/components/pos/NewSaleConfirmModal';
 import PaymentCheckoutModal, { CheckoutSubmitData } from '@/components/pos/PaymentCheckoutModal';
+import Sidebar from '@/components/layout/Sidebar';
 import { printThermalReceipt } from '@/utils/thermalPrinter';
 
 function computeDefaultDueDate(days: number = 30): string {
@@ -120,6 +109,9 @@ function POSContent() {
   // Selected fulfilling branch for cross-branch stock viewing & selling
   const [selectedStockBranchId, setSelectedStockBranchId] = useState<string | null>(null);
 
+  // Main ERP Navigation Drawer Sidebar state in POS
+  const [isNavSidebarOpen, setIsNavSidebarOpen] = useState<boolean>(false);
+
   // Offline Resilience & Synchronization
   const [offlineSnapshot, setOfflineSnapshot] = useState<POSMasterSnapshot | null>(null);
 
@@ -135,24 +127,12 @@ function POSContent() {
   const { data: posSettings } = useGetPOSSettingsQuery(undefined, { skip: isBackendMode });
   const { data: demoHeldSales = [] } = useGetHeldSalesQuery(undefined, { skip: isBackendMode });
 
-  // Backend Queries
-  const { data: backendBranches = [] } = useGetBackendBranchesQuery(undefined, { skip: !isBackendMode });
-  const { data: backendBrands = [] } = useGetBackendBrandsQuery(undefined, { skip: !isBackendMode });
-  const { data: backendCategories = [] } = useGetBackendCategoriesQuery(undefined, { skip: !isBackendMode });
-  const { data: backendProductLines = [] } = useGetBackendProductLinesQuery(undefined, { skip: !isBackendMode });
-  const { data: backendSizes = [] } = useGetBackendSizesQuery(undefined, { skip: !isBackendMode });
-  const { data: backendThicknesses = [] } = useGetBackendThicknessesQuery(undefined, { skip: !isBackendMode });
-  const { data: backendProducts = [], refetch: refetchProducts } = useGetBackendProductsQuery({ limit: 500 }, { skip: !isBackendMode });
-  const { data: backendSkusResponse, refetch: refetchSkus } = useGetBackendSkusQuery(
-    { all: true, status: 'ACTIVE' },
-    { skip: !isBackendMode }
-  );
+  // Single Consolidated POS Bootstrap Query (Replaces 8 separate parallel queries)
+  const { data: bootstrapData, refetch: refetchBootstrap } = useGetPOSBootstrapQuery(undefined, { skip: !isBackendMode });
 
   // Unified Branches
   const branches: Branch[] = useMemo(() => {
-    const backendList = Array.isArray(backendBranches)
-      ? backendBranches
-      : (backendBranches as any)?.data || [];
+    const backendList = bootstrapData?.branches || [];
     const offlineList = offlineSnapshot?.branches || (offlineSnapshot?.activeBranch ? [offlineSnapshot.activeBranch] : []);
     const demoList = demoBranches || [];
 
@@ -166,7 +146,7 @@ function POSContent() {
       ...b,
       id: String(b.id || b._id || ''),
     })) as Branch[];
-  }, [backendBranches, demoBranches, offlineSnapshot]);
+  }, [bootstrapData?.branches, demoBranches, offlineSnapshot]);
 
   // Active Terminal Branch
   const activeBranch = useMemo(() => {
@@ -203,10 +183,12 @@ function POSContent() {
   // Effective stock branch (switched in header or own terminal branch)
   const effectiveStockBranchId = selectedStockBranchId || activeBranch?.id;
 
-  const { data: backendStockBalances = [], refetch: refetchStockBalances } = useGetBackendStockBalancesQuery(
-    effectiveStockBranchId ? { branchId: effectiveStockBranchId, limit: 1000 } : undefined,
-    { skip: !isBackendMode }
+  // Progressive Lazy Out-of-Stock Query (Stage 2: Runs seamlessly in background after bootstrap)
+  const { data: outOfStockData } = useGetPOSOutOfStockQuery(
+    effectiveStockBranchId ? { branchId: effectiveStockBranchId } : undefined,
+    { skip: !isBackendMode || !bootstrapData }
   );
+
   const { data: backendHeldSales = [] } = useGetBackendHeldSalesQuery(undefined, { skip: !isBackendMode });
 
   // Mutations
@@ -248,10 +230,9 @@ function POSContent() {
       (result: SyncResult) => {
         dispatch(inventoryApi.util.invalidateTags(['StockBalance', 'InventorySummary', 'StockMovement']));
         dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
-        refetchStockBalances();
-        refetchSkus();
+        refetchBootstrap();
       },
-      [dispatch, refetchStockBalances, refetchSkus]
+      [dispatch, refetchBootstrap]
     )
   );
 
@@ -271,9 +252,7 @@ function POSContent() {
 
   // Unified Data (Online Primary with Offline Snapshot Fallback)
   const brands: Brand[] = useMemo(() => {
-    const backendList = Array.isArray(backendBrands)
-      ? backendBrands
-      : (backendBrands as any)?.data || [];
+    const backendList = bootstrapData?.brands || [];
     const offlineList = offlineSnapshot?.brands || [];
     const demoList = demoBrands || [];
 
@@ -287,12 +266,10 @@ function POSContent() {
       ...b,
       id: String(b.id || b._id || ''),
     })) as Brand[];
-  }, [backendBrands, demoBrands, offlineSnapshot]);
+  }, [bootstrapData?.brands, demoBrands, offlineSnapshot]);
 
   const categories: Category[] = useMemo(() => {
-    const backendList = Array.isArray(backendCategories)
-      ? backendCategories
-      : (backendCategories as any)?.data || [];
+    const backendList = bootstrapData?.categories || [];
     const offlineList = offlineSnapshot?.categories || [];
     const demoList = demoCategories || [];
 
@@ -306,13 +283,12 @@ function POSContent() {
       ...c,
       id: String(c.id || c._id || ''),
       brandId: String(c.brandId?._id || c.brandId || c.brand?._id || c.brand?.id || ''),
+      status: c.status || 'ACTIVE',
     })) as Category[];
-  }, [backendCategories, demoCategories, offlineSnapshot]);
+  }, [bootstrapData?.categories, demoCategories, offlineSnapshot]);
 
   const sizes: MattressSize[] = useMemo(() => {
-    const backendList = Array.isArray(backendSizes)
-      ? backendSizes
-      : (backendSizes as any)?.data || [];
+    const backendList = bootstrapData?.sizes || [];
     const offlineList = offlineSnapshot?.sizes || [];
     const demoList = demoSizes || [];
 
@@ -325,13 +301,12 @@ function POSContent() {
     return list.map((s: any) => ({
       ...s,
       id: String(s.id || s._id || ''),
+      status: s.status || 'ACTIVE',
     })) as MattressSize[];
-  }, [backendSizes, demoSizes, offlineSnapshot]);
+  }, [bootstrapData?.sizes, demoSizes, offlineSnapshot]);
 
   const thicknesses: MattressThickness[] = useMemo(() => {
-    const backendList = Array.isArray(backendThicknesses)
-      ? backendThicknesses
-      : (backendThicknesses as any)?.data || [];
+    const backendList = bootstrapData?.thicknesses || [];
     const offlineList = offlineSnapshot?.thicknesses || [];
     const demoList = demoThicknesses || [];
 
@@ -344,13 +319,15 @@ function POSContent() {
     return list.map((t: any) => ({
       ...t,
       id: String(t.id || t._id || ''),
+      value: Number(t.value || 0),
+      status: t.status || 'ACTIVE',
     })) as MattressThickness[];
-  }, [backendThicknesses, demoThicknesses, offlineSnapshot]);
+  }, [bootstrapData?.thicknesses, demoThicknesses, offlineSnapshot]);
 
   const { productLineMap, productLineMapByCompound } = useMemo(() => {
     const idMap = new Map<string, any>();
     const compoundMap = new Map<string, any>();
-    (Array.isArray(backendProductLines) ? backendProductLines : (backendProductLines as any)?.data || []).forEach((pl: any) => {
+    (bootstrapData?.productLines || []).forEach((pl: any) => {
       const id = String(pl.id || pl._id || '');
       if (id) idMap.set(id, pl);
 
@@ -362,20 +339,31 @@ function POSContent() {
       }
     });
     return { productLineMap: idMap, productLineMapByCompound: compoundMap };
-  }, [backendProductLines]);
+  }, [bootstrapData?.productLines]);
 
   const products: CatalogueProduct[] = useMemo(() => {
-    const backendList = Array.isArray(backendProducts)
-      ? backendProducts
-      : (backendProducts as any)?.data || (backendProducts as any)?.items || [];
+    const backendInStock = bootstrapData?.products || [];
+    const backendOutOfStock = outOfStockData?.products || [];
     const offlineList = offlineSnapshot?.products || [];
     const demoList = demoProducts || [];
 
-    const list = backendList.length > 0
-      ? backendList
-      : offlineList.length > 0
-        ? offlineList
-        : demoList;
+    let list: any[] = [];
+    if (backendInStock.length > 0 || backendOutOfStock.length > 0) {
+      const seen = new Set<string>();
+      const merged: any[] = [];
+      for (const p of [...backendInStock, ...backendOutOfStock]) {
+        const id = String(p.id || p._id || '');
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          merged.push(p);
+        }
+      }
+      list = merged;
+    } else if (offlineList.length > 0) {
+      list = offlineList;
+    } else {
+      list = demoList;
+    }
 
     return list.map((p: any) => {
       const plId = String(p.productLineId?._id || p.productLineId || p.productLine?._id || p.productLine?.id || '');
@@ -389,11 +377,16 @@ function POSContent() {
         || productLineMapByCompound.get(compoundKey);
       const lineImg = plObj?.imageUrl || (p.productLine && typeof p.productLine === 'object' && p.productLine.imageUrl) || '';
 
+      const catObj = categories.find((c) => String(c.id) === categoryId);
+      const brandObj = brands.find((b) => String(b.id) === brandId);
+
       return {
         ...p,
         id: String(p.id || p._id || ''),
         brandId,
         categoryId,
+        category: catObj || p.category,
+        brand: brandObj || p.brand,
         productLineId: plId || plObj?.id || plObj?._id,
         productLine: plObj || p.productLine,
         productLineName: p.productLineName || plObj?.name || p.productLine?.name || '',
@@ -404,20 +397,31 @@ function POSContent() {
         status: p.status || 'ACTIVE',
       };
     }) as CatalogueProduct[];
-  }, [backendProducts, demoProducts, offlineSnapshot, productLineMap, productLineMapByCompound]);
+  }, [bootstrapData?.products, outOfStockData?.products, demoProducts, offlineSnapshot, productLineMap, productLineMapByCompound, categories, brands]);
 
   const variants: ProductVariant[] = useMemo(() => {
-    const backendList = Array.isArray(backendSkusResponse)
-      ? backendSkusResponse
-      : (backendSkusResponse as any)?.data || (backendSkusResponse as any)?.items || [];
+    const backendInStock = bootstrapData?.variants || [];
+    const backendOutOfStock = outOfStockData?.variants || [];
     const offlineList = offlineSnapshot?.variants || [];
     const demoList = demoVariants || [];
 
-    const list = backendList.length > 0
-      ? backendList
-      : offlineList.length > 0
-        ? offlineList
-        : demoList;
+    let list: any[] = [];
+    if (backendInStock.length > 0 || backendOutOfStock.length > 0) {
+      const seen = new Set<string>();
+      const merged: any[] = [];
+      for (const v of [...backendInStock, ...backendOutOfStock]) {
+        const id = String(v.id || v._id || '');
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          merged.push(v);
+        }
+      }
+      list = merged;
+    } else if (offlineList.length > 0) {
+      list = offlineList;
+    } else {
+      list = demoList;
+    }
 
     return list.map((v: any) => {
       const pId = String(v.productId?._id || v.productId || v.product?._id || v.product?.id || '');
@@ -444,14 +448,12 @@ function POSContent() {
         status: v.status || 'ACTIVE',
       };
     }) as ProductVariant[];
-  }, [backendSkusResponse, demoVariants, offlineSnapshot]);
+  }, [bootstrapData?.variants, outOfStockData?.variants, demoVariants, offlineSnapshot]);
 
   const isRetailAllowed = activeBranch?.settings?.allowRetailSales ?? true;
 
   const rawStock = useMemo(() => {
-    const backendList = Array.isArray(backendStockBalances)
-      ? backendStockBalances
-      : (backendStockBalances as any)?.items || (backendStockBalances as any)?.data || [];
+    const backendList = bootstrapData?.inventoryBalances || [];
     const offlineList = offlineSnapshot?.inventoryBalances || [];
     const demoList = demoInventoryBalances || [];
 
@@ -460,7 +462,7 @@ function POSContent() {
       : offlineList.length > 0
         ? offlineList
         : demoList;
-  }, [backendStockBalances, offlineSnapshot, demoInventoryBalances]);
+  }, [bootstrapData?.inventoryBalances, offlineSnapshot, demoInventoryBalances]);
 
   const inventoryBalances: InventoryBalance[] = useMemo(() => {
     const list = Array.isArray(rawStock) ? rawStock : [];
@@ -566,21 +568,21 @@ function POSContent() {
       }
     }
 
-    // 2. Products explicitly owned by or created for this branch
+    // 2. All active catalogue products (master products or branch-owned products)
     for (let i = 0; i < products.length; i++) {
       const p = products[i];
-      if ((p as any).branchId && String((p as any).branchId) === String(effectiveStockBranchId)) {
+      if (!(p as any).branchId || !effectiveStockBranchId || String((p as any).branchId) === String(effectiveStockBranchId)) {
         pIdSet.add(String(p.id));
       }
     }
 
-    // In demo mock mode for seed branch BR-MAIN-01, fallback to all demo products if no balances yet
-    if (!isBackendMode && effectiveStockBranchId === 'BR-MAIN-01' && pIdSet.size === 0) {
+    // Fallback: If no products matched, show all products
+    if (pIdSet.size === 0) {
       products.forEach((p) => pIdSet.add(String(p.id)));
     }
 
     return pIdSet;
-  }, [branchBalances, variants, products, effectiveStockBranchId, isBackendMode]);
+  }, [branchBalances, variants, products, effectiveStockBranchId]);
 
   // Fast O(P) Brand Stock Map (sum of variant stock for each brand within this branch)
   const brandStockMap = useMemo(() => {
@@ -605,8 +607,9 @@ function POSContent() {
     const counts: Record<string, number> = {};
     if (Array.isArray(products)) {
       products.forEach((p) => {
-        if (p.status === 'ACTIVE' && p.brandId && branchProductIds.has(String(p.id))) {
-          counts[p.brandId] = (counts[p.brandId] || 0) + 1;
+        if ((!p.status || p.status === 'ACTIVE') && p.brandId && branchProductIds.has(String(p.id))) {
+          const bId = String(p.brandId);
+          counts[bId] = (counts[bId] || 0) + 1;
         }
       });
     }
@@ -694,6 +697,7 @@ function POSContent() {
   }, [chosenBrandId, branchBrands, brands, brandStockMap, brandProductCounts]);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
+  const [stockFilter, setStockFilter] = useState<'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK'>('IN_STOCK');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
 
@@ -832,44 +836,65 @@ function POSContent() {
     const counts: Record<string, number> = {};
     if (Array.isArray(products)) {
       products.forEach((p) => {
-        if (p.brandId === selectedBrandId && p.status === 'ACTIVE' && p.categoryId && branchProductIds.has(String(p.id))) {
-          counts[p.categoryId] = (counts[p.categoryId] || 0) + 1;
+        if (
+          String(p.brandId) === String(selectedBrandId) &&
+          (p.status === 'ACTIVE' || !p.status) &&
+          p.categoryId &&
+          branchProductIds.has(String(p.id))
+        ) {
+          const cId = String(p.categoryId);
+          counts[cId] = (counts[cId] || 0) + 1;
         }
       });
     }
     return counts;
   }, [products, selectedBrandId, branchProductIds]);
 
-  // Filter categories strictly by selected brand AND scoped to this branch
+  // Filter categories strictly by selected brand
   const branchCategories = useMemo(() => {
-    const filtered = categories.filter((c) => {
-      if (String(c.brandId) !== String(selectedBrandId) || c.status !== 'ACTIVE') {
-        return false;
-      }
-      if ((c as any).branchId && String((c as any).branchId) === String(effectiveStockBranchId)) {
-        return true;
-      }
-      return (categoryProductCounts[c.id] || 0) > 0;
+    const targetBrandId = selectedBrandId || currentBrand?.id || brands[0]?.id;
+    return categories.filter((c) => {
+      const isBrandMatch = !targetBrandId || String(c.brandId) === String(targetBrandId);
+      const isActive = c.status === 'ACTIVE' || !c.status;
+      return isBrandMatch && isActive;
     });
+  }, [categories, selectedBrandId, currentBrand?.id, brands]);
 
-    if ((brandProductCounts[selectedBrandId] || 0) > 0) {
-      return filtered;
-    }
+  // Brand products count segmented by stock status for sidebar count
+  const brandProductsInStockCount = useMemo(() => {
+    return products.filter((p) => {
+      if (p.brandId !== selectedBrandId || p.status !== 'ACTIVE' || !branchProductIds.has(String(p.id))) return false;
+      const pVars = variantsByProductId.get(String(p.id)) || [];
+      return pVars.some((v) => (variantStockMap[v.id] || 0) > 0);
+    }).length;
+  }, [products, selectedBrandId, branchProductIds, variantsByProductId, variantStockMap]);
 
-    return categories.filter(
-      (c) => String(c.brandId) === String(selectedBrandId) && c.status === 'ACTIVE'
-    );
-  }, [categories, selectedBrandId, categoryProductCounts, brandProductCounts, effectiveStockBranchId]);
+  const brandProductsOutOfStockCount = useMemo(() => {
+    return products.filter((p) => {
+      if (p.brandId !== selectedBrandId || p.status !== 'ACTIVE' || !branchProductIds.has(String(p.id))) return false;
+      const pVars = variantsByProductId.get(String(p.id)) || [];
+      return !pVars.some((v) => (variantStockMap[v.id] || 0) > 0);
+    }).length;
+  }, [products, selectedBrandId, branchProductIds, variantsByProductId, variantStockMap]);
 
-  // Auto-reset category selection to ALL when switching brands or branches if category no longer exists
+  const brandProductsTotalCount = useMemo(() => {
+    return products.filter((p) => p.brandId === selectedBrandId && p.status === 'ACTIVE' && branchProductIds.has(String(p.id))).length;
+  }, [products, selectedBrandId, branchProductIds]);
+
+  // Auto-reset category selection to ALL when switching brands, branches, or stockFilter if category becomes disabled
   useEffect(() => {
     if (selectedCategoryId !== 'ALL') {
       const exists = branchCategories.some((c) => c.id === selectedCategoryId);
-      if (!exists) {
+      const stock = categoryStockMap[selectedCategoryId] ?? 0;
+      const isCategoryDisabled =
+        (stockFilter === 'IN_STOCK' && stock <= 0) ||
+        (stockFilter === 'OUT_OF_STOCK' && stock > 0);
+
+      if (!exists || isCategoryDisabled) {
         setSelectedCategoryId('ALL');
       }
     }
-  }, [selectedBrandId, branchCategories, selectedCategoryId]);
+  }, [selectedBrandId, branchCategories, selectedCategoryId, stockFilter, categoryStockMap]);
 
   // High-performance Offline Search Index (Precomputed O(1) in-memory lookup)
   const productSearchStrings = useMemo(() => {
@@ -1566,6 +1591,7 @@ function POSContent() {
     <div className="flex flex-col h-screen w-full bg-[#f4f6fa] overflow-hidden font-sans select-none">
       {/* 1. Top Header */}
       <POSHeader
+        onOpenNavSidebar={() => setIsNavSidebarOpen(true)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         activeBranch={activeBranch}
@@ -1663,7 +1689,14 @@ function POSContent() {
               onSelectCategory={setSelectedCategoryId}
               categoryProductCounts={categoryProductCounts}
               categoryStockMap={categoryStockMap}
-              totalAllCount={products.filter((p) => p.brandId === selectedBrandId && p.status === 'ACTIVE' && branchProductIds.has(String(p.id))).length}
+              stockFilter={stockFilter}
+              totalAllCount={
+                stockFilter === 'IN_STOCK'
+                  ? brandProductsInStockCount
+                  : stockFilter === 'OUT_OF_STOCK'
+                  ? brandProductsOutOfStockCount
+                  : brandProductsTotalCount
+              }
             />
 
             {/* Center: Products Grid Card */}
@@ -1677,6 +1710,8 @@ function POSContent() {
               saleType={saleType}
               sizes={sizes}
               thicknesses={thicknesses}
+              stockFilter={stockFilter}
+              onStockFilterChange={setStockFilter}
             />
           </div>
         </div>
@@ -1862,6 +1897,12 @@ function POSContent() {
           setIsNewSaleConfirmOpen(false);
           handleClearCart();
         }}
+      />
+
+      {/* 12. Main ERP Navigation Drawer Sidebar */}
+      <Sidebar
+        isMobileOpen={isNavSidebarOpen}
+        onMobileClose={() => setIsNavSidebarOpen(false)}
       />
     </div>
   );

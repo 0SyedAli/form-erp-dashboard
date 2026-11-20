@@ -12,6 +12,22 @@ import {
 
 export const posRoutes = Router();
 
+// 0. POS Unified Bootstrap (Single round-trip, lean snapshot)
+posRoutes.get(
+  '/bootstrap',
+  authenticate,
+  requireBranchPermission('pos'),
+  PosController.getBootstrap
+);
+
+// 0b. POS Out of Stock Products & Variants (Lazy progressive background load)
+posRoutes.get(
+  '/out-of-stock',
+  authenticate,
+  requireBranchPermission('pos'),
+  PosController.getOutOfStock
+);
+
 // 1. POS Catalogue
 posRoutes.get(
   '/catalogue',

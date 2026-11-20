@@ -7,6 +7,7 @@ export interface Brand {
   id: string;
   name: string;
   code: string;
+  hasThickness?: boolean;
   status: 'ACTIVE' | 'INACTIVE';
   description?: string;
   createdAt?: string;
@@ -130,7 +131,7 @@ export interface CreateProductRequest {
   categoryId: string;
   productLineId?: string;
   sizeId: string;
-  thicknessId: string;
+  thicknessId?: string;
   listPrice: number;
   purchasePercent?: number;
   purchasePrice?: number;
@@ -285,7 +286,7 @@ export const catalogueApi = createApi({
 
     createBrand: builder.mutation<
       Brand,
-      { name: string; code: string; description?: string; logoUrl?: string; logo?: string; status?: string }
+      { name: string; code: string; description?: string; logoUrl?: string; logo?: string; status?: string; hasThickness?: boolean }
     >({
       query: (body) => ({
         url: '/brands',
@@ -295,6 +296,7 @@ export const catalogueApi = createApi({
           code: body.code,
           description: body.description,
           logoUrl: body.logoUrl || body.logo,
+          hasThickness: body.hasThickness !== undefined ? body.hasThickness : true,
           ...(body.status && { status: body.status }),
         },
       }),
@@ -303,7 +305,7 @@ export const catalogueApi = createApi({
 
     updateBrand: builder.mutation<
       Brand,
-      { id: string; name?: string; code?: string; description?: string; logoUrl?: string; logo?: string; status?: string }
+      { id: string; name?: string; code?: string; description?: string; logoUrl?: string; logo?: string; status?: string; hasThickness?: boolean }
     >({
       query: ({ id, ...body }) => ({
         url: `/brands/${id}`,
@@ -313,6 +315,7 @@ export const catalogueApi = createApi({
           ...(body.code && { code: body.code }),
           ...(body.description !== undefined && { description: body.description }),
           ...(body.logoUrl !== undefined || body.logo !== undefined ? { logoUrl: body.logoUrl || body.logo } : {}),
+          ...(body.hasThickness !== undefined && { hasThickness: body.hasThickness }),
           ...(body.status && { status: body.status }),
         },
       }),
@@ -578,7 +581,7 @@ export const catalogueApi = createApi({
         if (params?.search) queryParams.append('search', params.search);
         if (params?.branchId) queryParams.append('branchId', params.branchId);
         if (params?.page) queryParams.append('page', params.page.toString());
-        queryParams.append('limit', (params?.limit || 500).toString());
+        queryParams.append('limit', (params?.limit || 10).toString());
         const queryStr = queryParams.toString();
         return `/products${queryStr ? `?${queryStr}` : ''}`;
       },

@@ -133,6 +133,7 @@ export interface Brand {
   description: string;
   logo?: string;
   logoUrl?: string;
+  hasThickness?: boolean;
   status: CatalogueItemStatus;
   createdAt: string;
   updatedAt: string;

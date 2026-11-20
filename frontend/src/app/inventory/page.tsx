@@ -61,7 +61,7 @@ export default function InventoryOverviewPage() {
     <AppLayout title="Inventory Management" subtitle="Multi-Branch Real-Time Stock Tracking & Movements">
       {/* <InventoryNavTabs branchId={activeBranchFilter} /> */}
 
-      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className="space-y-6">
         {/* Top Header & Branch Context Filter */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-gray-200/80 shadow-xs">
           <div>
@@ -479,12 +479,12 @@ export default function InventoryOverviewPage() {
                         <div className="flex items-center gap-2">
                           <span
                             className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${mov.movementType === 'STOCK_RECEIPT'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : mov.movementType === 'DAMAGED_STOCK'
-                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                  : mov.movementType.includes('TRANSFER')
-                                    ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                                    : 'bg-blue-50 text-blue-700 border border-blue-200'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : mov.movementType === 'DAMAGED_STOCK'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                : mov.movementType.includes('TRANSFER')
+                                  ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                  : 'bg-blue-50 text-blue-700 border border-blue-200'
                               }`}
                           >
                             {mov.movementType.replace(/_/g, ' ')}

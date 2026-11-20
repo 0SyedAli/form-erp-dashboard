@@ -220,9 +220,7 @@ function StockReceivingContent() {
       title="Add Stock"
       subtitle="Quickly add new stock to your branch inventory"
     >
-      <InventoryNavTabs branchId={activeBranchId} />
-
-      <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-5xl mx-auto">
+      <div className="space-y-6 max-w-5xl mx-auto">
         {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
           <div className="flex items-center gap-3">
@@ -328,8 +326,7 @@ function StockReceivingContent() {
                               {catalogueSkus.map((sku: any) => {
                                 const label =
                                   sku.posDisplayName ||
-                                  `${sku.productName || sku.sku} (${sku.sizeLabel || ''} ${
-                                    sku.thicknessInches ? sku.thicknessInches + '"' : ''
+                                  `${sku.productName || sku.sku} (${sku.sizeLabel || ''} ${sku.thicknessInches ? sku.thicknessInches + '"' : ''
                                   })`;
                                 return (
                                   <option key={sku.id || sku.sku} value={sku.sku}>

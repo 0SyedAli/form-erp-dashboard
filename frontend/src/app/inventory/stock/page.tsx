@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
-import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
 import { useAppSelector, RootState } from '@/store';
 import { useGetStockBalancesQuery } from '@/store/services/inventoryApi';
 import { useGetBrandsQuery } from '@/store/services/catalogueApi';
+import { Pagination } from '@/components/common/Pagination';
 import {
   Boxes,
   Search,
@@ -14,6 +14,12 @@ import {
   SlidersHorizontal,
   RefreshCw,
   Plus,
+  X,
+  Package,
+  CheckCircle2,
+  XCircle,
+  ChevronRight,
+  Filter,
 } from 'lucide-react';
 
 export default function StockBalancesPage() {
@@ -24,37 +30,159 @@ export default function StockBalancesPage() {
 
   // Filter States
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [brandFilter, setBrandFilter] = useState('all');
-  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'in_stock' | 'low_stock' | 'out_of_stock'>('all');
+
+  // Google-Style Autocomplete Dropdown State
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Pagination state (default 10 items for high performance)
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
+  // 200ms Search Debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Reset pagination when search or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, brandFilter, stockStatusFilter]);
+
+  // Click outside listener for dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const {
     data: rawBalances = [],
     isLoading,
+    isFetching,
   } = useGetStockBalancesQuery(
     activeBranchId ? { branchId: activeBranchId } : undefined,
     { refetchOnMountOrArgChange: false }
   );
 
-  // Filter items cleanly
-  const filteredBalances = useMemo(() => {
-    return rawBalances.filter((item: any) => {
+  // Normalized balance records for high-speed client searching & rendering
+  const normalizedBalances = useMemo(() => {
+    return rawBalances.map((item: any) => {
       const v = item.variant;
-      const bName = v?.productId?.brandId?.name || item.brandName || '';
-      if (brandFilter !== 'all' && bName !== brandFilter) return false;
+      const productName =
+        v?.productId?.name ||
+        v?.product?.name ||
+        item.productName ||
+        item.sku;
+      const posDisplayName =
+        v?.productId?.posDisplayName ||
+        v?.posDisplayName ||
+        '';
+      const brandName =
+        v?.productId?.brandId?.name || item.brandName || 'MoltyFoam';
+      const sizeLabel =
+        v?.sizeId?.displayLabel || item.sizeLabel || 'Standard';
+      const thicknessLabel =
+        v?.thicknessId?.displayLabel ||
+        (v?.thicknessId?.value ? `${v.thicknessId.value}"` : '');
 
-      const avail = item.available ?? (item.onHand - (item.reserved || 0));
-      const reorder = item.reorderLevel ?? 1;
-      if (lowStockOnly && avail > reorder) return false;
+      const onHand = Number(item.onHand ?? 0);
+      const reserved = Number(item.reserved ?? 0);
+      const available = item.available !== undefined ? Number(item.available) : Math.max(0, onHand - reserved);
+      const reorderLevel = Number(item.reorderLevel ?? 1);
+
+      let statusKey: 'in_stock' | 'low_stock' | 'out_of_stock' = 'in_stock';
+      if (available <= 0) {
+        statusKey = 'out_of_stock';
+      } else if (available <= reorderLevel) {
+        statusKey = 'low_stock';
+      }
+
+      // Precomputed search index string for O(1) comparison
+      const searchIndex = `${item.sku} ${productName} ${posDisplayName} ${brandName} ${sizeLabel} ${thicknessLabel}`.toLowerCase();
+
+      return {
+        ...item,
+        productName,
+        posDisplayName,
+        brandName,
+        sizeLabel,
+        thicknessLabel,
+        onHand,
+        reserved,
+        available,
+        reorderLevel,
+        statusKey,
+        searchIndex,
+      };
+    });
+  }, [rawBalances]);
+
+  // Google-Style Search Suggestions (Top 8 matching items as user types)
+  const searchSuggestions = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return [];
+
+    return normalizedBalances
+      .filter((item) => item.searchIndex.includes(query))
+      .slice(0, 8);
+  }, [normalizedBalances, search]);
+
+  // Filter items matching search and filter controls
+  const filteredBalances = useMemo(() => {
+    const query = debouncedSearch.trim().toLowerCase();
+
+    return normalizedBalances.filter((item) => {
+      // 1. Brand Filter
+      if (brandFilter !== 'all' && item.brandName.toLowerCase() !== brandFilter.toLowerCase()) {
+        return false;
+      }
+
+      // 2. Stock Status Filter
+      if (stockStatusFilter === 'in_stock' && item.statusKey !== 'in_stock') return false;
+      if (stockStatusFilter === 'low_stock' && item.statusKey !== 'low_stock') return false;
+      if (stockStatusFilter === 'out_of_stock' && item.statusKey !== 'out_of_stock') return false;
+
+      // 3. Search Query
+      if (query && !item.searchIndex.includes(query)) {
+        return false;
+      }
 
       return true;
     });
-  }, [rawBalances, brandFilter, lowStockOnly]);
+  }, [normalizedBalances, debouncedSearch, brandFilter, stockStatusFilter]);
+
+  // Paginated slice for instant 60 FPS rendering
+  const paginatedBalances = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredBalances.slice(start, start + pageSize);
+  }, [filteredBalances, currentPage, pageSize]);
+
+  const handleSelectSuggestion = (item: any) => {
+    setSearch(item.sku);
+    setDebouncedSearch(item.sku);
+    setIsDropdownOpen(false);
+  };
+
+  const handleClearSearch = () => {
+    setSearch('');
+    setDebouncedSearch('');
+    setIsDropdownOpen(false);
+  };
 
   return (
     <AppLayout title="Stock Balances" subtitle="Live store inventory balances and availability">
-      <InventoryNavTabs branchId={activeBranchId} />
-
-      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className="space-y-6">
         {/* Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
           <div>
@@ -62,7 +190,10 @@ export default function StockBalancesPage() {
               Stock Balances
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Live stock in hand. Formula: <span className="font-semibold text-slate-700">Available = On Hand − Reserved</span>.
+              Live stock in hand. Formula:{' '}
+              <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                Available = On Hand − Reserved
+              </span>
             </p>
           </div>
 
@@ -84,28 +215,166 @@ export default function StockBalancesPage() {
           </div>
         </div>
 
-        {/* Filter Controls */}
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* Search */}
-            <div className="sm:col-span-2 relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+        {/* Google-Style Instant Search Box with Auto-Suggest Dropdown */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
+          <div ref={searchContainerRef} className="relative w-full">
+            <div className="relative flex items-center">
+              <Search className="w-5 h-5 text-slate-400 absolute left-4 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search SKU or Product Name..."
+                placeholder="Search products by Name, SKU, Brand, or Size (e.g. Comm, 78x42, Molty)..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-brand-blue text-slate-900"
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setIsDropdownOpen(true);
+                }}
+                onFocus={() => {
+                  if (search.trim()) setIsDropdownOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setIsDropdownOpen(false);
+                  } else if (e.key === 'Escape') {
+                    setIsDropdownOpen(false);
+                  }
+                }}
+                className="w-full pl-12 pr-12 py-3.5 text-sm sm:text-base bg-slate-50 border border-slate-200 rounded-2xl focus:outline-hidden focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue text-slate-900 transition-all placeholder:text-slate-400 shadow-2xs"
               />
+              {search && (
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className="absolute right-4 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200 transition-colors"
+                  aria-label="Clear search"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
-            {/* Brand Filter */}
-            <div>
+            {/* Google-Style Dropdown Suggestions List */}
+            {isDropdownOpen && search.trim() && (
+              <div className="absolute z-50 left-0 right-0 mt-2 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden transition-all animate-in fade-in slide-in-from-top-1 duration-150">
+                <div className="p-2 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between text-xs text-slate-500 font-semibold px-4">
+                  <span>Matching Products ({searchSuggestions.length})</span>
+                  <span className="text-[11px] text-slate-400">Click to select or press Enter</span>
+                </div>
+                {searchSuggestions.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-slate-500">
+                    <Package className="w-6 h-6 mx-auto mb-1.5 text-slate-300" />
+                    No products matching &quot;<strong className="text-slate-800">{search}</strong>&quot;
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                    {searchSuggestions.map((item) => (
+                      <li key={item._id || item.id}>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectSuggestion(item)}
+                          className="w-full text-left p-3.5 px-4 hover:bg-blue-50/60 transition-colors flex items-center justify-between gap-3 group"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 text-brand-blue flex items-center justify-center shrink-0">
+                              <Package className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-900 truncate group-hover:text-brand-blue">
+                                {item.productName}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 mt-0.5">
+                                <span className="font-mono text-[11px] font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
+                                  {item.sku}
+                                </span>
+                                <span>•</span>
+                                <span>{item.sizeLabel}</span>
+                                {item.thicknessLabel && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{item.thicknessLabel}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-bold ${item.statusKey === 'out_of_stock'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : item.statusKey === 'low_stock'
+                                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                }`}
+                            >
+                              {item.available} in stock
+                            </span>
+                            <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-blue transition-colors" />
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Quick Filters Row */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-slate-500 font-semibold flex items-center gap-1 mr-1">
+                <Filter className="w-3.5 h-3.5" />
+                Filter:
+              </span>
+
+              {/* Status Pills */}
+              <button
+                type="button"
+                onClick={() => setStockStatusFilter('all')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${stockStatusFilter === 'all'
+                    ? 'bg-slate-900 text-white shadow-2xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+              >
+                All Stock
+              </button>
+              <button
+                type="button"
+                onClick={() => setStockStatusFilter('in_stock')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${stockStatusFilter === 'in_stock'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
+                  }`}
+              >
+                In Stock
+              </button>
+              <button
+                type="button"
+                onClick={() => setStockStatusFilter('low_stock')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${stockStatusFilter === 'low_stock'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'bg-amber-50 hover:bg-amber-100 text-amber-700'
+                  }`}
+              >
+                Low Stock
+              </button>
+              <button
+                type="button"
+                onClick={() => setStockStatusFilter('out_of_stock')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${stockStatusFilter === 'out_of_stock'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'bg-rose-50 hover:bg-rose-100 text-rose-700'
+                  }`}
+              >
+                Out of Stock
+              </button>
+
+              {/* Brand Filter */}
               <select
                 aria-label="Filter by brand"
                 value={brandFilter}
                 onChange={(e) => setBrandFilter(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-brand-blue text-slate-900 font-medium"
+                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-hidden focus:border-brand-blue"
               >
                 <option value="all">All Brands</option>
                 {brands.map((br) => (
@@ -115,30 +384,15 @@ export default function StockBalancesPage() {
                 ))}
               </select>
             </div>
-          </div>
-
-          {/* Quick Filter & Count */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 text-xs">
-            <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700 select-none">
-              <input
-                type="checkbox"
-                checked={lowStockOnly}
-                onChange={(e) => setLowStockOnly(e.target.checked)}
-                className="rounded-sm text-brand-blue focus:ring-brand-blue/30 w-4 h-4 border-slate-300"
-              />
-              <span className="flex items-center gap-1 text-amber-700 font-semibold">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                Show Low / Out of Stock Only
-              </span>
-            </label>
 
             <div className="flex items-center gap-3">
-              {(search || brandFilter !== 'all' || lowStockOnly) && (
+              {(search || brandFilter !== 'all' || stockStatusFilter !== 'all') && (
                 <button
+                  type="button"
                   onClick={() => {
-                    setSearch('');
+                    handleClearSearch();
                     setBrandFilter('all');
-                    setLowStockOnly(false);
+                    setStockStatusFilter('all');
                   }}
                   className="text-xs text-brand-blue hover:underline font-semibold"
                 >
@@ -146,7 +400,7 @@ export default function StockBalancesPage() {
                 </button>
               )}
               <span className="text-slate-500 font-medium">
-                Showing <strong className="text-slate-900">{filteredBalances.length}</strong> items
+                Found <strong className="text-slate-900">{filteredBalances.length}</strong> items
               </span>
             </div>
           </div>
@@ -180,33 +434,11 @@ export default function StockBalancesPage() {
                   <tr>
                     <td colSpan={8} className="py-12 text-center text-slate-500 text-sm">
                       <Boxes className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                      No stock items found.
+                      No stock items found matching current filters.
                     </td>
                   </tr>
                 ) : (
-                  filteredBalances.map((item: any) => {
-                    const variant = item.variant;
-                    const productName =
-                      variant?.productId?.name ||
-                      variant?.product?.name ||
-                      item.productName ||
-                      item.sku;
-                    const posDisplayName =
-                      variant?.productId?.posDisplayName ||
-                      variant?.posDisplayName;
-                    const brandName =
-                      variant?.productId?.brandId?.name || item.brandName || 'MoltyFoam';
-                    const sizeLabel =
-                      variant?.sizeId?.displayLabel || item.sizeLabel || 'Standard';
-                    const thicknessLabel =
-                      variant?.thicknessId?.displayLabel ||
-                      (variant?.thicknessId?.value ? `${variant.thicknessId.value}"` : '');
-
-                    const onHand = item.onHand ?? 0;
-                    const reserved = item.reserved ?? 0;
-                    const available = item.available ?? Math.max(0, onHand - reserved);
-                    const reorderLevel = item.reorderLevel ?? 1;
-
+                  paginatedBalances.map((item: any) => {
                     return (
                       <tr key={item._id || item.id} className="hover:bg-blue-50/20 transition-colors">
                         {/* SKU */}
@@ -216,53 +448,52 @@ export default function StockBalancesPage() {
 
                         {/* Product & Spec */}
                         <td className="py-3.5 px-4">
-                          <p className="font-semibold text-slate-900 text-sm">{productName}</p>
-                          {posDisplayName && (
-                            <p className="text-xs text-brand-blue font-medium">{posDisplayName}</p>
+                          <p className="font-semibold text-slate-900 text-sm">{item.productName}</p>
+                          {item.posDisplayName && (
+                            <p className="text-xs text-brand-blue font-medium">{item.posDisplayName}</p>
                           )}
                           <p className="text-xs text-slate-500 mt-0.5">
-                            Size: <span className="text-slate-700 font-medium">{sizeLabel}</span>
-                            {thicknessLabel ? ` • Thickness: ${thicknessLabel}` : ''}
+                            Size: <span className="text-slate-700 font-medium">{item.sizeLabel}</span>
+                            {item.thicknessLabel ? ` • Thickness: ${item.thicknessLabel}` : ''}
                           </p>
                         </td>
 
                         {/* Brand */}
                         <td className="py-3.5 px-4">
                           <span className="inline-block px-2.5 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-800">
-                            {brandName}
+                            {item.brandName}
                           </span>
                         </td>
 
                         {/* On Hand */}
                         <td className="py-3.5 px-3 text-center font-bold text-slate-900 text-sm">
-                          {onHand}
+                          {item.onHand}
                         </td>
 
                         {/* Reserved */}
                         <td className="py-3.5 px-3 text-center text-slate-500 text-xs font-medium">
-                          {reserved}
+                          {item.reserved}
                         </td>
 
                         {/* Available */}
                         <td className="py-3.5 px-3 text-center font-bold">
                           <span
-                            className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                              available <= 0
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${item.statusKey === 'out_of_stock'
                                 ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                : available <= reorderLevel
-                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            }`}
+                                : item.statusKey === 'low_stock'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              }`}
                           >
-                            {available}
+                            {item.available}
                           </span>
                         </td>
 
                         {/* Status */}
                         <td className="py-3.5 px-3 text-center">
-                          {available <= 0 ? (
+                          {item.statusKey === 'out_of_stock' ? (
                             <span className="text-xs font-semibold text-rose-600">Out of Stock</span>
-                          ) : available <= reorderLevel ? (
+                          ) : item.statusKey === 'low_stock' ? (
                             <span className="text-xs font-semibold text-amber-600">Low Stock</span>
                           ) : (
                             <span className="text-xs font-semibold text-emerald-600">In Stock</span>
@@ -286,6 +517,32 @@ export default function StockBalancesPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          <Pagination
+            currentPage={currentPage}
+            totalItems={filteredBalances.length}
+            pageSize={pageSize}
+            onPageChange={(p) => setCurrentPage(p)}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setCurrentPage(1);
+            }}
+            pageSizeOptions={[10, 25, 50, 100]}
+            itemName="items"
+          />
+
+          {filteredBalances.length <= 10 && filteredBalances.length > 0 && (
+            <div className="p-3.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 bg-slate-50/50">
+              <span>
+                Showing <strong className="text-slate-800">{filteredBalances.length}</strong> of{' '}
+                <strong className="text-slate-800">{filteredBalances.length}</strong> items
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Click &quot;Add Stock&quot; to receive more units for a SKU
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </AppLayout>

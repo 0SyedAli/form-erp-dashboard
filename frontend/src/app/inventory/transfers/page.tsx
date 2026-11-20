@@ -292,7 +292,7 @@ export default function StockTransfersPage() {
     <AppLayout title="Stock Transfers" subtitle="Inter-branch replenishment & transit tracking">
       {/* <InventoryNavTabs branchId={branchFilter === 'all' ? undefined : branchFilter} /> */}
 
-      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className="space-y-6">
         {/* Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-gray-200/80 shadow-xs">
           <div>
@@ -353,8 +353,8 @@ export default function StockTransfersPage() {
                   key={status}
                   onClick={() => setStatusFilter(status)}
                   className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${statusFilter === status
-                      ? 'bg-brand-blue text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
+                    ? 'bg-brand-blue text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
                     }`}
                 >
                   {status === 'all'
@@ -454,14 +454,14 @@ export default function StockTransfersPage() {
                         <td className="py-3 px-4">
                           <span
                             className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-bold rounded-full ${trf.status === 'PENDING_APPROVAL'
-                                ? 'bg-amber-100 text-amber-800'
-                                : trf.status === 'APPROVED'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : trf.status === 'DISPATCHED'
-                                    ? 'bg-purple-100 text-purple-800'
-                                    : trf.status === 'RECEIVED'
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : 'bg-rose-100 text-rose-800'
+                              ? 'bg-amber-100 text-amber-800'
+                              : trf.status === 'APPROVED'
+                                ? 'bg-blue-100 text-blue-800'
+                                : trf.status === 'DISPATCHED'
+                                  ? 'bg-purple-100 text-purple-800'
+                                  : trf.status === 'RECEIVED'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-rose-100 text-rose-800'
                               }`}
                           >
                             {trf.status === 'DISPATCHED' && <Truck className="w-3 h-3" />}

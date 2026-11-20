@@ -25,6 +25,7 @@ const brandSchema = z.object({
     .regex(/^[A-Za-z0-9_-]+$/, 'Code can only contain letters, numbers, hyphens or underscores'),
   description: z.string().optional(),
   logo: z.string().optional(),
+  hasThickness: z.boolean(),
   status: z.enum(['active', 'inactive']),
 });
 
@@ -77,6 +78,7 @@ export default function BrandModal({
       code: '',
       description: '',
       logo: '',
+      hasThickness: true,
       status: 'active',
     },
   });
@@ -90,6 +92,7 @@ export default function BrandModal({
         code: brand.code,
         description: brand.description || '',
         logo: (brand as any).logoUrl || brand.logo || '',
+        hasThickness: (brand as any).hasThickness !== false,
         status: (brand.status.toLowerCase() as 'active' | 'inactive') || 'active',
       });
     } else {
@@ -98,6 +101,7 @@ export default function BrandModal({
         code: '',
         description: '',
         logo: '',
+        hasThickness: true,
         status: 'active',
       });
     }
@@ -124,6 +128,7 @@ export default function BrandModal({
             code: data.code.trim().toUpperCase(),
             description: data.description?.trim(),
             logoUrl: data.logo,
+            hasThickness: data.hasThickness,
             status: data.status.toUpperCase(),
           }).unwrap()) as unknown as Brand;
         } else {
@@ -132,6 +137,7 @@ export default function BrandModal({
             code: data.code.trim().toUpperCase(),
             description: data.description?.trim(),
             logoUrl: data.logo,
+            hasThickness: data.hasThickness,
             status: data.status.toUpperCase(),
           }).unwrap()) as unknown as Brand;
         }
@@ -281,6 +287,24 @@ export default function BrandModal({
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
             </select>
+          </div>
+
+          {/* Thickness Specification Option */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3">
+            <div>
+              <label htmlFor="brand-has-thickness" className="block text-xs font-semibold text-gray-800 cursor-pointer">
+                Requires Thickness (Foam / Mattresses)
+              </label>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                Enable for mattress and foam brands. Uncheck if this brand sells items without thickness (e.g. bed sheets, pillows, accessories).
+              </p>
+            </div>
+            <input
+              id="brand-has-thickness"
+              type="checkbox"
+              {...register('hasThickness')}
+              className="w-4 h-4 text-brand-blue rounded border-gray-300 focus:ring-brand-blue cursor-pointer"
+            />
           </div>
 
           {/* Logo Upload saved directly to project public/uploads/brands folder */}

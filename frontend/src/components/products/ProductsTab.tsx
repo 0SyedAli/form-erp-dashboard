@@ -9,8 +9,6 @@ import {
   useGetVariantsQuery,
   useGetBrandsQuery as useGetDemoBrandsQuery,
   useGetCategoriesQuery as useGetDemoCategoriesQuery,
-  useGetSizesQuery as useGetDemoSizesQuery,
-  useGetThicknessQuery as useGetDemoThicknessQuery,
   useToggleVariantStatusMutation,
   useGetBranchesQuery,
 } from '@/store/services/apiSlice';
@@ -19,8 +17,6 @@ import {
   useGetBrandsQuery as useGetBackendBrandsQuery,
   useGetCategoriesQuery as useGetBackendCategoriesQuery,
   useGetProductLinesQuery as useGetBackendProductLinesQuery,
-  useGetSizesQuery as useGetBackendSizesQuery,
-  useGetThicknessesQuery as useGetBackendThicknessesQuery,
   useToggleSkuStatusMutation,
 } from '@/store/services/catalogueApi';
 import {
@@ -60,9 +56,9 @@ export default function ProductsTab({
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [stockFilter, setStockFilter] = useState<'all' | 'in_stock' | 'out_of_stock'>('all');
 
-  // Server-side Pagination state
+  // Server-side Pagination state (Default 10 items for high-performance instant loading)
   const [page, setPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(25);
+  const [pageSize, setPageSize] = useState<number>(10);
 
   // 350ms Debounce on Search Query
   useEffect(() => {
@@ -77,8 +73,10 @@ export default function ProductsTab({
     setPage(1);
   }, [debouncedSearch, brandFilter, categoryFilter, productLineFilter, statusFilter, stockFilter, branchFilter]);
 
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
+
   const { data: branches = [] } = useGetBranchesQuery(undefined, { skip: !isSuperAdmin });
-  const { data: demoVariants = [], isLoading: isDemoLoading } = useGetVariantsQuery();
+  const { data: demoVariants = [], isLoading: isDemoLoading } = useGetVariantsQuery(undefined, { skip: isBackendMode });
 
   // Optimized Server-Side Paginated & Filtered Query
   const {
@@ -98,18 +96,14 @@ export default function ProductsTab({
   });
 
   const { data: backendBrands = [] } = useGetBackendBrandsQuery();
-  const { data: demoBrands = [] } = useGetDemoBrandsQuery();
+  const { data: demoBrands = [] } = useGetDemoBrandsQuery(undefined, { skip: isBackendMode });
   const { data: backendCategories = [] } = useGetBackendCategoriesQuery();
-  const { data: demoCategories = [] } = useGetDemoCategoriesQuery();
+  const { data: demoCategories = [] } = useGetDemoCategoriesQuery(undefined, { skip: isBackendMode });
   const { data: backendProductLines = [] } = useGetBackendProductLinesQuery();
-  const { data: backendSizes = [] } = useGetBackendSizesQuery();
-  const { data: demoSizes = [] } = useGetDemoSizesQuery();
-  const { data: backendThicknesses = [] } = useGetBackendThicknessesQuery();
-  const { data: demoThicknesses = [] } = useGetDemoThicknessQuery();
   const [toggleStatus] = useToggleVariantStatusMutation();
   const [toggleBackendSkuStatus] = useToggleSkuStatusMutation();
 
-  const isLoading = isBackendLoading && isDemoLoading;
+  const isLoading = isBackendMode ? isBackendLoading : isDemoLoading;
 
   const brands = useMemo(() => {
     return backendBrands.length > 0 ? backendBrands : demoBrands;
@@ -118,14 +112,6 @@ export default function ProductsTab({
   const categories = useMemo(() => {
     return backendCategories.length > 0 ? backendCategories : demoCategories;
   }, [backendCategories, demoCategories]);
-
-  const sizes = useMemo(() => {
-    return backendSizes.length > 0 ? backendSizes : demoSizes;
-  }, [backendSizes, demoSizes]);
-
-  const thicknesses = useMemo(() => {
-    return backendThicknesses.length > 0 ? backendThicknesses : demoThicknesses;
-  }, [backendThicknesses, demoThicknesses]);
 
   const rawBackendSkus = useMemo(() => {
     if (Array.isArray(backendSkusResponse?.data)) return backendSkusResponse.data;
@@ -169,13 +155,6 @@ export default function ProductsTab({
 
   // Total items matching current search and filters
   const totalItems = backendSkusResponse?.pagination?.total ?? variants.length;
-
-  // Fast lookups
-  const sizeMap = useMemo(() => new Map(sizes.map((s) => [s.id || (s as any)._id, s.displayLabel || s.name || '78 × 78'])), [sizes]);
-  const thicknessMap = useMemo(
-    () => new Map(thicknesses.map((t) => [t.id || (t as any)._id, t.displayLabel || `${t.value} inch`])),
-    [thicknesses]
-  );
 
   const productLines: Array<{ id: string; name: string; brandId: string; categoryId: string }> = useMemo(() => {
     return (Array.isArray(backendProductLines) ? backendProductLines : (backendProductLines as any)?.data || []).map((pl: any) => ({
@@ -430,10 +409,10 @@ export default function ProductsTab({
                       {/* Specification */}
                       <td className="py-3.5 px-4">
                         <div className="text-xs font-semibold text-gray-800">
-                          {item.sizeLabel || sizeMap.get(item.sizeId) || '78 × 78'}
+                          {item.sizeLabel || '78 × 78'}
                         </div>
                         <div className="text-[11px] text-gray-500">
-                          Thickness: {thicknessMap.get(item.thicknessId) || '5 inch'}
+                          Thickness: {item.thicknessLabel || '5 inch'}
                         </div>
                       </td>
 

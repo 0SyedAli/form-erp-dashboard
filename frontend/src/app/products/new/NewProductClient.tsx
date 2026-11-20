@@ -215,8 +215,13 @@ function NewProductContent() {
     return defaultSize?.id || '';
   }, [sizes, selectedSizeIdOverride, editingVariant]);
 
+  // Entities
+  const selectedBrand = useMemo(() => brands.find((b) => b.id === selectedBrandId), [brands, selectedBrandId]);
+  const brandRequiresThickness = (selectedBrand as any)?.hasThickness !== false;
+
   // Derived Thickness
   const selectedThicknessId = useMemo(() => {
+    if (!brandRequiresThickness) return '';
     if (selectedThicknessIdOverride) return selectedThicknessIdOverride;
     if (editingVariant?.thicknessId) return editingVariant.thicknessId;
     if (thicknesses.length === 0) return '';
@@ -224,10 +229,8 @@ function NewProductContent() {
       thicknesses.find((t) => t.value === 5 || (t.displayLabel && t.displayLabel.includes('5'))) ||
       thicknesses[0];
     return defaultThick?.id || '';
-  }, [thicknesses, selectedThicknessIdOverride, editingVariant]);
+  }, [brandRequiresThickness, thicknesses, selectedThicknessIdOverride, editingVariant]);
 
-  // Entities
-  const selectedBrand = useMemo(() => brands.find((b) => b.id === selectedBrandId), [brands, selectedBrandId]);
   const selectedCategory = useMemo(() => categories.find((c) => c.id === selectedCategoryId), [categories, selectedCategoryId]);
   const selectedProductLine = useMemo(() => productLines.find((pl) => pl.id === selectedProductLineId), [productLines, selectedProductLineId]);
   const selectedSize = useMemo(() => sizes.find((s) => s.id === selectedSizeId), [sizes, selectedSizeId]);
@@ -506,8 +509,8 @@ function NewProductContent() {
       showToast('error', 'Branch Required', 'Please select a destination branch. Every product must belong to a branch.');
       return;
     }
-    if (!selectedBrandId || !selectedCategoryId || !selectedSizeId || !selectedThicknessId) {
-      showToast('error', 'Missing Information', 'Please select brand, category, size and thickness.');
+    if (!selectedBrandId || !selectedCategoryId || !selectedSizeId || (brandRequiresThickness && !selectedThicknessId)) {
+      showToast('error', 'Missing Information', brandRequiresThickness ? 'Please select brand, category, size and thickness.' : 'Please select brand, category and size.');
       return;
     }
     if (!listPrice || listPrice <= 0) {
@@ -531,7 +534,7 @@ function NewProductContent() {
           categoryId: selectedCategoryId,
           productLineId: selectedProductLineId || undefined,
           sizeId: selectedSizeId,
-          thicknessId: selectedThicknessId,
+          thicknessId: brandRequiresThickness ? selectedThicknessId : undefined,
           destinationBranchId: selectedBranchId || undefined,
           targetBranchId: selectedBranchId || undefined,
           listPrice,
@@ -616,8 +619,8 @@ function NewProductContent() {
           ? `${selectedSize.length}X${selectedSize.width}`
           : (selectedSize.displayLabel || selectedSize.name || '78x78').split('(')[0].replace(/[^0-9xX]/g, '').toUpperCase())
         : '78X78';
-      const thickClean = (selectedThickness?.value?.toString() || selectedThickness?.displayLabel || '5').replace(/[^0-9]/g, '');
-      const baseSku = createdVariantSku || `${brandCode}-${catPart}-${sizeClean}-${thickClean}`;
+      const thickClean = brandRequiresThickness ? (selectedThickness?.value?.toString() || selectedThickness?.displayLabel || '5').replace(/[^0-9]/g, '') : '';
+      const baseSku = createdVariantSku || (thickClean ? `${brandCode}-${catPart}-${sizeClean}-${thickClean}` : `${brandCode}-${catPart}-${sizeClean}`);
 
       // Check if variant already exists
       let existingVariant = variantsRepository.getBySku(baseSku);
@@ -910,46 +913,52 @@ function NewProductContent() {
             </div>
 
             {/* Step 4: Thickness (Radio Pill Cards) */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2.5">
-                {/* <span className="w-6 h-6 rounded-full bg-brand-blue text-white text-xs font-bold flex items-center justify-center shrink-0">
-                  4
-                </span> */}
-                <div className="flex items-baseline gap-2">
-                  <span className="text-sm font-bold text-gray-900">Thickness</span>
-                  <span className="text-xs text-gray-400 font-normal">
-                    (Based on selected size)
-                  </span>
+            {brandRequiresThickness ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm font-bold text-gray-900">Thickness</span>
+                    <span className="text-xs text-gray-400 font-normal">
+                      (Based on selected size)
+                    </span>
+                  </div>
+                </div>
+                <div className="">
+                  <label className="block text-xs font-semibold text-gray-600 mb-2">
+                    Select Thickness <span className="text-red-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {thicknesses.map((t) => {
+                      const isSelected = selectedThicknessId === t.id;
+                      return (
+                        <div
+                          key={t.id}
+                          onClick={() => setSelectedThicknessId(t.id)}
+                          className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm font-semibold cursor-pointer transition-all ${isSelected
+                            ? 'bg-blue-50/70 border-brand-blue text-blue-900 ring-1 ring-blue-500/30'
+                            : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                          {isSelected ? (
+                            <CircleDot className="w-4 h-4 text-brand-blue shrink-0" />
+                          ) : (
+                            <Circle className="w-4 h-4 text-gray-300 shrink-0" />
+                          )}
+                          <span>{getThicknessLabel(t)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-              <div className="">
-                <label className="block text-xs font-semibold text-gray-600 mb-2">
-                  Select Thickness <span className="text-red-500">*</span>
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  {thicknesses.map((t) => {
-                    const isSelected = selectedThicknessId === t.id;
-                    return (
-                      <div
-                        key={t.id}
-                        onClick={() => setSelectedThicknessId(t.id)}
-                        className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm font-semibold cursor-pointer transition-all ${isSelected
-                          ? 'bg-blue-50/70 border-brand-blue text-blue-900 ring-1 ring-blue-500/30'
-                          : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
-                          }`}
-                      >
-                        {isSelected ? (
-                          <CircleDot className="w-4 h-4 text-brand-blue shrink-0" />
-                        ) : (
-                          <Circle className="w-4 h-4 text-gray-300 shrink-0" />
-                        )}
-                        <span>{getThicknessLabel(t)}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+            ) : (
+              <div className="p-3.5 bg-slate-50 border border-dashed border-slate-200 rounded-xl flex items-center justify-between text-xs text-slate-500">
+                <span className="font-semibold text-slate-700">Thickness Specification</span>
+                <span className="bg-slate-200/80 text-slate-700 px-2.5 py-0.5 rounded-full font-medium text-[11px]">
+                  Not applicable for Brand &quot;{selectedBrand?.name || 'Selected Brand'}&quot;
+                </span>
               </div>
-            </div>
+            )}
 
             {/* Auto Product Name Banner & Readonly Input */}
             <div className=" space-y-3">
@@ -1306,15 +1315,17 @@ function NewProductContent() {
                 </span>
               </div>
 
-              <div className="flex items-center justify-between text-gray-600">
-                <span className="flex items-center gap-2">
-                  <Sliders className="w-3.5 h-3.5 text-gray-400" />
-                  <span>Thickness</span>
-                </span>
-                <span className="font-bold text-gray-800">
-                  {getThicknessLabel(selectedThickness)}
-                </span>
-              </div>
+              {brandRequiresThickness && (
+                <div className="flex items-center justify-between text-gray-600">
+                  <span className="flex items-center gap-2">
+                    <Sliders className="w-3.5 h-3.5 text-gray-400" />
+                    <span>Thickness</span>
+                  </span>
+                  <span className="font-bold text-gray-800">
+                    {getThicknessLabel(selectedThickness)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Pricing Breakdown */}

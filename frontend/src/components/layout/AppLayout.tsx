@@ -28,7 +28,7 @@ const ROUTE_PERMISSIONS: { prefix: string; permission: string }[] = [
   { prefix: '/reports', permission: 'reports:view' },
 ];
 
-const emptySubscribe = () => () => {};
+const emptySubscribe = () => () => { };
 
 export default function AppLayout({
   children,
@@ -41,7 +41,7 @@ export default function AppLayout({
 
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
-  
+
   // React 19 recommended hydration pattern without synchronous setState in effect
   const isClient = useSyncExternalStore(emptySubscribe, () => true, () => false);
 
@@ -70,6 +70,11 @@ export default function AppLayout({
     }
   }, [isAuthenticated, currentUser, pathname, router, isClient]);
 
+  // Auto-close navigation sidebar drawer on route navigation
+  useEffect(() => {
+    setIsMobileOpen(false);
+  }, [pathname]);
+
   if (!isClient || !currentUser) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-canvas">
@@ -94,8 +99,8 @@ export default function AppLayout({
         onOpenRoleSwitcher={() => setIsRoleSwitcherOpen(true)}
       />
 
-      {/* Main Container - Shifted for desktop sidebar */}
-      <div className="flex-1 flex flex-col lg:pl-64 transition-all duration-300">
+      {/* Main Container - Full-width layout with slide-over drawer sidebar */}
+      <div className="flex-1 flex flex-col w-full min-w-0 transition-all duration-300">
         {/* Header */}
         <Header
           onMobileOpen={() => setIsMobileOpen(true)}
@@ -105,7 +110,7 @@ export default function AppLayout({
         />
 
         {/* Content canvas */}
-        <main className="flex-1 p-4 lg:p-8 max-w-7xl w-full mx-auto">
+        <main className="flex-1 p-4 w-full mx-auto">
           {children}
         </main>
 

@@ -27,8 +27,9 @@ export default function Header({
       <div className="flex items-center gap-4 flex-1 max-w-xl">
         <button
           onClick={onMobileOpen}
-          className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 lg:hidden"
-          aria-label="Open mobile menu"
+          className="p-2 rounded-lg text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors cursor-pointer shrink-0"
+          aria-label="Toggle navigation menu"
+          title="Menu"
         >
           <Menu className="w-5 h-5" />
         </button>

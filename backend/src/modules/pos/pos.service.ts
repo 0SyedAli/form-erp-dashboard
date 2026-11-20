@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import {
   Brand,
   Category,
+  ProductLine,
   Size,
   Thickness,
   Product,
@@ -16,6 +17,7 @@ import {
   HeldSale,
   IdempotencyKey,
   AuditLog,
+  Branch,
 } from '../../models/index.js';
 import {
   SALE_TYPES,
@@ -29,6 +31,7 @@ import {
 import { AppError } from '../../utils/apiResponse.js';
 import { runTransaction } from '../../utils/transaction.js';
 import { generateDailySequence } from '../../utils/sequence.js';
+import { toRupees } from '../../utils/financial.js';
 import { CheckoutInput, HeldSaleInput } from './pos.schema.js';
 
 export interface UserContext {
@@ -41,6 +44,223 @@ export interface UserContext {
 }
 
 export class PosService {
+  private static posBootstrapCache: {
+    data: any;
+    versionHash: string;
+    cachedAt: number;
+  } | null = null;
+
+  private static posOutOfStockCache: {
+    data: any;
+    cachedAt: number;
+  } | null = null;
+
+  public static invalidatePOSCache() {
+    this.posBootstrapCache = null;
+    this.posOutOfStockCache = null;
+  }
+
+  /**
+   * 0. UNIFIED POS BOOTSTRAP (STAGE 1: FAST IN-STOCK ONLY)
+   * Single-roundtrip, lean, high-performance bootstrap endpoint for POS.
+   * Returns branches, brands, all active categories, product lines, sizes, thicknesses,
+   * in-stock products, in-stock variants, and stock balances in ultra-light ~15 KB payload.
+   */
+  public static async getPOSBootstrap(branchId?: string, clientVersionHash?: string) {
+    const now = Date.now();
+    // In-memory cache valid for 5 minutes
+    if (this.posBootstrapCache && (now - this.posBootstrapCache.cachedAt < 300000)) {
+      if (clientVersionHash && clientVersionHash === this.posBootstrapCache.versionHash) {
+        return { notModified: true, versionHash: this.posBootstrapCache.versionHash };
+      }
+      return { notModified: false, versionHash: this.posBootstrapCache.versionHash, ...this.posBootstrapCache.data };
+    }
+
+    const [
+      branches,
+      brands,
+      categories,
+      productLines,
+      sizes,
+      thicknesses,
+      stockBalances,
+    ] = await Promise.all([
+      Branch.find({ status: 'ACTIVE' }).select('name code isMainBranch address phone status').lean(),
+      Brand.find({ status: 'ACTIVE' }).select('name code description logoUrl status hasThickness').lean(),
+      Category.find({ status: 'ACTIVE' }).select('brandId name code description status').lean(),
+      ProductLine.find({ status: 'ACTIVE' }).select('brandId categoryId name code imageUrl posDisplayName status').lean(),
+      Size.find({ status: 'ACTIVE' }).select('displayLabel length width unit status').lean(),
+      Thickness.find({ status: 'ACTIVE' }).select('displayLabel value unit status').lean(),
+      StockBalance.find({ onHand: { $gt: 0 } }).select('branchId variantId sku onHand available reserved').lean(),
+    ]);
+
+    const inStockVariantIds = new Set(stockBalances.map((b: any) => b.variantId?.toString()).filter(Boolean));
+
+    // Fetch ONLY variants with positive on-hand stock for initial fast load
+    const rawVariants = await Variant.find({
+      status: 'ACTIVE',
+      _id: { $in: Array.from(inStockVariantIds).map((id) => new mongoose.Types.ObjectId(id)) },
+    }).select('_id productId sizeId thicknessId sku posDisplayName retailPrice walkInPrice wholesalePrice distributorPrice status onHand').lean();
+
+    const inStockProductIds = new Set(rawVariants.map((v: any) => v.productId ? v.productId.toString() : '').filter(Boolean));
+
+    // Fetch ONLY products that have in-stock variants
+    const products = await Product.find({
+      status: 'ACTIVE',
+      _id: { $in: Array.from(inStockProductIds).map((id) => new mongoose.Types.ObjectId(id)) },
+    }).select('name code brandId categoryId productLineId imageUrl posDisplayName branchId status').lean();
+
+    // Format variants with clean rupee amounts
+    const variants = rawVariants.map((v: any) => ({
+      id: v._id.toString(),
+      productId: v.productId ? v.productId.toString() : '',
+      sizeId: v.sizeId ? v.sizeId.toString() : '',
+      thicknessId: v.thicknessId ? v.thicknessId.toString() : '',
+      sku: v.sku,
+      posDisplayName: v.posDisplayName || '',
+      retailPrice: toRupees(v.retailPrice || 0),
+      walkInPrice: toRupees(v.walkInPrice || v.retailPrice || 0),
+      wholesalePrice: toRupees(v.wholesalePrice || 0),
+      distributorPrice: toRupees(v.distributorPrice || 0),
+      stock: v.onHand || 0,
+      status: v.status || 'ACTIVE',
+    }));
+
+    const formattedBalances = stockBalances.map((b: any) => ({
+      id: b._id.toString(),
+      branchId: b.branchId ? b.branchId.toString() : '',
+      variantId: b.variantId ? b.variantId.toString() : '',
+      sku: b.sku,
+      onHand: b.onHand || 0,
+      available: b.available !== undefined && b.available !== null ? b.available : (b.onHand || 0),
+      reserved: b.reserved || 0,
+    }));
+
+    const versionHash = `pos_${variants.length}_${products.length}_${stockBalances.length}_${Math.floor(Date.now() / 60000)}`;
+
+    const data = {
+      branches: branches.map((b: any) => ({ ...b, id: b._id.toString(), status: b.status || 'ACTIVE' })),
+      brands: brands.map((b: any) => ({ ...b, id: b._id.toString(), status: b.status || 'ACTIVE', hasThickness: b.hasThickness !== false })),
+      categories: categories.map((c: any) => ({
+        ...c,
+        id: c._id.toString(),
+        brandId: c.brandId ? c.brandId.toString() : '',
+        status: c.status || 'ACTIVE',
+      })),
+      productLines: productLines.map((pl: any) => ({
+        ...pl,
+        id: pl._id.toString(),
+        brandId: pl.brandId ? pl.brandId.toString() : '',
+        categoryId: pl.categoryId ? pl.categoryId.toString() : '',
+        status: pl.status || 'ACTIVE',
+      })),
+      sizes: sizes.map((s: any) => ({ ...s, id: s._id.toString(), status: s.status || 'ACTIVE' })),
+      thicknesses: thicknesses.map((t: any) => ({ ...t, id: t._id.toString(), status: t.status || 'ACTIVE' })),
+      products: products.map((p: any) => {
+        const cat = categories.find((c: any) => c._id.toString() === p.categoryId?.toString());
+        return {
+          ...p,
+          id: p._id.toString(),
+          brandId: p.brandId ? p.brandId.toString() : '',
+          categoryId: p.categoryId ? p.categoryId.toString() : '',
+          category: cat ? { id: cat._id.toString(), name: cat.name, code: cat.code } : undefined,
+          productLineId: p.productLineId ? p.productLineId.toString() : '',
+          status: p.status || 'ACTIVE',
+        };
+      }),
+      variants,
+      inventoryBalances: formattedBalances,
+      serverTime: new Date().toISOString(),
+    };
+
+    this.posBootstrapCache = {
+      data,
+      versionHash,
+      cachedAt: Date.now(),
+    };
+
+    if (clientVersionHash && clientVersionHash === versionHash) {
+      return { notModified: true, versionHash };
+    }
+
+    return { notModified: false, versionHash, ...data };
+  }
+
+  /**
+   * 0b. POS OUT OF STOCK CATALOGUE (STAGE 2: LAZY LOADED IN BACKGROUND)
+   * Fetches the products and variants that currently have 0 on-hand stock.
+   * Runs seamlessly in the background after bootstrap so the UI never blocks.
+   */
+  public static async getPOSOutOfStockCatalogue(userContext?: UserContext, branchId?: string) {
+    const now = Date.now();
+    if (this.posOutOfStockCache && (now - this.posOutOfStockCache.cachedAt < 300000)) {
+      return this.posOutOfStockCache.data;
+    }
+
+    const stockBalances = await StockBalance.find({ onHand: { $gt: 0 } }).select('variantId').lean();
+    const inStockVariantIds = new Set(stockBalances.map((b: any) => b.variantId?.toString()).filter(Boolean));
+
+    const [inStockVariantProducts, outOfStockVariants, categories] = await Promise.all([
+      Variant.find({
+        status: 'ACTIVE',
+        _id: { $in: Array.from(inStockVariantIds).map((id) => new mongoose.Types.ObjectId(id)) },
+      }).select('productId').lean(),
+      Variant.find({
+        status: 'ACTIVE',
+        _id: { $nin: Array.from(inStockVariantIds).map((id) => new mongoose.Types.ObjectId(id)) },
+      }).select('_id productId sizeId thicknessId sku posDisplayName retailPrice walkInPrice wholesalePrice distributorPrice status onHand').lean(),
+      Category.find({ status: 'ACTIVE' }).select('name code').lean(),
+    ]);
+
+    const inStockProductIds = new Set(inStockVariantProducts.map((v: any) => v.productId ? v.productId.toString() : '').filter(Boolean));
+
+    // Products that currently have no in-stock variants
+    const outOfStockProducts = await Product.find({
+      status: 'ACTIVE',
+      _id: { $nin: Array.from(inStockProductIds).map((id) => new mongoose.Types.ObjectId(id)) },
+    }).select('name code brandId categoryId productLineId imageUrl posDisplayName branchId status').lean();
+
+    const formattedVariants = outOfStockVariants.map((v: any) => ({
+      id: v._id.toString(),
+      productId: v.productId ? v.productId.toString() : '',
+      sizeId: v.sizeId ? v.sizeId.toString() : '',
+      thicknessId: v.thicknessId ? v.thicknessId.toString() : '',
+      sku: v.sku,
+      posDisplayName: v.posDisplayName || '',
+      retailPrice: toRupees(v.retailPrice || 0),
+      walkInPrice: toRupees(v.walkInPrice || v.retailPrice || 0),
+      wholesalePrice: toRupees(v.wholesalePrice || 0),
+      distributorPrice: toRupees(v.distributorPrice || 0),
+      stock: v.onHand || 0,
+      status: v.status || 'ACTIVE',
+    }));
+
+    const formattedProducts = outOfStockProducts.map((p: any) => {
+      const cat = categories.find((c: any) => c._id.toString() === p.categoryId?.toString());
+      return {
+        ...p,
+        id: p._id.toString(),
+        brandId: p.brandId ? p.brandId.toString() : '',
+        categoryId: p.categoryId ? p.categoryId.toString() : '',
+        category: cat ? { id: cat._id.toString(), name: cat.name, code: cat.code } : undefined,
+        productLineId: p.productLineId ? p.productLineId.toString() : '',
+        status: p.status || 'ACTIVE',
+      };
+    });
+
+    const data = {
+      products: formattedProducts,
+      variants: formattedVariants,
+    };
+
+    this.posOutOfStockCache = {
+      data,
+      cachedAt: Date.now(),
+    };
+
+    return data;
+  }
+
   /**
    * 1. GET POS CATALOGUE
    * Returns active brands, categories, sizes, thicknesses, products and active variants

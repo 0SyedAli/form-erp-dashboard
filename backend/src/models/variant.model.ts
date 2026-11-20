@@ -3,7 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IVariant extends Document {
   productId: mongoose.Types.ObjectId;
   sizeId: mongoose.Types.ObjectId;
-  thicknessId: mongoose.Types.ObjectId;
+  thicknessId?: mongoose.Types.ObjectId;
   sku: string;
   barcode?: string;
   posDisplayName?: string;
@@ -40,7 +40,7 @@ const VariantSchema = new Schema<IVariant>(
     thicknessId: {
       type: Schema.Types.ObjectId,
       ref: 'Thickness',
-      required: true,
+      required: false,
       index: true,
     },
     sku: {

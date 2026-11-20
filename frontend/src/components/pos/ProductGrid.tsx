@@ -24,6 +24,8 @@ interface ProductGridProps {
   selectedThicknessId?: string;
   sizes?: MattressSize[];
   thicknesses?: MattressThickness[];
+  stockFilter?: 'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK';
+  onStockFilterChange?: (filter: 'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK') => void;
 }
 
 // Ultra-realistic 3D isometric mattress illustration matching the reference screenshot
@@ -207,9 +209,13 @@ export default function ProductGrid({
   selectedThicknessId = 'ALL',
   sizes = [],
   thicknesses = [],
+  stockFilter: stockFilterProp,
+  onStockFilterChange: onStockFilterChangeProp,
 }: ProductGridProps) {
-  // 1. Stock Filter state: defaults to 'IN_STOCK' as requested
-  const [stockFilter, setStockFilter] = useState<'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK'>('IN_STOCK');
+  // 1. Stock Filter state: controlled by parent if provided, otherwise internal
+  const [internalStockFilter, setInternalStockFilter] = useState<'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK'>('IN_STOCK');
+  const stockFilter = stockFilterProp !== undefined ? stockFilterProp : internalStockFilter;
+  const setStockFilter = onStockFilterChangeProp || setInternalStockFilter;
 
   // Helper to determine starting price, stock, and matching size/thickness for a product
   const getProductMetrics = useCallback(
@@ -477,10 +483,15 @@ export default function ProductGrid({
                           Line: {product.productLineName || (product as any).productLine?.name || product.name}
                         </span>
                       </div> */}
-                      <p className="font-bold text-sm text-slate-500 leading-snug line-clamp-1 font-sans" style={{ fontSize: '14px' }}>
-                        {/* {product?.category?.name || 'Standard Foam'} */}
-                        [ {product?.category?.name} ]
-                      </p>
+                      {(() => {
+                        const rawCat = product?.category?.name || (product as any)?.categoryName || (typeof product?.category === 'string' ? product.category : '') || 'Mattress';
+                        const displayCat = rawCat && rawCat.trim() ? rawCat.trim() : 'Mattress';
+                        return (
+                          <p className="font-bold text-sm text-slate-500 leading-snug line-clamp-1 font-sans" style={{ fontSize: '14px' }}>
+                            [ {displayCat} ]
+                          </p>
+                        );
+                      })()}
                       <h3 className="font-bold text-sm text-slate-900  font-sans" style={{ fontSize: '17px' }}>
                         {/* {product.name} */}
                         {product.productLineName || (product as any).productLine?.name || product.name}

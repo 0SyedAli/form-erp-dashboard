@@ -34,6 +34,20 @@ export interface POSCatalogueItem {
   inStock: boolean;
 }
 
+export interface POSBootstrapResponse {
+  versionHash: string;
+  branches: any[];
+  brands: any[];
+  categories: any[];
+  productLines: any[];
+  sizes: any[];
+  thicknesses: any[];
+  products: any[];
+  variants: any[];
+  inventoryBalances: any[];
+  serverTime: string;
+}
+
 export interface POSAvailabilityItem {
   sku: string;
   branchId: string;
@@ -291,6 +305,39 @@ export const posApi = createApi({
           ...b,
           id: b.id || b._id || '',
         })),
+    }),
+
+    // 0. POS Unified Bootstrap (Single round-trip, lean snapshot)
+    getPOSBootstrap: builder.query<
+      POSBootstrapResponse,
+      { branchId?: string; version?: string } | void
+    >({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.branchId) queryParams.append('branchId', params.branchId);
+        if (params?.version) queryParams.append('version', params.version);
+        const queryStr = queryParams.toString();
+        return `/pos/bootstrap${queryStr ? `?${queryStr}` : ''}`;
+      },
+      transformResponse: (response: ApiResponse<POSBootstrapResponse>) => response.data,
+      providesTags: ['POSCatalogue'],
+      keepUnusedDataFor: 3600,
+    }),
+
+    // 0b. POS Out of Stock Products & Variants (Lazy progressive background load)
+    getPOSOutOfStock: builder.query<
+      { products: any[]; variants: any[] },
+      { branchId?: string } | void
+    >({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.branchId) queryParams.append('branchId', params.branchId);
+        const queryStr = queryParams.toString();
+        return `/pos/out-of-stock${queryStr ? `?${queryStr}` : ''}`;
+      },
+      transformResponse: (response: ApiResponse<{ products: any[]; variants: any[] }>) => response.data,
+      providesTags: ['POSCatalogue'],
+      keepUnusedDataFor: 3600,
     }),
 
     getPOSCatalogue: builder.query<
@@ -606,6 +653,8 @@ export const posApi = createApi({
 });
 
 export const {
+  useGetPOSBootstrapQuery,
+  useGetPOSOutOfStockQuery,
   useGetBranchesQuery,
   useGetPOSCatalogueQuery,
   useGetSkuAvailabilityQuery,

@@ -36,24 +36,29 @@ function ProductsPageContent() {
 
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
 
-  // Query high-level counts
-  const { data: demoProducts = [] } = useGetProductsQuery();
-  const { data: demoVariants = [] } = useGetVariantsQuery();
+  // Query high-level counts with fast limit: 1 and skip demo data in backend mode
+  const { data: demoProducts = [] } = useGetProductsQuery(undefined, { skip: isBackendMode });
+  const { data: demoVariants = [] } = useGetVariantsQuery(undefined, { skip: isBackendMode });
   const { data: backendProductsData } = useGetBackendProductsQuery(
-    effectiveBranchId ? { branchId: effectiveBranchId } : undefined
+    { limit: 1 },
+    { skip: !isBackendMode }
   );
-  const { data: backendSkusData } = useGetBackendSkusQuery({
-    status: 'ALL',
-    limit: 1,
-    ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
-  });
+  const { data: backendSkusData } = useGetBackendSkusQuery(
+    { status: 'ALL', limit: 1 },
+    { skip: !isBackendMode }
+  );
 
-  const totalProducts = backendProductsData?.pagination?.total ?? demoProducts.length;
-  const totalVariants = backendSkusData?.pagination?.total ?? demoVariants.length;
-  const activeVariantsCount = (backendSkusData as any)?.counts?.active ?? (backendSkusData?.data
-    ? backendSkusData.data.filter((v) => v.status === 'ACTIVE').length
-    : demoVariants.filter((v) => v.status === 'active' || v.status === 'ACTIVE').length);
+  const totalProducts = isBackendMode
+    ? (backendProductsData?.pagination?.total ?? 0)
+    : demoProducts.length;
+  const totalVariants = isBackendMode
+    ? (backendSkusData?.pagination?.total ?? 0)
+    : demoVariants.length;
+  const activeVariantsCount = isBackendMode
+    ? ((backendSkusData as any)?.counts?.active ?? (backendSkusData?.pagination?.total ?? 0))
+    : demoVariants.filter((v) => v.status === 'active' || v.status === 'ACTIVE').length;
 
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({

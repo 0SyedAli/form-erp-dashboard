@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
+  Menu,
   Search,
   Keyboard,
   FileText,
@@ -14,6 +15,7 @@ import {
 import { Branch, SaleType } from '@/types';
 
 interface POSHeaderProps {
+  onOpenNavSidebar?: () => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   activeBranch?: Branch | null;
@@ -35,6 +37,7 @@ interface POSHeaderProps {
 }
 
 export default function POSHeader({
+  onOpenNavSidebar,
   searchQuery,
   onSearchChange,
   activeBranch,
@@ -64,35 +67,25 @@ export default function POSHeader({
 
   return (
     <header className="bg-white border-b border-slate-200/90 px-4 py-2 flex items-center justify-between gap-4 select-none shrink-0 shadow-xs">
-      {/* Left: Branding matching reference screenshot */}
+      {/* Left: Branding & Navigation Drawer Button */}
       <div className="flex items-center gap-3 shrink-0">
-        <Link href={targetDashboardHref} suppressHydrationWarning className="flex items-center gap-3 group">
-          <div className="w-11 h-11 rounded-xl bg-[#0f9d58] flex items-center justify-center text-white shadow-xs group-hover:bg-[#0b8043] transition-colors shrink-0">
-            {/* White Mattress / Bed Icon */}
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M3 10h18M3 14h18m-9-4v8m-8 0h16a1 1 0 001-1v-4a1 1 0 00-1-1H4a1 1 0 00-1 1v4a1 1 0 001 1z"
-              />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-tight tracking-tight font-sans">
-              Foam Shop POS
-            </h1>
-            <p className="text-[11px] text-slate-500 font-medium font-sans">
-              Quality Sleep Starts Here
-            </p>
-          </div>
-        </Link>
+        <button
+          type="button"
+          onClick={onOpenNavSidebar}
+          className="w-11 h-11 rounded-xl bg-[#0f9d58] flex items-center justify-center text-white shadow-xs hover:bg-[#0b8043] transition-all cursor-pointer shrink-0 active:scale-95 group"
+          title="Open Navigation Menu"
+          aria-label="Open Navigation Sidebar"
+        >
+          <Menu className="w-5 h-5 text-white transition-transform group-hover:scale-110" />
+        </button>
+        <div className="cursor-pointer select-none" onClick={onOpenNavSidebar}>
+          <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-tight tracking-tight font-sans hover:text-[#0f9d58] transition-colors">
+            Foam Shop POS
+          </h1>
+          <p className="text-[11px] text-slate-500 font-medium font-sans">
+            Quality Sleep Starts Here
+          </p>
+        </div>
       </div>
 
       {/* Center: Search Input matching reference screenshot */}

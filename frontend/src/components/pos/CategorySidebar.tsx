@@ -21,6 +21,7 @@ interface CategorySidebarProps {
   categoryProductCounts?: Record<string, number>;
   categoryStockMap?: Record<string, number>;
   totalAllCount: number;
+  stockFilter?: 'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK';
 }
 
 export default function CategorySidebar({
@@ -30,6 +31,7 @@ export default function CategorySidebar({
   categoryProductCounts = {},
   categoryStockMap = {},
   totalAllCount,
+  stockFilter = 'IN_STOCK',
 }: CategorySidebarProps) {
   // Dynamically pick matching icon based on category name
   const getCategoryIcon = (name: string, code: string, disabled: boolean) => {
@@ -82,35 +84,50 @@ export default function CategorySidebar({
         const stock = categoryStockMap[cat.id] ?? 0;
         const hasStock = stock > 0;
 
+        // Determine whether category is disabled based on active stock filter tab
+        let isDisabled = false;
+        if (stockFilter === 'IN_STOCK') {
+          isDisabled = !hasStock; // Zero stock categories disabled in "In Stock" tab
+        } else if (stockFilter === 'OUT_OF_STOCK') {
+          isDisabled = hasStock; // In stock categories disabled in "Out of Stock" tab
+        }
+
         return (
           <button
             key={cat.id}
+            disabled={isDisabled}
             onClick={() => {
-              if (hasStock) {
-                onSelectCategory(cat.id);
-              }
+              if (!isDisabled) onSelectCategory(cat.id);
             }}
-            disabled={!hasStock}
+            title={
+              isDisabled
+                ? stockFilter === 'IN_STOCK'
+                  ? 'Zero stock (Disabled in In Stock view)'
+                  : 'In stock (Disabled in Out of Stock view)'
+                : undefined
+            }
             className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all duration-150 ${
-              !hasStock
-                ? 'opacity-40 cursor-not-allowed bg-slate-50 text-slate-400'
+              isDisabled
+                ? 'opacity-35 cursor-not-allowed bg-slate-50/60 text-slate-400 select-none'
                 : isSelected
                 ? 'bg-[#1a73e8] text-white font-semibold shadow-xs cursor-pointer'
                 : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 cursor-pointer'
             }`}
           >
             <div className="flex items-center gap-2.5 truncate">
-              {getCategoryIcon(cat.name, cat.code, !hasStock)}
+              {getCategoryIcon(cat.name, cat.code, isDisabled)}
               <span className="truncate">{cat.name}</span>
             </div>
 
             <span
               className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
-                !hasStock
-                  ? 'bg-slate-200 text-slate-500'
+                isDisabled
+                  ? 'bg-slate-100 text-slate-400 border border-slate-200/50'
                   : isSelected
                   ? 'bg-blue-500 text-white'
-                  : 'bg-emerald-50 text-emerald-700'
+                  : hasStock
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-slate-100 text-slate-500'
               }`}
             >
               {stock}

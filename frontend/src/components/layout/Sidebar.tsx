@@ -27,6 +27,9 @@ import {
   ArrowDownToLine,
   SlidersHorizontal,
   ArrowLeftRight,
+  ClipboardCheck,
+  BarChart3,
+  X,
 } from 'lucide-react';
 
 import { hasPermission } from '@/lib/permissions';
@@ -120,6 +123,9 @@ export default function Sidebar({
         { title: 'Receive Stock (Inward)', href: '/inventory/receiving', icon: ArrowDownToLine },
         { title: 'Stock Adjustments', href: '/inventory/adjustments', icon: SlidersHorizontal },
         { title: 'Stock Transfers', href: '/inventory/transfers', icon: ArrowLeftRight },
+        { title: 'Stock Counting', href: '/inventory/counts', icon: ClipboardCheck },
+        { title: 'Movements Ledger', href: '/inventory/movements', icon: History },
+        { title: 'Inventory Reports', href: '/inventory/reports', icon: BarChart3 },
         { title: 'Inventory Overview', href: '/inventory', icon: LayoutDashboard },
       ],
     },
@@ -203,23 +209,26 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Mobile Backdrop */}
+      {/* Slide-over Drawer Backdrop */}
       {isMobileOpen && (
         <div
           onClick={onMobileClose}
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs lg:hidden transition-opacity"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs transition-opacity cursor-pointer animate-in fade-in duration-200"
+          aria-hidden="true"
         />
       )}
 
-      {/* Sidebar Container */}
+      {/* Slide-over Drawer Sidebar Container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-40 w-60 bg-brand-navy text-slate-300 flex flex-col transition-all duration-300 ease-in-out border-r border-slate-800 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-          }`}
+        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-brand-navy text-slate-300 flex flex-col transition-transform duration-300 ease-in-out border-r border-slate-800 shadow-2xl ${
+          isMobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
       >
-        {/* Brand Header */}
-        <div className="h-18 flex items-center px-5 border-b border-slate-800/60 bg-[#0A101D]">
+        {/* Brand Header with Close Button */}
+        <div className="h-18 flex items-center justify-between px-5 border-b border-slate-800/60 bg-[#0A101D] shrink-0">
           <Link
             href={isSuperAdmin ? '/admin/dashboard' : '/pos'}
+            onClick={onMobileClose}
             className="flex items-center gap-3 overflow-hidden"
           >
             {/* Red/Yellow Circular 'M' Icon */}
@@ -235,6 +244,17 @@ export default function Sidebar({
               </span>
             </div>
           </Link>
+
+          {/* Close Drawer Button */}
+          <button
+            type="button"
+            onClick={onMobileClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
+            aria-label="Close menu"
+            title="Close Menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Navigation Items */}
