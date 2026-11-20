@@ -1656,7 +1656,7 @@ export class CatalogueService {
       currentProd &&
       currentBrandIdStr === targetBrandIdStr &&
       currentCatIdStr === targetCatIdStr &&
-      (!targetLineIdStr || currentLineIdStr === targetLineIdStr);
+      (!targetLineIdStr || !currentLineIdStr || currentLineIdStr === targetLineIdStr);
 
     if (isProductHierarchySame) {
       product = currentProd;

@@ -161,80 +161,110 @@ function NewProductContent() {
   const [distributorPrice, setDistributorPrice] = useState<number>(15300);
   const [initialStock, setInitialStock] = useState<number>(0);
   const [minStockQty, setMinStockQty] = useState<number>(5);
+  // Helpers to resolve entity IDs whether populated object or raw ID string
+  const extractIdStr = (val: any): string => {
+    if (!val) return '';
+    if (typeof val === 'object') {
+      return val._id ? String(val._id) : val.id ? String(val.id) : '';
+    }
+    return String(val);
+  };
+
+  const editingBrandIdStr = useMemo(() => {
+    return extractIdStr(editingProduct?.brandId || (editingProduct as any)?.brand);
+  }, [editingProduct]);
+
+  const editingCategoryIdStr = useMemo(() => {
+    return extractIdStr(editingProduct?.categoryId || (editingProduct as any)?.category);
+  }, [editingProduct]);
+
+  const editingProductLineIdStr = useMemo(() => {
+    return extractIdStr(editingProduct?.productLineId || (editingProduct as any)?.productLine);
+  }, [editingProduct]);
+
+  const editingSizeIdStr = useMemo(() => {
+    return extractIdStr(editingVariant?.sizeId || (editingVariant as any)?.size);
+  }, [editingVariant]);
+
+  const editingThicknessIdStr = useMemo(() => {
+    return extractIdStr(editingVariant?.thicknessId || (editingVariant as any)?.thickness);
+  }, [editingVariant]);
+
   // Derived Brand
   const selectedBrandId = useMemo(() => {
     if (selectedBrandIdOverride) return selectedBrandIdOverride;
-    if (editingProduct?.brandId) return editingProduct.brandId;
+    if (editingBrandIdStr) return editingBrandIdStr;
     if (brands.length === 0) return '';
     const molty = brands.find((b) => b.name.toLowerCase().includes('molty')) || brands[0];
     return molty?.id || '';
-  }, [brands, selectedBrandIdOverride, editingProduct]);
+  }, [brands, selectedBrandIdOverride, editingBrandIdStr]);
 
   // Categories filtered by selected brand
   const filteredCategories = useMemo(() => {
     if (!selectedBrandId) return [];
-    return categories.filter((c) => c.brandId === selectedBrandId);
+    return categories.filter((c) => String(c.brandId) === String(selectedBrandId));
   }, [categories, selectedBrandId]);
 
   // Derived Category
   const selectedCategoryId = useMemo(() => {
-    if (selectedCategoryIdOverride && filteredCategories.some((c) => c.id === selectedCategoryIdOverride)) {
+    if (selectedCategoryIdOverride && filteredCategories.some((c) => String(c.id) === String(selectedCategoryIdOverride))) {
       return selectedCategoryIdOverride;
     }
-    if (editingProduct?.categoryId && filteredCategories.some((c) => c.id === editingProduct.categoryId)) {
-      return editingProduct.categoryId;
+    if (editingCategoryIdStr && filteredCategories.some((c) => String(c.id) === editingCategoryIdStr)) {
+      return editingCategoryIdStr;
     }
     return filteredCategories.length > 0 ? filteredCategories[0].id : '';
-  }, [filteredCategories, selectedCategoryIdOverride, editingProduct]);
+  }, [filteredCategories, selectedCategoryIdOverride, editingCategoryIdStr]);
 
   // Product Lines filtered by selected brand & category
   const filteredProductLines = useMemo(() => {
     if (!selectedBrandId || !selectedCategoryId) return [];
     return productLines.filter(
-      (pl) => pl.brandId === selectedBrandId && pl.categoryId === selectedCategoryId
+      (pl) => String(pl.brandId) === String(selectedBrandId) && String(pl.categoryId) === String(selectedCategoryId)
     );
   }, [productLines, selectedBrandId, selectedCategoryId]);
 
   // Derived Product Line
   const selectedProductLineId = useMemo(() => {
-    if (selectedProductLineIdOverride && filteredProductLines.some((pl) => pl.id === selectedProductLineIdOverride)) {
+    if (selectedProductLineIdOverride && filteredProductLines.some((pl) => String(pl.id) === String(selectedProductLineIdOverride))) {
       return selectedProductLineIdOverride;
     }
-    if (editingProduct?.productLineId && filteredProductLines.some((pl) => pl.id === editingProduct.productLineId)) {
-      return editingProduct.productLineId;
+    if (editingProductLineIdStr && filteredProductLines.some((pl) => String(pl.id) === editingProductLineIdStr)) {
+      return editingProductLineIdStr;
     }
     return filteredProductLines.length > 0 ? filteredProductLines[0].id : '';
-  }, [filteredProductLines, selectedProductLineIdOverride, editingProduct]);
+  }, [filteredProductLines, selectedProductLineIdOverride, editingProductLineIdStr]);
 
   // Derived Size
   const selectedSizeId = useMemo(() => {
     if (selectedSizeIdOverride) return selectedSizeIdOverride;
-    if (editingVariant?.sizeId) return editingVariant.sizeId;
+    if (editingSizeIdStr) return editingSizeIdStr;
     if (sizes.length === 0) return '';
     const defaultSize = sizes.find((s) => (s.displayLabel || s.name || '').includes('78')) || sizes[0];
     return defaultSize?.id || '';
-  }, [sizes, selectedSizeIdOverride, editingVariant]);
+  }, [sizes, selectedSizeIdOverride, editingSizeIdStr]);
 
   // Entities
-  const selectedBrand = useMemo(() => brands.find((b) => b.id === selectedBrandId), [brands, selectedBrandId]);
+  const selectedBrand = useMemo(() => brands.find((b) => String(b.id) === String(selectedBrandId)), [brands, selectedBrandId]);
   const brandRequiresThickness = (selectedBrand as any)?.hasThickness !== false;
 
   // Derived Thickness
   const selectedThicknessId = useMemo(() => {
-    if (!brandRequiresThickness) return '';
     if (selectedThicknessIdOverride) return selectedThicknessIdOverride;
-    if (editingVariant?.thicknessId) return editingVariant.thicknessId;
+    // When editing an existing variant that already has thickness, preserve it even if brand doesn't require thickness
+    if (editingThicknessIdStr) return editingThicknessIdStr;
+    if (!brandRequiresThickness) return '';
     if (thicknesses.length === 0) return '';
     const defaultThick =
       thicknesses.find((t) => t.value === 5 || (t.displayLabel && t.displayLabel.includes('5'))) ||
       thicknesses[0];
     return defaultThick?.id || '';
-  }, [brandRequiresThickness, thicknesses, selectedThicknessIdOverride, editingVariant]);
+  }, [brandRequiresThickness, thicknesses, selectedThicknessIdOverride, editingThicknessIdStr]);
 
-  const selectedCategory = useMemo(() => categories.find((c) => c.id === selectedCategoryId), [categories, selectedCategoryId]);
-  const selectedProductLine = useMemo(() => productLines.find((pl) => pl.id === selectedProductLineId), [productLines, selectedProductLineId]);
-  const selectedSize = useMemo(() => sizes.find((s) => s.id === selectedSizeId), [sizes, selectedSizeId]);
-  const selectedThickness = useMemo(() => thicknesses.find((t) => t.id === selectedThicknessId), [thicknesses, selectedThicknessId]);
+  const selectedCategory = useMemo(() => categories.find((c) => String(c.id) === String(selectedCategoryId)), [categories, selectedCategoryId]);
+  const selectedProductLine = useMemo(() => productLines.find((pl) => String(pl.id) === String(selectedProductLineId)), [productLines, selectedProductLineId]);
+  const selectedSize = useMemo(() => sizes.find((s) => String(s.id) === String(selectedSizeId)), [sizes, selectedSizeId]);
+  const selectedThickness = useMemo(() => thicknesses.find((t) => String(t.id) === String(selectedThicknessId)), [thicknesses, selectedThicknessId]);
 
   // Auto Generated Product Name
   const autoProductName = useMemo(() => {
@@ -249,14 +279,22 @@ function NewProductContent() {
     if (backendSku) {
       const bId =
         (backendSku.product as any)?.brandId?._id ||
+        (backendSku.product as any)?.brandId?.id ||
         backendSku.product?.brandId ||
         (backendSku.product as any)?.brand?._id ||
         (backendSku.product as any)?.brand?.id;
       const cId =
         (backendSku.product as any)?.categoryId?._id ||
+        (backendSku.product as any)?.categoryId?.id ||
         backendSku.product?.categoryId ||
         (backendSku.product as any)?.category?._id ||
         (backendSku.product as any)?.category?.id;
+      const plId =
+        (backendSku.product as any)?.productLineId?._id ||
+        (backendSku.product as any)?.productLineId?.id ||
+        backendSku.product?.productLineId ||
+        (backendSku.product as any)?.productLine?._id ||
+        (backendSku.product as any)?.productLine?.id;
       const sId =
         (backendSku.size as any)?._id ||
         (backendSku.size as any)?.id ||
@@ -268,6 +306,7 @@ function NewProductContent() {
 
       if (bId) setSelectedBrandId(String(bId));
       if (cId) setSelectedCategoryId(String(cId));
+      if (plId) setSelectedProductLineId(String(plId));
       if (sId) setSelectedSizeId(String(sId));
       if (tId) setSelectedThicknessId(String(tId));
 
@@ -287,6 +326,7 @@ function NewProductContent() {
       if (demoProd) {
         setSelectedBrandId(demoProd.brandId);
         setSelectedCategoryId(demoProd.categoryId);
+        if (demoProd.productLineId) setSelectedProductLineId(demoProd.productLineId);
       }
       if (editingVariant.sizeId) setSelectedSizeId(editingVariant.sizeId);
       if (editingVariant.thicknessId) setSelectedThicknessId(editingVariant.thicknessId);
@@ -396,7 +436,7 @@ function NewProductContent() {
             categoryId: selectedCategoryId,
             productLineId: selectedProductLineId || undefined,
             sizeId: selectedSizeId,
-            thicknessId: selectedThicknessId,
+            thicknessId: selectedThicknessId || undefined,
             listPrice,
             purchasePercent: purchasePct,
             purchasePrice,
