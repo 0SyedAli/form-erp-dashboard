@@ -39,7 +39,11 @@ export class InventoryController {
           sku: req.query.sku as string,
           search: req.query.search as string,
           page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
-          limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
+          limit: req.query.limit
+            ? parseInt(req.query.limit as string, 10)
+            : req.query.all === 'true' || req.query.all === '1'
+              ? 5000
+              : 100,
         },
         userContext
       );
@@ -126,7 +130,11 @@ export class InventoryController {
           dateFrom: req.query.dateFrom as string,
           dateTo: req.query.dateTo as string,
           page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
-          limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
+          limit: req.query.limit
+            ? parseInt(req.query.limit as string, 10)
+            : req.query.all === 'true' || req.query.all === '1'
+              ? 5000
+              : 100,
         },
         userContext
       );
@@ -168,7 +176,11 @@ export class InventoryController {
         {
           branchId: req.query.branchId as string,
           page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
-          limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
+          limit: req.query.limit
+            ? parseInt(req.query.limit as string, 10)
+            : req.query.all === 'true' || req.query.all === '1'
+              ? 5000
+              : 100,
         },
         userContext
       );
@@ -191,7 +203,11 @@ export class InventoryController {
           toBranchId: req.query.toBranchId as string,
           status: req.query.status as string,
           page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
-          limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
+          limit: req.query.limit
+            ? parseInt(req.query.limit as string, 10)
+            : req.query.all === 'true' || req.query.all === '1'
+              ? 5000
+              : 100,
         },
         userContext
       );
@@ -283,7 +299,11 @@ export class InventoryController {
           dateTo: req.query.dateTo as string,
           search: req.query.search as string,
           page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
-          limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
+          limit: req.query.limit
+            ? parseInt(req.query.limit as string, 10)
+            : req.query.all === 'true' || req.query.all === '1'
+              ? 5000
+              : 100,
         },
         userContext
       );

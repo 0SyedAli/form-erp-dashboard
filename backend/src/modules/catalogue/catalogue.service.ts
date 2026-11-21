@@ -527,6 +527,27 @@ export class CatalogueService {
       if (existing) throw new AppError(`Product Line code '${input.code}' already exists.`, 409, 'DUPLICATE_PRODUCT_LINE_CODE');
       productLine.code = input.code.toUpperCase();
     }
+
+    const targetBrandId = input.brandId || productLine.brandId;
+    const targetCategoryId = input.categoryId || productLine.categoryId;
+    const targetName = input.name ? input.name.trim() : productLine.name;
+
+    if (input.name || input.brandId || input.categoryId) {
+      const existingName = await ProductLine.findOne({
+        brandId: targetBrandId,
+        categoryId: targetCategoryId,
+        name: { $regex: new RegExp(`^${targetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        _id: { $ne: id },
+      });
+      if (existingName) {
+        throw new AppError(
+          `A product line named '${targetName}' already exists for this brand and category (Code: ${existingName.code}).`,
+          409,
+          'DUPLICATE_PRODUCT_LINE_NAME'
+        );
+      }
+    }
+
     if (input.name) productLine.name = input.name.trim();
     if (input.description !== undefined) productLine.description = input.description?.trim();
     if ((input as any).imageUrl !== undefined) (productLine as any).imageUrl = (input as any).imageUrl?.trim() || '';
@@ -1386,6 +1407,28 @@ export class CatalogueService {
         _id: { $nin: inStockVariantIds },
         sku: { $nin: inStockSkus },
       });
+    } else if (query.stockStatus === 'LOW_STOCK' || query.stockStatus === 'low_stock') {
+      const stockCriteria: any = { onHand: { $gt: 0 } };
+      if (query.branchId) stockCriteria.branchId = query.branchId;
+      const candidateBalances = await StockBalance.find(stockCriteria).select('variantId sku onHand reserved reorderLevel').lean();
+      const lowStockVariantIds: any[] = [];
+      const lowStockSkus: string[] = [];
+      candidateBalances.forEach((sb: any) => {
+        const onHand = sb.onHand || 0;
+        const reserved = sb.reserved || 0;
+        const available = Math.max(0, onHand - reserved);
+        const reorder = sb.reorderLevel ?? 5;
+        if (available > 0 && available <= reorder) {
+          if (sb.variantId) lowStockVariantIds.push(sb.variantId);
+          if (sb.sku) lowStockSkus.push(sb.sku);
+        }
+      });
+      andConditions.push({
+        $or: [
+          { _id: { $in: lowStockVariantIds } },
+          { sku: { $in: lowStockSkus } },
+        ],
+      });
     }
 
     const filter: any = andConditions.length > 0 ? { $and: andConditions } : {};
@@ -1432,15 +1475,16 @@ export class CatalogueService {
       stockQuery.branchId = query.branchId;
     }
     const stockBalances = await StockBalance.find(stockQuery).lean();
-    const stockMap = new Map<string, { onHand: number; reorderLevel: number }>();
+    const stockMap = new Map<string, { onHand: number; reserved: number; reorderLevel: number }>();
     stockBalances.forEach((sb: any) => {
-      const existing = stockMap.get(sb.sku) || { onHand: 0, reorderLevel: sb.reorderLevel ?? 5 };
+      const existing = stockMap.get(sb.sku) || { onHand: 0, reserved: 0, reorderLevel: sb.reorderLevel ?? 5 };
       existing.onHand += sb.onHand || 0;
+      existing.reserved += sb.reserved || 0;
       stockMap.set(sb.sku, existing);
     });
 
     const items = variants.map((v: any) => {
-      const stockInfo = stockMap.get(v.sku) || { onHand: 0, reorderLevel: 5 };
+      const stockInfo = stockMap.get(v.sku) || { onHand: 0, reserved: 0, reorderLevel: 5 };
       const p = v.productId;
       const pId = p?._id ? p._id.toString() : p?.toString() || '';
       const b = p?.brandId;
@@ -1451,6 +1495,10 @@ export class CatalogueService {
       const plId = pl?._id ? pl._id.toString() : pl?.toString() || '';
       const sId = v.sizeId?._id ? v.sizeId._id.toString() : v.sizeId?.toString() || '';
       const tId = v.thicknessId?._id ? v.thicknessId._id.toString() : v.thicknessId?.toString() || '';
+
+      const onHand = stockInfo.onHand;
+      const reserved = stockInfo.reserved;
+      const available = Math.max(0, onHand - reserved);
 
       const baseObj: any = {
         id: v._id.toString(),
@@ -1475,9 +1523,12 @@ export class CatalogueService {
         walkInPrice: toRupees(v.retailPrice),
         wholesalePrice: toRupees(v.wholesalePrice),
         distributorPrice: toRupees(v.distributorPrice),
-        stock: stockInfo.onHand,
-        onHand: stockInfo.onHand,
+        stock: onHand,
+        onHand,
+        reserved,
+        available,
         minimumStock: stockInfo.reorderLevel,
+        reorderLevel: stockInfo.reorderLevel,
         status: v.status,
       };
 

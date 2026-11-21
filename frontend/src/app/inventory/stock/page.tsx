@@ -4,20 +4,16 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAppSelector, RootState } from '@/store';
-import { useGetStockBalancesQuery } from '@/store/services/inventoryApi';
-import { useGetBrandsQuery } from '@/store/services/catalogueApi';
+import { useGetSkusQuery, useGetBrandsQuery } from '@/store/services/catalogueApi';
 import { Pagination } from '@/components/common/Pagination';
 import {
   Boxes,
   Search,
-  AlertTriangle,
   SlidersHorizontal,
   RefreshCw,
   Plus,
   X,
   Package,
-  CheckCircle2,
-  XCircle,
   ChevronRight,
   Filter,
 } from 'lucide-react';
@@ -42,11 +38,11 @@ export default function StockBalancesPage() {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
-  // 200ms Search Debounce
+  // 250ms Search Debounce
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(search);
-    }, 200);
+    }, 250);
     return () => clearTimeout(timer);
   }, [search]);
 
@@ -66,40 +62,65 @@ export default function StockBalancesPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Server-Side Dynamic Query with full multi-dimensional catalogue search
   const {
-    data: rawBalances = [],
+    data: skusResponse,
     isLoading,
     isFetching,
-  } = useGetStockBalancesQuery(
-    activeBranchId ? { branchId: activeBranchId } : undefined,
-    { refetchOnMountOrArgChange: false }
-  );
+  } = useGetSkusQuery({
+    page: currentPage,
+    limit: pageSize,
+    search: debouncedSearch.trim() || undefined,
+    brandId: brandFilter !== 'all' ? brandFilter : undefined,
+    stockStatus:
+      stockStatusFilter === 'in_stock'
+        ? 'IN_STOCK'
+        : stockStatusFilter === 'out_of_stock'
+          ? 'OUT_OF_STOCK'
+          : stockStatusFilter === 'low_stock'
+            ? 'LOW_STOCK'
+            : undefined,
+    ...(activeBranchId ? { branchId: activeBranchId } : {}),
+  });
 
-  // Normalized balance records for high-speed client searching & rendering
+  const rawBalances = useMemo(() => {
+    if (Array.isArray(skusResponse?.data)) return skusResponse.data;
+    if (Array.isArray((skusResponse as any)?.items)) return (skusResponse as any).items;
+    return [];
+  }, [skusResponse]);
+
+  const totalItems = skusResponse?.pagination?.total ?? rawBalances.length;
+
+  // Normalized balance records for high-speed client rendering
   const normalizedBalances = useMemo(() => {
     return rawBalances.map((item: any) => {
-      const v = item.variant;
       const productName =
-        v?.productId?.name ||
-        v?.product?.name ||
         item.productName ||
+        item.product?.name ||
+        item.productId?.name ||
         item.sku;
       const posDisplayName =
-        v?.productId?.posDisplayName ||
-        v?.posDisplayName ||
+        item.posDisplayName ||
+        item.productId?.posDisplayName ||
         '';
       const brandName =
-        v?.productId?.brandId?.name || item.brandName || 'MoltyFoam';
+        item.brand?.name ||
+        item.brandName ||
+        item.productId?.brandId?.name ||
+        'MoltyFoam';
       const sizeLabel =
-        v?.sizeId?.displayLabel || item.sizeLabel || 'Standard';
+        item.size?.displayLabel ||
+        item.sizeLabel ||
+        (item.size?.length && item.size?.width ? `${item.size.length} × ${item.size.width}` : 'Standard');
       const thicknessLabel =
-        v?.thicknessId?.displayLabel ||
-        (v?.thicknessId?.value ? `${v.thicknessId.value}"` : '');
+        item.thickness?.displayLabel ||
+        item.thicknessLabel ||
+        (item.thickness?.value ? `${item.thickness.value}"` : '');
 
-      const onHand = Number(item.onHand ?? 0);
+      const onHand = Number(item.onHand ?? item.stock ?? 0);
       const reserved = Number(item.reserved ?? 0);
       const available = item.available !== undefined ? Number(item.available) : Math.max(0, onHand - reserved);
-      const reorderLevel = Number(item.reorderLevel ?? 1);
+      const reorderLevel = Number(item.reorderLevel ?? item.minimumStock ?? 1);
 
       let statusKey: 'in_stock' | 'low_stock' | 'out_of_stock' = 'in_stock';
       if (available <= 0) {
@@ -107,9 +128,6 @@ export default function StockBalancesPage() {
       } else if (available <= reorderLevel) {
         statusKey = 'low_stock';
       }
-
-      // Precomputed search index string for O(1) comparison
-      const searchIndex = `${item.sku} ${productName} ${posDisplayName} ${brandName} ${sizeLabel} ${thicknessLabel}`.toLowerCase();
 
       return {
         ...item,
@@ -123,50 +141,17 @@ export default function StockBalancesPage() {
         available,
         reorderLevel,
         statusKey,
-        searchIndex,
       };
     });
   }, [rawBalances]);
 
-  // Google-Style Search Suggestions (Top 8 matching items as user types)
+  // Google-Style Search Suggestions (Top 8 matching items from live data)
   const searchSuggestions = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return [];
 
-    return normalizedBalances
-      .filter((item) => item.searchIndex.includes(query))
-      .slice(0, 8);
+    return normalizedBalances.slice(0, 8);
   }, [normalizedBalances, search]);
-
-  // Filter items matching search and filter controls
-  const filteredBalances = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase();
-
-    return normalizedBalances.filter((item) => {
-      // 1. Brand Filter
-      if (brandFilter !== 'all' && item.brandName.toLowerCase() !== brandFilter.toLowerCase()) {
-        return false;
-      }
-
-      // 2. Stock Status Filter
-      if (stockStatusFilter === 'in_stock' && item.statusKey !== 'in_stock') return false;
-      if (stockStatusFilter === 'low_stock' && item.statusKey !== 'low_stock') return false;
-      if (stockStatusFilter === 'out_of_stock' && item.statusKey !== 'out_of_stock') return false;
-
-      // 3. Search Query
-      if (query && !item.searchIndex.includes(query)) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [normalizedBalances, debouncedSearch, brandFilter, stockStatusFilter]);
-
-  // Paginated slice for instant 60 FPS rendering
-  const paginatedBalances = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredBalances.slice(start, start + pageSize);
-  }, [filteredBalances, currentPage, pageSize]);
 
   const handleSelectSuggestion = (item: any) => {
     setSearch(item.sku);
@@ -240,6 +225,11 @@ export default function StockBalancesPage() {
                 }}
                 className="w-full pl-12 pr-12 py-3.5 text-sm sm:text-base bg-slate-50 border border-slate-200 rounded-2xl focus:outline-hidden focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue text-slate-900 transition-all placeholder:text-slate-400 shadow-2xs"
               />
+              {isFetching && (
+                <div className="absolute right-11 pointer-events-none">
+                  <RefreshCw className="w-4 h-4 animate-spin text-brand-blue" />
+                </div>
+              )}
               {search && (
                 <button
                   type="button"
@@ -266,7 +256,7 @@ export default function StockBalancesPage() {
                   </div>
                 ) : (
                   <ul className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
-                    {searchSuggestions.map((item) => (
+                    {searchSuggestions.map((item: any) => (
                       <li key={item._id || item.id}>
                         <button
                           type="button"
@@ -299,12 +289,13 @@ export default function StockBalancesPage() {
 
                           <div className="flex items-center gap-3 shrink-0">
                             <span
-                              className={`px-2.5 py-1 rounded-full text-xs font-bold ${item.statusKey === 'out_of_stock'
+                              className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                                item.statusKey === 'out_of_stock'
                                   ? 'bg-rose-50 text-rose-700 border border-rose-200'
                                   : item.statusKey === 'low_stock'
                                     ? 'bg-amber-50 text-amber-700 border border-amber-200'
                                     : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                }`}
+                              }`}
                             >
                               {item.available} in stock
                             </span>
@@ -331,40 +322,44 @@ export default function StockBalancesPage() {
               <button
                 type="button"
                 onClick={() => setStockStatusFilter('all')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${stockStatusFilter === 'all'
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                  stockStatusFilter === 'all'
                     ? 'bg-slate-900 text-white shadow-2xs'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
+                }`}
               >
                 All Stock
               </button>
               <button
                 type="button"
                 onClick={() => setStockStatusFilter('in_stock')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${stockStatusFilter === 'in_stock'
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                  stockStatusFilter === 'in_stock'
                     ? 'bg-emerald-600 text-white shadow-2xs'
                     : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
-                  }`}
+                }`}
               >
                 In Stock
               </button>
               <button
                 type="button"
                 onClick={() => setStockStatusFilter('low_stock')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${stockStatusFilter === 'low_stock'
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                  stockStatusFilter === 'low_stock'
                     ? 'bg-amber-600 text-white shadow-2xs'
                     : 'bg-amber-50 hover:bg-amber-100 text-amber-700'
-                  }`}
+                }`}
               >
                 Low Stock
               </button>
               <button
                 type="button"
                 onClick={() => setStockStatusFilter('out_of_stock')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${stockStatusFilter === 'out_of_stock'
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                  stockStatusFilter === 'out_of_stock'
                     ? 'bg-rose-600 text-white shadow-2xs'
                     : 'bg-rose-50 hover:bg-rose-100 text-rose-700'
-                  }`}
+                }`}
               >
                 Out of Stock
               </button>
@@ -378,7 +373,7 @@ export default function StockBalancesPage() {
               >
                 <option value="all">All Brands</option>
                 {brands.map((br) => (
-                  <option key={br.id} value={br.name}>
+                  <option key={br.id} value={br.id}>
                     {br.name}
                   </option>
                 ))}
@@ -400,7 +395,7 @@ export default function StockBalancesPage() {
                 </button>
               )}
               <span className="text-slate-500 font-medium">
-                Found <strong className="text-slate-900">{filteredBalances.length}</strong> items
+                Found <strong className="text-slate-900">{totalItems}</strong> items
               </span>
             </div>
           </div>
@@ -430,7 +425,7 @@ export default function StockBalancesPage() {
                       Loading live stock balances...
                     </td>
                   </tr>
-                ) : filteredBalances.length === 0 ? (
+                ) : normalizedBalances.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-12 text-center text-slate-500 text-sm">
                       <Boxes className="w-8 h-8 mx-auto mb-2 text-slate-300" />
@@ -438,7 +433,7 @@ export default function StockBalancesPage() {
                     </td>
                   </tr>
                 ) : (
-                  paginatedBalances.map((item: any) => {
+                  normalizedBalances.map((item: any) => {
                     return (
                       <tr key={item._id || item.id} className="hover:bg-blue-50/20 transition-colors">
                         {/* SKU */}
@@ -478,12 +473,13 @@ export default function StockBalancesPage() {
                         {/* Available */}
                         <td className="py-3.5 px-3 text-center font-bold">
                           <span
-                            className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${item.statusKey === 'out_of_stock'
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                              item.statusKey === 'out_of_stock'
                                 ? 'bg-rose-50 text-rose-700 border border-rose-200'
                                 : item.statusKey === 'low_stock'
                                   ? 'bg-amber-50 text-amber-700 border border-amber-200'
                                   : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              }`}
+                            }`}
                           >
                             {item.available}
                           </span>
@@ -521,7 +517,7 @@ export default function StockBalancesPage() {
           {/* Pagination Controls */}
           <Pagination
             currentPage={currentPage}
-            totalItems={filteredBalances.length}
+            totalItems={totalItems}
             pageSize={pageSize}
             onPageChange={(p) => setCurrentPage(p)}
             onPageSizeChange={(s) => {
@@ -532,11 +528,12 @@ export default function StockBalancesPage() {
             itemName="items"
           />
 
-          {filteredBalances.length <= 10 && filteredBalances.length > 0 && (
+          {totalItems > 0 && (
             <div className="p-3.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 bg-slate-50/50">
               <span>
-                Showing <strong className="text-slate-800">{filteredBalances.length}</strong> of{' '}
-                <strong className="text-slate-800">{filteredBalances.length}</strong> items
+                Showing <strong className="text-slate-800">{(currentPage - 1) * pageSize + 1}</strong> to{' '}
+                <strong className="text-slate-800">{Math.min(totalItems, currentPage * pageSize)}</strong> of{' '}
+                <strong className="text-slate-800">{totalItems}</strong> items
               </span>
               <span className="text-[11px] text-slate-400">
                 Click &quot;Add Stock&quot; to receive more units for a SKU

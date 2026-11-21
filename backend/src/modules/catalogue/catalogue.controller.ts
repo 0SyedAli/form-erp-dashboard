@@ -180,6 +180,10 @@ export class CatalogueController {
       const data = await CatalogueService.updateProductLine(id, req.body);
       sendSuccess(res, data, 'Product line updated successfully.');
     } catch (error) {
+      if ((error as any).code === 11000) {
+        sendError(res, 'A product line with this name or code already exists for this brand and category.', 409, 'DUPLICATE_PRODUCT_LINE');
+        return;
+      }
       sendError(res, (error as any).message || 'Failed to update product line.', (error as any).statusCode || 500, (error as any).code);
     }
   }
