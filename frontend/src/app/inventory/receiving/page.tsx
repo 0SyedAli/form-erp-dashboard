@@ -11,6 +11,7 @@ import {
   useGetSkuByIdQuery,
   useGetBranchesQuery,
 } from '@/store/services/catalogueApi';
+import { rankSearchResults } from '@/utils/searchRanker';
 import Toast, { ToastMessage } from '@/components/common/Toast';
 import {
   PackagePlus,
@@ -89,22 +90,24 @@ function StockReceivingContent() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Server-side live product search across all 3,659+ items
-  const { data: searchResultsData, isFetching: isSearching } = useGetSkusQuery(
-    {
-      search: debouncedSearch || undefined,
-      limit: 10,
-      ...(activeBranchId ? { branchId: activeBranchId } : {}),
-    },
-    { skip: !debouncedSearch }
-  );
+  // Pre-load all active SKUs in the background once for instant 0ms search & barcode scan
+  const { data: allSkusData, isLoading: isCatalogueLoading } = useGetSkusQuery({
+    all: true,
+    status: 'ACTIVE',
+    ...(activeBranchId ? { branchId: activeBranchId } : {}),
+  });
 
-  const searchResults = useMemo(() => {
-    if (!debouncedSearch) return [];
-    if (Array.isArray(searchResultsData?.data)) return searchResultsData.data;
-    if (Array.isArray((searchResultsData as any)?.items)) return (searchResultsData as any).items;
+  const allCatalogueSkus = useMemo(() => {
+    if (Array.isArray(allSkusData?.data)) return allSkusData.data;
+    if (Array.isArray((allSkusData as any)?.items)) return (allSkusData as any).items;
     return [];
-  }, [searchResultsData, debouncedSearch]);
+  }, [allSkusData]);
+
+  // High-performance 0ms In-Memory Search with posDisplayName + productLineName First Priority!
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    return rankSearchResults(allCatalogueSkus, searchQuery, 15);
+  }, [allCatalogueSkus, searchQuery]);
 
   // Auto-load paramSku when initialSkuResponse arrives
   useEffect(() => {
@@ -303,7 +306,7 @@ function StockReceivingContent() {
                 }}
                 className="w-full pl-12 pr-12 py-3.5 text-sm sm:text-base bg-slate-50 border border-slate-200 rounded-2xl focus:outline-hidden focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue text-slate-900 transition-all placeholder:text-slate-400 shadow-2xs"
               />
-              {isSearching && (
+              {isCatalogueLoading && allCatalogueSkus.length === 0 && (
                 <div className="absolute right-11 pointer-events-none">
                   <RefreshCw className="w-4 h-4 animate-spin text-brand-blue" />
                 </div>
@@ -331,7 +334,7 @@ function StockReceivingContent() {
                   <span>Matching Products ({searchResults.length})</span>
                   <span className="text-[11px] text-slate-400">Click to add to list</span>
                 </div>
-                {isSearching ? (
+                {isCatalogueLoading && allCatalogueSkus.length === 0 ? (
                   <div className="p-6 text-center text-sm text-slate-500">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-1.5 text-brand-blue" />
                     Searching catalogue...

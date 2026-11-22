@@ -5,6 +5,7 @@ import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAppSelector, RootState } from '@/store';
 import { useGetSkusQuery, useGetBrandsQuery } from '@/store/services/catalogueApi';
+import { rankSearchResults } from '@/utils/searchRanker';
 import { Pagination } from '@/components/common/Pagination';
 import {
   Boxes,
@@ -62,24 +63,13 @@ export default function StockBalancesPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Server-Side Dynamic Query with full multi-dimensional catalogue search
+  // High-Performance In-Memory Branch Inventory Query (Loaded once, Zero API calls during search!)
   const {
     data: skusResponse,
     isLoading,
     isFetching,
   } = useGetSkusQuery({
-    page: currentPage,
-    limit: pageSize,
-    search: debouncedSearch.trim() || undefined,
-    brandId: brandFilter !== 'all' ? brandFilter : undefined,
-    stockStatus:
-      stockStatusFilter === 'in_stock'
-        ? 'IN_STOCK'
-        : stockStatusFilter === 'out_of_stock'
-          ? 'OUT_OF_STOCK'
-          : stockStatusFilter === 'low_stock'
-            ? 'LOW_STOCK'
-            : undefined,
+    all: true,
     ...(activeBranchId ? { branchId: activeBranchId } : {}),
   });
 
@@ -88,8 +78,6 @@ export default function StockBalancesPage() {
     if (Array.isArray((skusResponse as any)?.items)) return (skusResponse as any).items;
     return [];
   }, [skusResponse]);
-
-  const totalItems = skusResponse?.pagination?.total ?? rawBalances.length;
 
   // Normalized balance records for high-speed client rendering
   const normalizedBalances = useMemo(() => {
@@ -103,11 +91,18 @@ export default function StockBalancesPage() {
         item.posDisplayName ||
         item.productId?.posDisplayName ||
         '';
+      const productLineName =
+        item.productLineName ||
+        item.productLine?.name ||
+        (typeof item.productLineId === 'object' ? item.productLineId?.name : '') ||
+        item.product?.productLineName ||
+        '';
       const brandName =
         item.brand?.name ||
         item.brandName ||
         item.productId?.brandId?.name ||
         'MoltyFoam';
+      const brandId = String(item.brandId || item.brand?._id || item.brand?.id || item.productId?.brandId?._id || item.productId?.brandId || '');
       const sizeLabel =
         item.size?.displayLabel ||
         item.sizeLabel ||
@@ -133,7 +128,9 @@ export default function StockBalancesPage() {
         ...item,
         productName,
         posDisplayName,
+        productLineName,
         brandName,
+        brandId,
         sizeLabel,
         thicknessLabel,
         onHand,
@@ -145,12 +142,40 @@ export default function StockBalancesPage() {
     });
   }, [rawBalances]);
 
-  // Google-Style Search Suggestions (Top 8 matching items from live data)
-  const searchSuggestions = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return [];
+  // High-performance 0ms In-Memory Filter & Search with posDisplayName + productLineName First Priority!
+  const filteredBalances = useMemo(() => {
+    let list = normalizedBalances;
 
-    return normalizedBalances.slice(0, 8);
+    // 1. Brand filter
+    if (brandFilter !== 'all') {
+      list = list.filter((b: any) => String(b.brandId) === String(brandFilter));
+    }
+
+    // 2. Stock status filter
+    if (stockStatusFilter !== 'all') {
+      list = list.filter((b: any) => b.statusKey === stockStatusFilter);
+    }
+
+    // 3. Search query with posDisplayName and productLineName Priority!
+    if (search.trim()) {
+      list = rankSearchResults(list, search);
+    }
+
+    return list;
+  }, [normalizedBalances, brandFilter, stockStatusFilter, search]);
+
+  const totalItems = filteredBalances.length;
+
+  // Paginated slice for current page
+  const displayedBalances = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredBalances.slice(startIndex, startIndex + pageSize);
+  }, [filteredBalances, currentPage, pageSize]);
+
+  // Google-Style Instant Search Suggestions (Top 8 matching items in 0ms with posDisplayName Priority)
+  const searchSuggestions = useMemo(() => {
+    if (!search.trim()) return [];
+    return rankSearchResults(normalizedBalances, search, 8);
   }, [normalizedBalances, search]);
 
   const handleSelectSuggestion = (item: any) => {
@@ -225,7 +250,7 @@ export default function StockBalancesPage() {
                 }}
                 className="w-full pl-12 pr-12 py-3.5 text-sm sm:text-base bg-slate-50 border border-slate-200 rounded-2xl focus:outline-hidden focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue text-slate-900 transition-all placeholder:text-slate-400 shadow-2xs"
               />
-              {isFetching && (
+              {isFetching && normalizedBalances.length === 0 && (
                 <div className="absolute right-11 pointer-events-none">
                   <RefreshCw className="w-4 h-4 animate-spin text-brand-blue" />
                 </div>
@@ -289,13 +314,12 @@ export default function StockBalancesPage() {
 
                           <div className="flex items-center gap-3 shrink-0">
                             <span
-                              className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                                item.statusKey === 'out_of_stock'
-                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                  : item.statusKey === 'low_stock'
-                                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              }`}
+                              className={`px-2.5 py-1 rounded-full text-xs font-bold ${item.statusKey === 'out_of_stock'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                : item.statusKey === 'low_stock'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                }`}
                             >
                               {item.available} in stock
                             </span>
@@ -322,44 +346,40 @@ export default function StockBalancesPage() {
               <button
                 type="button"
                 onClick={() => setStockStatusFilter('all')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                  stockStatusFilter === 'all'
-                    ? 'bg-slate-900 text-white shadow-2xs'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                }`}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${stockStatusFilter === 'all'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
               >
                 All Stock
               </button>
               <button
                 type="button"
                 onClick={() => setStockStatusFilter('in_stock')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                  stockStatusFilter === 'in_stock'
-                    ? 'bg-emerald-600 text-white shadow-2xs'
-                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
-                }`}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${stockStatusFilter === 'in_stock'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
+                  }`}
               >
                 In Stock
               </button>
               <button
                 type="button"
                 onClick={() => setStockStatusFilter('low_stock')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                  stockStatusFilter === 'low_stock'
-                    ? 'bg-amber-600 text-white shadow-2xs'
-                    : 'bg-amber-50 hover:bg-amber-100 text-amber-700'
-                }`}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${stockStatusFilter === 'low_stock'
+                  ? 'bg-amber-600 text-white shadow-2xs'
+                  : 'bg-amber-50 hover:bg-amber-100 text-amber-700'
+                  }`}
               >
                 Low Stock
               </button>
               <button
                 type="button"
                 onClick={() => setStockStatusFilter('out_of_stock')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                  stockStatusFilter === 'out_of_stock'
-                    ? 'bg-rose-600 text-white shadow-2xs'
-                    : 'bg-rose-50 hover:bg-rose-100 text-rose-700'
-                }`}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${stockStatusFilter === 'out_of_stock'
+                  ? 'bg-rose-600 text-white shadow-2xs'
+                  : 'bg-rose-50 hover:bg-rose-100 text-rose-700'
+                  }`}
               >
                 Out of Stock
               </button>
@@ -418,14 +438,14 @@ export default function StockBalancesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {isLoading ? (
+                {isLoading && normalizedBalances.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-12 text-center text-slate-500 text-sm">
                       <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-brand-blue" />
                       Loading live stock balances...
                     </td>
                   </tr>
-                ) : normalizedBalances.length === 0 ? (
+                ) : displayedBalances.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-12 text-center text-slate-500 text-sm">
                       <Boxes className="w-8 h-8 mx-auto mb-2 text-slate-300" />
@@ -433,7 +453,7 @@ export default function StockBalancesPage() {
                     </td>
                   </tr>
                 ) : (
-                  normalizedBalances.map((item: any) => {
+                  displayedBalances.map((item: any) => {
                     return (
                       <tr key={item._id || item.id} className="hover:bg-blue-50/20 transition-colors">
                         {/* SKU */}
@@ -473,13 +493,12 @@ export default function StockBalancesPage() {
                         {/* Available */}
                         <td className="py-3.5 px-3 text-center font-bold">
                           <span
-                            className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                              item.statusKey === 'out_of_stock'
-                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                : item.statusKey === 'low_stock'
-                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            }`}
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${item.statusKey === 'out_of_stock'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              : item.statusKey === 'low_stock'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              }`}
                           >
                             {item.available}
                           </span>

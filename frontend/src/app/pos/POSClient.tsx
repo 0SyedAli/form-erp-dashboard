@@ -1004,7 +1004,7 @@ function POSContent() {
     const normalizedQuery = query.replace(/(\d+)\s*[xX*×]\s*(\d+)/g, '$1x$2');
     const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
 
-    return products.filter((p) => {
+    const matched = products.filter((p) => {
       if (p.status !== 'ACTIVE') return false;
       // Strict branch isolation: Only show products belonging to or stocked in this branch!
       if (!branchProductIds.has(String(p.id))) return false;
@@ -1017,6 +1017,63 @@ function POSContent() {
         if (!matchesAll) return false;
       }
       return true;
+    });
+
+    if (tokens.length === 0) return matched;
+
+    // High-Performance Priority Relevance Sorting: posDisplayName (1st), productLineName (2nd)
+    return matched.sort((a, b) => {
+      const aPos = (a.posDisplayName || '').toLowerCase();
+      const bPos = (b.posDisplayName || '').toLowerCase();
+      const aPl = (a.productLineName || '').toLowerCase();
+      const bPl = (b.productLineName || '').toLowerCase();
+
+      let aScore = 0;
+      let bScore = 0;
+
+      if (aPos) {
+        if (aPos === normalizedQuery) aScore += 3000;
+        else if (aPos.startsWith(normalizedQuery)) aScore += 2000;
+        else if (aPos.includes(normalizedQuery)) aScore += 1500;
+
+        for (let t = 0; t < tokens.length; t++) {
+          if (aPos.startsWith(tokens[t])) aScore += 400;
+          else if (aPos.includes(tokens[t])) aScore += 250;
+        }
+      }
+      if (bPos) {
+        if (bPos === normalizedQuery) bScore += 3000;
+        else if (bPos.startsWith(normalizedQuery)) bScore += 2000;
+        else if (bPos.includes(normalizedQuery)) bScore += 1500;
+
+        for (let t = 0; t < tokens.length; t++) {
+          if (bPos.startsWith(tokens[t])) bScore += 400;
+          else if (bPos.includes(tokens[t])) bScore += 250;
+        }
+      }
+
+      if (aPl) {
+        if (aPl === normalizedQuery) aScore += 1800;
+        else if (aPl.startsWith(normalizedQuery)) aScore += 1200;
+        else if (aPl.includes(normalizedQuery)) aScore += 900;
+
+        for (let t = 0; t < tokens.length; t++) {
+          if (aPl.startsWith(tokens[t])) aScore += 250;
+          else if (aPl.includes(tokens[t])) aScore += 150;
+        }
+      }
+      if (bPl) {
+        if (bPl === normalizedQuery) bScore += 1800;
+        else if (bPl.startsWith(normalizedQuery)) bScore += 1200;
+        else if (bPl.includes(normalizedQuery)) bScore += 900;
+
+        for (let t = 0; t < tokens.length; t++) {
+          if (bPl.startsWith(tokens[t])) bScore += 250;
+          else if (bPl.includes(tokens[t])) bScore += 150;
+        }
+      }
+
+      return bScore - aScore;
     });
   }, [products, branchProductIds, selectedBrandId, selectedCategoryId, debouncedSearchQuery, productSearchStrings]);
 

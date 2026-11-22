@@ -19,6 +19,7 @@ import {
   useGetProductLinesQuery as useGetBackendProductLinesQuery,
   useToggleSkuStatusMutation,
 } from '@/store/services/catalogueApi';
+import { rankSearchResults } from '@/utils/searchRanker';
 import {
   Search,
   Plus,
@@ -78,20 +79,13 @@ export default function ProductsTab({
   const { data: branches = [] } = useGetBranchesQuery(undefined, { skip: !isSuperAdmin });
   const { data: demoVariants = [], isLoading: isDemoLoading } = useGetVariantsQuery(undefined, { skip: isBackendMode });
 
-  // Optimized Server-Side Paginated & Filtered Query
+  // High-Performance In-Memory Catalogue Query (Loaded once, Zero API calls during search!)
   const {
     data: backendSkusResponse,
     isLoading: isBackendLoading,
     isFetching: isBackendFetching,
   } = useGetBackendSkusQuery({
-    page,
-    limit: pageSize,
-    search: debouncedSearch.trim() || undefined,
-    brandId: brandFilter !== 'all' ? brandFilter : undefined,
-    categoryId: categoryFilter !== 'all' ? categoryFilter : undefined,
-    productLineId: productLineFilter !== 'all' ? productLineFilter : undefined,
-    status: statusFilter === 'active' ? 'ACTIVE' : statusFilter === 'inactive' ? 'INACTIVE' : 'ALL',
-    stockStatus: stockFilter === 'in_stock' ? 'IN_STOCK' : stockFilter === 'out_of_stock' ? 'OUT_OF_STOCK' : undefined,
+    all: true,
     ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
   });
 
@@ -120,7 +114,7 @@ export default function ProductsTab({
     return [];
   }, [backendSkusResponse]);
 
-  const variants: ProductVariant[] = useMemo(() => {
+  const allVariants: ProductVariant[] = useMemo(() => {
     if (rawBackendSkus.length > 0) {
       return rawBackendSkus.map((v: any) => ({
         id: v.id || v._id || '',
@@ -128,6 +122,7 @@ export default function ProductsTab({
         branchId: v.branchId || v.product?.branchId || (typeof v.productId === 'object' ? v.productId?.branchId : '') || '',
         sku: v.sku,
         productName: v.productName || `${v.brand?.name || ''} - ${v.category?.name || ''}`,
+        posDisplayName: v.posDisplayName || v.productId?.posDisplayName || '',
         brandId: v.brandId || v.brand?._id || v.brand?.id || '',
         brandName: v.brandName || v.brand?.name || '',
         categoryId: v.categoryId || v.category?._id || v.category?.id || '',
@@ -153,8 +148,45 @@ export default function ProductsTab({
     return [];
   }, [rawBackendSkus, demoVariants, backendSkusResponse]);
 
+  // High-performance 0ms In-Memory Multi-Filter & Search with posDisplayName + productLineName First Priority!
+  const filteredVariants = useMemo(() => {
+    let list = allVariants;
+
+    if (brandFilter !== 'all') {
+      list = list.filter((v) => String(v.brandId) === String(brandFilter));
+    }
+    if (categoryFilter !== 'all') {
+      list = list.filter((v) => String(v.categoryId) === String(categoryFilter));
+    }
+    if (productLineFilter !== 'all') {
+      list = list.filter((v) => String(v.productLineId) === String(productLineFilter));
+    }
+    if (statusFilter === 'active') {
+      list = list.filter((v) => v.status === 'active' || v.status === 'ACTIVE');
+    } else if (statusFilter === 'inactive') {
+      list = list.filter((v) => v.status === 'inactive' || v.status === 'INACTIVE');
+    }
+    if (stockFilter === 'in_stock') {
+      list = list.filter((v) => (v.stock ?? 0) > 0);
+    } else if (stockFilter === 'out_of_stock') {
+      list = list.filter((v) => (v.stock ?? 0) <= 0);
+    }
+
+    if (searchQuery.trim()) {
+      list = rankSearchResults(list, searchQuery);
+    }
+
+    return list;
+  }, [allVariants, brandFilter, categoryFilter, productLineFilter, statusFilter, stockFilter, searchQuery]);
+
   // Total items matching current search and filters
-  const totalItems = backendSkusResponse?.pagination?.total ?? variants.length;
+  const totalItems = filteredVariants.length;
+
+  // Paginated slice for current page
+  const variants = useMemo(() => {
+    const startIndex = (page - 1) * pageSize;
+    return filteredVariants.slice(startIndex, startIndex + pageSize);
+  }, [filteredVariants, page, pageSize]);
 
   const productLines: Array<{ id: string; name: string; brandId: string; categoryId: string }> = useMemo(() => {
     return (Array.isArray(backendProductLines) ? backendProductLines : (backendProductLines as any)?.data || []).map((pl: any) => ({
@@ -217,7 +249,7 @@ export default function ProductsTab({
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-9 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand-blue focus:bg-white"
             />
-            {isBackendFetching && (
+            {isBackendFetching && variants.length === 0 && (
               <div className="absolute right-3 top-1/2 -translate-y-1/2">
                 <RotateCcw className="w-3.5 h-3.5 text-brand-blue animate-spin" />
               </div>
@@ -349,7 +381,7 @@ export default function ProductsTab({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-gray-700">
-              {isLoading ? (
+              {isLoading && variants.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-gray-400">
                     <div className="flex items-center justify-center gap-2">
