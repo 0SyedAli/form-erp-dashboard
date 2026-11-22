@@ -217,25 +217,52 @@ export default function ProductGrid({
   const stockFilter = stockFilterProp !== undefined ? stockFilterProp : internalStockFilter;
   const setStockFilter = onStockFilterChangeProp || setInternalStockFilter;
 
-  // Helper to determine starting price, stock, and matching size/thickness for a product
-  const getProductMetrics = useCallback(
-    (productId: string) => {
-      const productVariants = variants.filter(
-        (v) => v.productId === productId && v.status === 'ACTIVE'
-      );
-      if (productVariants.length === 0) {
-        return {
-          startingPrice: 0,
-          inStock: false,
-          totalAvailable: 0,
-        };
-      }
+  // 1. Fast Precomputed Balance Maps O(B) and Product Variant Grouping O(V)
+  const { balanceByVariantId, balanceBySku, activeVariantsByProductId } = useMemo(() => {
+    const balByVar = new Map<string, InventoryBalance>();
+    const balBySku = new Map<string, InventoryBalance>();
+    for (let i = 0; i < inventoryBalances.length; i++) {
+      const b = inventoryBalances[i];
+      if (b.variantId) balByVar.set(b.variantId, b);
+      if (b.sku) balBySku.set(b.sku, b);
+    }
 
-      const getVariantPrice = (v: ProductVariant) => {
-        if (saleType === 'WHOLESALE') return v.wholesalePrice || 0;
-        if (saleType === 'DISTRIBUTOR') return v.distributorPrice || v.wholesalePrice || 0;
-        return v.walkInPrice || v.retailPrice || 0;
-      };
+    const varByProd = new Map<string, ProductVariant[]>();
+    for (let i = 0; i < variants.length; i++) {
+      const v = variants[i];
+      if (v.status !== 'ACTIVE' && v.status) continue;
+      const list = varByProd.get(v.productId);
+      if (list) {
+        list.push(v);
+      } else {
+        varByProd.set(v.productId, [v]);
+      }
+    }
+
+    return {
+      balanceByVariantId: balByVar,
+      balanceBySku: balBySku,
+      activeVariantsByProductId: varByProd,
+    };
+  }, [inventoryBalances, variants]);
+
+  // 2. Precompute metrics map for all products in-memory in a single high-performance O(P) pass!
+  const productMetricsMap = useMemo(() => {
+    const map = new Map<string, { startingPrice: number; inStock: boolean; totalAvailable: number }>();
+
+    const getVariantPrice = (v: ProductVariant) => {
+      if (saleType === 'WHOLESALE') return v.wholesalePrice || 0;
+      if (saleType === 'DISTRIBUTOR') return v.distributorPrice || v.wholesalePrice || 0;
+      return v.walkInPrice || v.retailPrice || 0;
+    };
+
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      const productVariants = activeVariantsByProductId.get(p.id) || [];
+      if (productVariants.length === 0) {
+        map.set(p.id, { startingPrice: 0, inStock: false, totalAvailable: 0 });
+        continue;
+      }
 
       let targetVariants = productVariants;
       if (selectedSizeId && selectedSizeId !== 'ALL') {
@@ -247,49 +274,36 @@ export default function ProductGrid({
         if (filtered.length > 0) targetVariants = filtered;
       }
 
-      const sorted = [...targetVariants].sort((a, b) => getVariantPrice(a) - getVariantPrice(b));
-      const representative = sorted.find((v) => getVariantPrice(v) > 0) || sorted[0] || productVariants[0];
-
-      const startingPrice = representative ? getVariantPrice(representative) : 0;
-
-      const variantIds = new Set(productVariants.map((v) => v.id));
-      const variantSkus = new Set(productVariants.map((v) => v.sku));
-      const matchingBalances = inventoryBalances.filter(
-        (b) => variantIds.has(b.variantId) || variantSkus.has(b.sku)
-      );
-      let totalAvailable = 0;
-      if (matchingBalances.length > 0) {
-        for (const v of productVariants) {
-          const bal = matchingBalances.find((b) => b.variantId === v.id || b.sku === v.sku);
-          const qty = bal
-            ? (bal.available !== undefined && bal.available !== null ? bal.available : bal.onHand)
-            : (v.stock ?? (v as any).onHand ?? 0);
-          totalAvailable += Math.max(0, qty || 0);
+      // Starting price: lowest non-zero price
+      let minPrice = Infinity;
+      for (let j = 0; j < targetVariants.length; j++) {
+        const price = getVariantPrice(targetVariants[j]);
+        if (price > 0 && price < minPrice) {
+          minPrice = price;
         }
-      } else {
-        totalAvailable = productVariants.reduce(
-          (sum, v) => sum + Math.max(0, v.stock ?? (v as any).onHand ?? 0),
-          0
-        );
+      }
+      const startingPrice = minPrice === Infinity ? (targetVariants[0] ? getVariantPrice(targetVariants[0]) : 0) : minPrice;
+
+      // Total available stock using instant O(1) balance maps
+      let totalAvailable = 0;
+      for (let j = 0; j < productVariants.length; j++) {
+        const v = productVariants[j];
+        const bal = balanceByVariantId.get(v.id) || balanceBySku.get(v.sku);
+        const qty = bal
+          ? (bal.available !== undefined && bal.available !== null ? bal.available : bal.onHand)
+          : (v.stock ?? (v as any).onHand ?? 0);
+        totalAvailable += Math.max(0, qty || 0);
       }
 
-      return {
+      map.set(p.id, {
         startingPrice,
         inStock: totalAvailable > 0,
         totalAvailable,
-      };
-    },
-    [variants, saleType, selectedSizeId, selectedThicknessId, inventoryBalances]
-  );
-
-  // 2. Precompute metrics map for all products in-memory (O(1) lookups)
-  const productMetricsMap = useMemo(() => {
-    const map = new Map<string, { startingPrice: number; inStock: boolean; totalAvailable: number }>();
-    for (const p of products) {
-      map.set(p.id, getProductMetrics(p.id));
+      });
     }
+
     return map;
-  }, [products, getProductMetrics]);
+  }, [products, activeVariantsByProductId, balanceByVariantId, balanceBySku, saleType, selectedSizeId, selectedThicknessId]);
 
   // 3. Tab counts (All, In Stock, Out of Stock)
   const counts = useMemo(() => {
@@ -438,7 +452,7 @@ export default function ProductGrid({
         <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 animate-in fade-in duration-200">
             {filteredProducts.map((product, idx) => {
-              const { startingPrice, inStock, totalAvailable } = productMetricsMap.get(product.id) || getProductMetrics(product.id);
+              const { startingPrice, inStock, totalAvailable } = productMetricsMap.get(product.id) || { startingPrice: 0, inStock: false, totalAvailable: 0 };
               const isSelected = selectedProductId === product.id;
               // { console.log(product?.category?.name) }
               return (

@@ -2,6 +2,7 @@ import express, { Express, Request, Response } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env.js';
 import { httpLogger } from './middleware/logger.middleware.js';
@@ -25,6 +26,9 @@ import { reportingRoutes } from './modules/reporting/reporting.routes.js';
 
 export function createApp(): Express {
   const app = express();
+
+  // 0. Response Compression (gzip / deflate / brotli) - Reduces payloads by up to 90%
+  app.use(compression());
 
   // 1. Security Headers
   app.use(

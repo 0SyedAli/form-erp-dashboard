@@ -215,10 +215,23 @@ function POSContent() {
   // Effective stock branch (switched in header or own terminal branch)
   const effectiveStockBranchId = selectedStockBranchId || activeBranch?.id;
 
-  // Progressive Lazy Out-of-Stock Query (Stage 2: Runs seamlessly in background after bootstrap)
+  const [stockFilter, setStockFilter] = useState<'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK'>('IN_STOCK');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
+
+  // Debounce search query to keep typing responsive at 60 FPS
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 150);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Progressive Lazy Out-of-Stock Query (Stage 2: Runs seamlessly in background ONLY when user needs out-of-stock or searches)
+  const shouldSkipOutOfStock = !isBackendMode || !bootstrapData || (stockFilter === 'IN_STOCK' && !debouncedSearchQuery.trim());
   const { data: outOfStockData } = useGetPOSOutOfStockQuery(
     effectiveStockBranchId ? { branchId: effectiveStockBranchId } : undefined,
-    { skip: !isBackendMode || !bootstrapData }
+    { skip: shouldSkipOutOfStock }
   );
 
   const { data: backendHeldSales = [] } = useGetBackendHeldSalesQuery(undefined, { skip: !isBackendMode });
@@ -356,6 +369,19 @@ function POSContent() {
     })) as MattressThickness[];
   }, [bootstrapData?.thicknesses, demoThicknesses, offlineSnapshot]);
 
+  // Fast O(1) Master Metadata Maps to completely eliminate repetitive .find() across thousands of variants
+  const { categoryMap, brandMap, sizeMap, thicknessMap } = useMemo(() => {
+    const cMap = new Map<string, Category>();
+    categories.forEach((c) => cMap.set(String(c.id), c));
+    const bMap = new Map<string, Brand>();
+    brands.forEach((b) => bMap.set(String(b.id), b));
+    const sMap = new Map<string, MattressSize>();
+    sizes.forEach((s) => sMap.set(String(s.id), s));
+    const tMap = new Map<string, MattressThickness>();
+    thicknesses.forEach((t) => tMap.set(String(t.id), t));
+    return { categoryMap: cMap, brandMap: bMap, sizeMap: sMap, thicknessMap: tMap };
+  }, [categories, brands, sizes, thicknesses]);
+
   const { productLineMap, productLineMapByCompound } = useMemo(() => {
     const idMap = new Map<string, any>();
     const compoundMap = new Map<string, any>();
@@ -409,8 +435,8 @@ function POSContent() {
         || productLineMapByCompound.get(compoundKey);
       const lineImg = plObj?.imageUrl || (p.productLine && typeof p.productLine === 'object' && p.productLine.imageUrl) || '';
 
-      const catObj = categories.find((c) => String(c.id) === categoryId);
-      const brandObj = brands.find((b) => String(b.id) === brandId);
+      const catObj = categoryMap.get(categoryId);
+      const brandObj = brandMap.get(brandId);
 
       return {
         ...p,
@@ -423,13 +449,13 @@ function POSContent() {
         productLine: plObj || p.productLine,
         productLineName: p.productLineName || plObj?.name || p.productLine?.name || '',
         imageUrl: lineImg || '/assets/mattress/foam1.png',
-        code: p.code || `${p.brand?.code || 'MF'}-${p.category?.code || 'CAT'}`.toUpperCase(),
+        code: p.code || `${brandObj?.code || p.brand?.code || 'MF'}-${catObj?.code || p.category?.code || 'CAT'}`.toUpperCase(),
         name: p.name || 'Unnamed Product',
         posDisplayName: p.posDisplayName || plObj?.posDisplayName || '',
         status: p.status || 'ACTIVE',
       };
     }) as CatalogueProduct[];
-  }, [bootstrapData?.products, outOfStockData?.products, demoProducts, offlineSnapshot, productLineMap, productLineMapByCompound, categories, brands]);
+  }, [bootstrapData?.products, outOfStockData?.products, demoProducts, offlineSnapshot, productLineMap, productLineMapByCompound, categoryMap, brandMap]);
 
   const variants: ProductVariant[] = useMemo(() => {
     const backendInStock = bootstrapData?.variants || [];
@@ -586,6 +612,18 @@ function POSContent() {
     return map;
   }, [variants]);
 
+  // Fast O(1) variant lookup maps
+  const { variantById, variantBySku } = useMemo(() => {
+    const byId = new Map<string, ProductVariant>();
+    const bySku = new Map<string, ProductVariant>();
+    for (let i = 0; i < variants.length; i++) {
+      const v = variants[i];
+      byId.set(v.id, v);
+      if (v.sku) bySku.set(v.sku, v);
+    }
+    return { variantById: byId, variantBySku: bySku };
+  }, [variants]);
+
   // Products associated with the effective stock branch
   const branchProductIds = useMemo(() => {
     const pIdSet = new Set<string>();
@@ -595,7 +633,7 @@ function POSContent() {
       const b = branchBalances[i];
       if (b.productId) pIdSet.add(String(b.productId));
       if (b.variantId) {
-        const v = variants.find((item) => item.id === b.variantId || item.sku === b.sku);
+        const v = variantById.get(b.variantId) || variantBySku.get(b.sku);
         if (v && v.productId) pIdSet.add(String(v.productId));
       }
     }
@@ -729,17 +767,6 @@ function POSContent() {
   }, [chosenBrandId, branchBrands, brands, brandStockMap, brandProductCounts]);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
-  const [stockFilter, setStockFilter] = useState<'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK'>('IN_STOCK');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
-
-  // Debounce search query to keep typing responsive at 60 FPS
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-    }, 150);
-    return () => clearTimeout(handler);
-  }, [searchQuery]);
 
   // Flow 07 Unified POS Multi-Tier & Credit States
   const [saleType, setSaleType] = useState<SaleType>('WALK_IN');
@@ -935,8 +962,8 @@ function POSContent() {
     for (let i = 0; i < products.length; i++) {
       const p = products[i];
       const pId = String(p.id);
-      const cat = categories.find((c) => String(c.id) === String(p.categoryId));
-      const br = brands.find((b) => String(b.id) === String(p.brandId));
+      const cat = categoryMap.get(String(p.categoryId));
+      const br = brandMap.get(String(p.brandId));
       const plName = p.productLineName || '';
 
       const pVars = variantsByProductId.get(pId) || [];
@@ -945,8 +972,8 @@ function POSContent() {
         const v = pVars[j];
         const vPos = (v as any).posDisplayName || '';
         const vSku = v.sku || '';
-        const sz = sizes.find((s) => String(s.id) === String(v.sizeId));
-        const th = thicknesses.find((t) => String(t.id) === String(v.thicknessId));
+        const sz = sizeMap.get(String(v.sizeId));
+        const th = thicknessMap.get(String(v.thicknessId));
         const szLabel = sz?.displayLabel || (v as any).sizeLabel || '';
         const thLabel = th ? `${th.value} ${th.displayLabel || ''}` : '';
         varParts.push(`${vPos} ${vSku} ${szLabel} ${thLabel}`);
@@ -968,7 +995,7 @@ function POSContent() {
       map.set(pId, `${combined} ${normalized}`);
     }
     return map;
-  }, [products, categories, brands, variantsByProductId, sizes, thicknesses]);
+  }, [products, categoryMap, brandMap, variantsByProductId, sizeMap, thicknessMap]);
 
   // Filter products strictly by Branch ownership, Brand, Category, and Debounced Offline Search
   const filteredProducts = useMemo(() => {
@@ -1023,7 +1050,7 @@ function POSContent() {
     // Recalculate each item in cart based on targetTier
     setCartItems((prev) =>
       prev.map((item) => {
-        const variant = variants.find((v) => v.id === item.variantId);
+        const variant = variantById.get(item.variantId);
         let newPrice = 0;
         if (targetTier === 'WHOLESALE') {
           newPrice = variant?.wholesalePrice ?? item.wholesalePrice ?? 0;
@@ -1829,7 +1856,7 @@ function POSContent() {
         product={configModalProduct}
         brandName={currentBrand?.name || ''}
         categoryName={
-          categories.find((c) => c.id === configModalProduct?.categoryId)?.name || 'Foam'
+          categoryMap.get(String(configModalProduct?.categoryId))?.name || 'Foam'
         }
         variants={variants}
         sizes={sizes}

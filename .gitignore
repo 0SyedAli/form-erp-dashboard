@@ -1,31 +1,30 @@
 # Dependencies
 node_modules/
-*/node_modules/
+**/node_modules/
 
 # Next.js build
 .next/
-*/.next/
+**/.next/
 out/
-*/out/
+**/out/
 
 # Backend build output
 dist/
-*/dist/
+**/dist/
 build/
-*/build/
+**/build/
 
 # Testing & Coverage
 coverage/
-*/coverage/
+**/coverage/
 
 # Environment variables
 .env
-.env.local
-.env.*.local
-*.env
-backend/.env
-frontend/.env
-frontend/.env.local
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
 
 # Logs
 *.log
@@ -36,19 +35,24 @@ pnpm-debug.log*
 
 # TypeScript
 *.tsbuildinfo
-*/tsconfig.tsbuildinfo
+**/tsconfig.tsbuildinfo
 next-env.d.ts
 
 # Local MongoDB replica set dev/test data
 .mongodb-dev/
-*/.mongodb-dev/
+**/.mongodb-dev/
 
 # Database Backups & Dumps
 .backups/
-*/.backups/
+**/.backups/
 *.dump
 *.json.gz
 
-# OS files
+# IDE & OS files
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
+
+# Archives
+*.zip
