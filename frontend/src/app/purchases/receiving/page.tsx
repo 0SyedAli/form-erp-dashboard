@@ -540,11 +540,22 @@ function GoodsReceivingContent() {
                                 max={remaining}
                                 value={current.received}
                                 onChange={(e) => {
-                                  const val = Math.max(0, parseInt(e.target.value) || 0);
+                                  const raw = e.target.value;
                                   setReceivingQuantities((prev) => ({
                                     ...prev,
-                                    [item.sku]: { ...prev[item.sku], received: val },
+                                    [item.sku]: {
+                                      ...prev[item.sku],
+                                      received: raw === '' ? ('' as any) : Math.max(0, parseInt(raw, 10) || 0),
+                                    },
                                   }));
+                                }}
+                                onBlur={() => {
+                                  if ((current.received as any) === '') {
+                                    setReceivingQuantities((prev) => ({
+                                      ...prev,
+                                      [item.sku]: { ...prev[item.sku], received: 0 },
+                                    }));
+                                  }
                                 }}
                                 className="w-20 px-2 py-1 text-center bg-white border border-slate-300 rounded focus:ring-1 focus:ring-brand-burgundy"
                               />
@@ -555,11 +566,22 @@ function GoodsReceivingContent() {
                                 min={0}
                                 value={current.damaged}
                                 onChange={(e) => {
-                                  const val = Math.max(0, parseInt(e.target.value) || 0);
+                                  const raw = e.target.value;
                                   setReceivingQuantities((prev) => ({
                                     ...prev,
-                                    [item.sku]: { ...prev[item.sku], damaged: val },
+                                    [item.sku]: {
+                                      ...prev[item.sku],
+                                      damaged: raw === '' ? ('' as any) : Math.max(0, parseInt(raw, 10) || 0),
+                                    },
                                   }));
+                                }}
+                                onBlur={() => {
+                                  if ((current.damaged as any) === '') {
+                                    setReceivingQuantities((prev) => ({
+                                      ...prev,
+                                      [item.sku]: { ...prev[item.sku], damaged: 0 },
+                                    }));
+                                  }
                                 }}
                                 className="w-16 px-2 py-1 text-center bg-white border border-slate-300 rounded focus:ring-1 focus:ring-brand-burgundy"
                               />

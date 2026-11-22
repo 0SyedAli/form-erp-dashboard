@@ -37,7 +37,7 @@ interface ReceivingItem {
   sizeLabel?: string;
   thicknessLabel?: string;
   currentStock: number;
-  quantity: number;
+  quantity: number | '';
   unitCost?: number;
 }
 
@@ -97,11 +97,66 @@ function StockReceivingContent() {
     ...(activeBranchId ? { branchId: activeBranchId } : {}),
   });
 
-  const allCatalogueSkus = useMemo(() => {
+  const rawCatalogue = useMemo(() => {
     if (Array.isArray(allSkusData?.data)) return allSkusData.data;
     if (Array.isArray((allSkusData as any)?.items)) return (allSkusData as any).items;
     return [];
   }, [allSkusData]);
+
+  // Normalized catalogue items exactly matching Stock Balance page
+  const allCatalogueSkus = useMemo(() => {
+    return rawCatalogue.map((item: any) => {
+      const productName =
+        item.productName ||
+        item.product?.name ||
+        item.productId?.name ||
+        item.sku;
+      const posDisplayName =
+        item.posDisplayName ||
+        item.productId?.posDisplayName ||
+        '';
+      const productLineName =
+        item.productLineName ||
+        item.productLine?.name ||
+        (typeof item.productLineId === 'object' ? item.productLineId?.name : '') ||
+        item.product?.productLineName ||
+        '';
+      const brandName =
+        item.brand?.name ||
+        item.brandName ||
+        item.productId?.brandId?.name ||
+        'MoltyFoam';
+      const brandId = String(item.brandId || item.brand?._id || item.brand?.id || item.productId?.brandId?._id || item.productId?.brandId || '');
+      const sizeLabel =
+        item.size?.displayLabel ||
+        item.sizeLabel ||
+        (item.size?.length && item.size?.width ? `${item.size.length} × ${item.size.width}` : 'Standard');
+      const thicknessLabel =
+        item.thickness?.displayLabel ||
+        item.thicknessLabel ||
+        (item.thickness?.value ? `${item.thickness.value}"` : '');
+
+      const onHand = Number(item.onHand ?? item.stock ?? 0);
+      const reserved = Number(item.reserved ?? 0);
+      const available = item.available !== undefined ? Number(item.available) : Math.max(0, onHand - reserved);
+      const reorderLevel = Number(item.reorderLevel ?? item.minimumStock ?? 1);
+
+      return {
+        ...item,
+        productName,
+        posDisplayName,
+        productLineName,
+        brandName,
+        brandId,
+        sizeLabel,
+        thicknessLabel,
+        onHand,
+        reserved,
+        available,
+        reorderLevel,
+      };
+    });
+  }, [rawCatalogue]);
 
   // High-performance 0ms In-Memory Search with posDisplayName + productLineName First Priority!
   const searchResults = useMemo(() => {
@@ -156,7 +211,7 @@ function StockReceivingContent() {
       const existing = prev.find((p) => p.sku === sku);
       if (existing) {
         // If already selected, increase quantity by 1
-        return prev.map((p) => (p.sku === sku ? { ...p, quantity: p.quantity + 1 } : p));
+        return prev.map((p) => (p.sku === sku ? { ...p, quantity: (Number(p.quantity) || 0) + 1 } : p));
       }
       return [
         {
@@ -180,14 +235,34 @@ function StockReceivingContent() {
   };
 
   // Stepper & Quantity Handlers
-  const handleQuantityChange = (id: string, newQty: number) => {
-    const safeQty = Math.max(1, isNaN(newQty) ? 1 : newQty);
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, quantity: safeQty } : i)));
+  const handleQuantityChange = (id: string, rawVal: string) => {
+    if (rawVal === '') {
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, quantity: '' } : i)));
+      return;
+    }
+    const parsed = parseInt(rawVal, 10);
+    if (!isNaN(parsed)) {
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, quantity: Math.max(0, parsed) } : i)));
+    }
+  };
+
+  const handleQuantityBlur = (id: string) => {
+    setItems((prev) =>
+      prev.map((i) => {
+        if (i.id !== id) return i;
+        const q = typeof i.quantity === 'number' ? i.quantity : 0;
+        return { ...i, quantity: q >= 1 ? q : 1 };
+      })
+    );
   };
 
   const stepQuantity = (id: string, delta: number) => {
     setItems((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, quantity: Math.max(1, (i.quantity || 1) + delta) } : i))
+      prev.map((i) => {
+        if (i.id !== id) return i;
+        const current = typeof i.quantity === 'number' ? i.quantity : 0;
+        return { ...i, quantity: Math.max(1, current + delta) };
+      })
     );
   };
 
@@ -219,7 +294,7 @@ function StockReceivingContent() {
         notes: notes.trim() || undefined,
         items: items.map((i) => ({
           sku: i.sku,
-          quantityReceived: Number(i.quantity),
+          quantityReceived: Math.max(1, Number(i.quantity) || 1),
           unitCost: i.unitCost && i.unitCost > 0 ? Number(i.unitCost) * 100 : undefined,
         })),
       };
@@ -365,6 +440,9 @@ function StockReceivingContent() {
                                 <p className="text-sm font-semibold text-slate-900 truncate group-hover:text-brand-blue">
                                   {item.productName || item.product?.name || item.sku}
                                 </p>
+                                {item.posDisplayName && (
+                                  <p className="text-xs text-brand-blue font-medium truncate">{item.posDisplayName}</p>
+                                )}
                                 <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 mt-0.5">
                                   <span className="font-mono text-[11px] font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
                                     {item.sku}
@@ -512,9 +590,8 @@ function StockReceivingContent() {
                                 type="number"
                                 min="1"
                                 value={item.quantity}
-                                onChange={(e) =>
-                                  handleQuantityChange(item.id, parseInt(e.target.value) || 1)
-                                }
+                                onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                                onBlur={() => handleQuantityBlur(item.id)}
                                 className="w-16 py-2 text-center text-sm font-bold text-slate-900 focus:outline-hidden"
                               />
                               <button

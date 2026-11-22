@@ -1,5 +1,5 @@
 /**
- * High-Performance In-Memory Search & Priority Relevance Ranker
+ * High-Performance Pure In-Memory Search & Priority Relevance Ranker
  *
  * Priority Rules:
  * 1. First Priority: posDisplayName (Highest Weight)
@@ -7,9 +7,7 @@
  * 3. SKU / Exact Barcode Scan (Instant top match)
  * 4. Product Name, Dimensions, Brand, Category (Standard matching)
  *
- * Performance:
- * Uses lazy cached fields (_srDoc, _srPos, etc.) to achieve sub-millisecond
- * search times across thousands of inventory items without GC overhead.
+ * 100% Pure & Immutable: Never mutates or adds properties to input objects.
  */
 export function rankSearchResults<T extends Record<string, any>>(
   items: T[],
@@ -34,50 +32,38 @@ export function rankSearchResults<T extends Record<string, any>>(
 
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
-    const anyIt = it as any;
-    let doc = anyIt._srDoc;
-    let pos = anyIt._srPos;
-    let plName = anyIt._srPl;
-    let prodName = anyIt._srName;
-    let sku = anyIt._srSku;
-    let size = anyIt._srSize;
-    let thick = anyIt._srThick;
+    if (!it || typeof it !== 'object') continue;
 
-    if (doc === undefined) {
-      pos = (it.posDisplayName || it.productId?.posDisplayName || '').toLowerCase();
-      if (pos.includes('x') || pos.includes('×') || pos.includes('*')) {
-        pos = pos.replace(/(\d+)\s*[xX*×]\s*(\d+)/g, '$1x$2');
-      }
-      plName = (
-        it.productLineName ||
-        it.productLine?.name ||
-        (typeof it.productLineId === 'object' ? it.productLineId?.name : '') ||
-        it.product?.productLineName ||
-        it.product?.productLine?.name ||
-        ''
-      ).toLowerCase();
-      prodName = (it.productName || it.product?.name || it.productId?.name || it.name || '').toLowerCase();
-      sku = (it.sku || '').toLowerCase();
-      size = (it.sizeLabel || it.size?.displayLabel || (it.size?.length && it.size?.width ? `${it.size.length}x${it.size.width}` : '')).toLowerCase();
-      thick = (it.thicknessLabel || it.thickness?.displayLabel || (it.thickness?.value ? `${it.thickness.value}` : '')).toLowerCase();
-      const brand = (it.brandName || it.brand?.name || (typeof it.brandId === 'object' ? it.brandId?.name : '') || '').toLowerCase();
-      const cat = (it.categoryName || it.category?.name || (typeof it.categoryId === 'object' ? it.categoryId?.name : '') || '').toLowerCase();
+    const pos = (it.posDisplayName || it.productId?.posDisplayName || '').toLowerCase().replace(/(\d+)\s*[xX*×]\s*(\d+)/g, '$1x$2');
+    const plName = (
+      it.productLineName ||
+      it.productLine?.name ||
+      (typeof it.productLineId === 'object' ? it.productLineId?.name : '') ||
+      it.product?.productLineName ||
+      it.product?.productLine?.name ||
+      ''
+    ).toLowerCase();
+    const prodName = (it.productName || it.product?.name || it.productId?.name || it.name || '').toLowerCase();
+    const sku = (it.sku || '').toLowerCase();
+    const size = (it.sizeLabel || it.size?.displayLabel || (it.size?.length && it.size?.width ? `${it.size.length}x${it.size.width}` : '')).toLowerCase();
+    const thick = (it.thicknessLabel || it.thickness?.displayLabel || (it.thickness?.value ? `${it.thickness.value}` : '')).toLowerCase();
+    const brand = (it.brandName || it.brand?.name || (typeof it.brandId === 'object' ? it.brandId?.name : '') || '').toLowerCase();
+    const cat = (it.categoryName || it.category?.name || (typeof it.categoryId === 'object' ? it.categoryId?.name : '') || '').toLowerCase();
 
-      doc = `${pos} ${plName} ${prodName} ${sku} ${size} ${thick} ${brand} ${cat}`;
-
-      anyIt._srDoc = doc;
-      anyIt._srPos = pos;
-      anyIt._srPl = plName;
-      anyIt._srName = prodName;
-      anyIt._srSku = sku;
-      anyIt._srSize = size;
-      anyIt._srThick = thick;
-    }
-
-    // Fast token match against the item search document
+    // Fast check: all tokens must match at least one attribute
     let matchesAll = true;
     for (let t = 0; t < tokenLen; t++) {
-      if (!doc.includes(tokens[t])) {
+      const tok = tokens[t];
+      if (
+        !pos.includes(tok) &&
+        !plName.includes(tok) &&
+        !prodName.includes(tok) &&
+        !sku.includes(tok) &&
+        !size.includes(tok) &&
+        !thick.includes(tok) &&
+        !brand.includes(tok) &&
+        !cat.includes(tok)
+      ) {
         matchesAll = false;
         break;
       }

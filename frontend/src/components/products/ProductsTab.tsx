@@ -417,23 +417,23 @@ export default function ProductsTab({
                       {/* Product Details (Thumbnail + Title + SKU) */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-8 rounded-lg bg-blue-50/80 border border-blue-100 flex items-center justify-center shrink-0">
+                          {/* <div className="w-10 h-8 rounded-lg bg-blue-50/80 border border-blue-100 flex items-center justify-center shrink-0">
                             <svg viewBox="0 0 40 24" fill="none" className="w-6 h-4 text-brand-blue">
                               <rect x="3" y="6" width="34" height="12" rx="3" fill="#EBF3FE" stroke="#3B82F6" strokeWidth="1.5" />
                               <circle cx="12" cy="12" r="1" fill="#3B82F6" />
                               <circle cx="20" cy="12" r="1" fill="#3B82F6" />
                               <circle cx="28" cy="12" r="1" fill="#3B82F6" />
                             </svg>
-                          </div>
+                          </div> */}
                           <div>
-                            <div className="font-bold text-gray-900 text-xs">
+                            <div className="font-bold text-gray-900 text-xs text-nowrap">
                               {item.productName || `${item.brandName || 'Brand'} - ${item.categoryName || 'Mattress'}`}
                             </div>
-                            <div className="mt-0.5">
+                            {/* <div className="mt-0.5">
                               <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-semibold border border-slate-200">
                                 {item.sku}
                               </span>
-                            </div>
+                            </div> */}
                           </div>
                         </div>
                       </td>

@@ -205,10 +205,16 @@ export default function POSCart({
                       <input
                         type="number"
                         min={0}
-                        value={item.unitPrice}
+                        value={item.unitPrice === 0 ? '' : item.unitPrice}
+                        placeholder="0"
                         onChange={(e) => {
-                          const val = Math.max(0, parseInt(e.target.value) || 0);
+                          const val = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
                           onUpdateUnitPrice(item.variantId, val);
+                        }}
+                        onBlur={() => {
+                          if (!item.unitPrice) {
+                            onUpdateUnitPrice(item.variantId, item.originalPrice || 0);
+                          }
                         }}
                         className="w-20 px-1.5 py-0.5 text-xs font-black text-slate-900 border border-slate-200 hover:border-slate-300 focus:border-blue-500 rounded bg-slate-50/70 focus:bg-white focus:outline-hidden font-sans"
                         title="Click to edit unit price"
@@ -310,9 +316,15 @@ export default function POSCart({
                   type="number"
                   min={0}
                   max={100}
-                  value={percentValue || ''}
+                  value={percentValue === 0 ? '' : percentValue}
                   onChange={(e) => {
-                    const p = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                    const raw = e.target.value;
+                    if (raw === '') {
+                      setPercentValue(0);
+                      onDiscountChange(0);
+                      return;
+                    }
+                    const p = Math.min(100, Math.max(0, parseInt(raw, 10) || 0));
                     setPercentValue(p);
                     onDiscountChange(Math.round((subtotal * p) / 100));
                   }}
@@ -328,8 +340,15 @@ export default function POSCart({
                 type="number"
                 min={0}
                 max={subtotal}
-                value={discountAmount || ''}
-                onChange={(e) => onDiscountChange(Math.max(0, parseInt(e.target.value) || 0))}
+                value={discountAmount === 0 ? '' : discountAmount}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (raw === '') {
+                    onDiscountChange(0);
+                    return;
+                  }
+                  onDiscountChange(Math.max(0, parseInt(raw, 10) || 0));
+                }}
                 placeholder="0"
                 className="w-24 px-2 py-0.5 text-right text-xs font-bold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
               />

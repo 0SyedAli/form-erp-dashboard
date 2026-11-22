@@ -34,7 +34,7 @@ export default function StockAdjustmentsPage() {
   const [adjustmentType, setAdjustmentType] = useState<
     'PHYSICAL_COUNT' | 'DAMAGE_WRITE_OFF' | 'ADMINISTRATIVE'
   >('PHYSICAL_COUNT');
-  const [newPhysicalQty, setNewPhysicalQty] = useState<number>(0);
+  const [newPhysicalQty, setNewPhysicalQty] = useState<number | ''>(0);
   const [reason, setReason] = useState<string>('');
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
@@ -54,7 +54,8 @@ export default function StockAdjustmentsPage() {
     setNewPhysicalQty(currentQuantity);
   }, [selectedSku, currentQuantity]);
 
-  const qtyDifference = newPhysicalQty - currentQuantity;
+  const finalQty = typeof newPhysicalQty === 'number' ? newPhysicalQty : 0;
+  const qtyDifference = finalQty - currentQuantity;
 
   // Mutation
   const [createAdjustments, { isLoading: isSubmitting }] = useCreateAdjustmentsMutation();
@@ -82,7 +83,7 @@ export default function StockAdjustmentsPage() {
       return;
     }
 
-    if (newPhysicalQty < 0) {
+    if (finalQty < 0) {
       setToast({
         id: Date.now().toString(),
         type: 'error',
@@ -244,7 +245,21 @@ export default function StockAdjustmentsPage() {
                   type="number"
                   min="0"
                   value={newPhysicalQty}
-                  onChange={(e) => setNewPhysicalQty(Math.max(0, parseInt(e.target.value) || 0))}
+                  onChange={(e) => {
+                    if (e.target.value === '') {
+                      setNewPhysicalQty('');
+                      return;
+                    }
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val)) {
+                      setNewPhysicalQty(Math.max(0, val));
+                    }
+                  }}
+                  onBlur={() => {
+                    if (newPhysicalQty === '') {
+                      setNewPhysicalQty(0);
+                    }
+                  }}
                   className="w-full px-3.5 py-2 text-sm font-bold bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:border-brand-blue text-slate-900 shadow-2xs"
                 />
                 <span

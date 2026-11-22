@@ -444,8 +444,12 @@ function VariantGeneratorInnerModal({
                     <input
                       type="number"
                       step="500"
-                      value={defaultRetail}
-                      onChange={(e) => setDefaultRetail(Number(e.target.value))}
+                      value={defaultRetail === 0 ? '' : defaultRetail}
+                      placeholder="0"
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setDefaultRetail(raw === '' ? 0 : Math.max(0, parseFloat(raw) || 0));
+                      }}
                       className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-hidden focus:border-brand-blue"
                     />
                   </div>
@@ -456,8 +460,12 @@ function VariantGeneratorInnerModal({
                     <input
                       type="number"
                       step="500"
-                      value={defaultWholesale}
-                      onChange={(e) => setDefaultWholesale(Number(e.target.value))}
+                      value={defaultWholesale === 0 ? '' : defaultWholesale}
+                      placeholder="0"
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setDefaultWholesale(raw === '' ? 0 : Math.max(0, parseFloat(raw) || 0));
+                      }}
                       className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-900 focus:outline-hidden focus:border-brand-blue"
                     />
                   </div>
@@ -524,12 +532,13 @@ function VariantGeneratorInnerModal({
                           <input
                             type="number"
                             step="500"
-                            value={comb.retailPrice}
+                            value={comb.retailPrice === 0 ? '' : comb.retailPrice}
+                            placeholder="0"
                             onChange={(e) =>
                               handleUpdateCombination(
                                 comb.id,
                                 'retailPrice',
-                                Number(e.target.value)
+                                e.target.value === '' ? 0 : Math.max(0, parseFloat(e.target.value) || 0)
                               )
                             }
                             className="w-24 px-2 py-1 bg-white border border-gray-200 rounded text-xs text-gray-900 font-medium focus:outline-hidden focus:border-brand-blue"
@@ -539,12 +548,13 @@ function VariantGeneratorInnerModal({
                           <input
                             type="number"
                             step="500"
-                            value={comb.wholesalePrice}
+                            value={comb.wholesalePrice === 0 ? '' : comb.wholesalePrice}
+                            placeholder="0"
                             onChange={(e) =>
                               handleUpdateCombination(
                                 comb.id,
                                 'wholesalePrice',
-                                Number(e.target.value)
+                                e.target.value === '' ? 0 : Math.max(0, parseFloat(e.target.value) || 0)
                               )
                             }
                             className="w-24 px-2 py-1 bg-white border border-gray-200 rounded text-xs text-gray-900 font-medium focus:outline-hidden focus:border-brand-blue"

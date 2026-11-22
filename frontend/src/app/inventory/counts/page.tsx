@@ -310,8 +310,9 @@ export default function StockCountsPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {activeSession.items.map((item) => {
-                    const counted = sessionItemCounts[item.sku] ?? item.physicalQuantity;
-                    const diff = counted - item.systemQuantity;
+                    const rawCounted = sessionItemCounts[item.sku] ?? item.physicalQuantity;
+                    const countedNum = typeof rawCounted === 'number' ? rawCounted : (parseInt(rawCounted as string, 10) || 0);
+                    const diff = countedNum - item.systemQuantity;
 
                     return (
                       <tr key={item.sku} className="hover:bg-gray-50/50">
@@ -331,13 +332,21 @@ export default function StockCountsPage() {
                             type="number"
                             min="0"
                             disabled={activeSession.status === 'COMPLETED'}
-                            value={counted}
+                            value={rawCounted}
                             onChange={(e) =>
                               setSessionItemCounts((prev) => ({
                                 ...prev,
-                                [item.sku]: Math.max(0, parseInt(e.target.value) || 0),
+                                [item.sku]: e.target.value === '' ? ('' as any) : Math.max(0, parseInt(e.target.value, 10) || 0),
                               }))
                             }
+                            onBlur={() => {
+                              if ((sessionItemCounts[item.sku] as any) === '') {
+                                setSessionItemCounts((prev) => ({
+                                  ...prev,
+                                  [item.sku]: 0,
+                                }));
+                              }
+                            }}
                             className="w-24 px-2.5 py-1 text-center font-bold text-sm bg-white border border-gray-300 rounded-md focus:outline-hidden focus:border-brand-blue"
                           />
                         </td>

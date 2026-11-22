@@ -59,7 +59,7 @@ export default function StockTransfersPage() {
   const [destBranchId, setDestBranchId] = useState<string>('BR-DISP-02');
   const [destLocationId, setDestLocationId] = useState<string>('LOC-DISP-01');
   const [transferNotes, setTransferNotes] = useState('');
-  const [transferItems, setTransferItems] = useState<Array<{ sku: string; requestedQuantity: number }>>([
+  const [transferItems, setTransferItems] = useState<Array<{ sku: string; requestedQuantity: number | '' }>>([
     { sku: 'DURA-LUX-7872-T6', requestedQuantity: 3 },
   ]);
 
@@ -147,7 +147,10 @@ export default function StockTransfersPage() {
         sourceLocationId,
         destinationBranchId: destBranchId,
         destinationLocationId: destLocationId,
-        items: transferItems,
+        items: transferItems.map((item) => ({
+          sku: item.sku,
+          requestedQuantity: Math.max(1, Number(item.requestedQuantity) || 1),
+        })),
         notes: transferNotes.trim() || undefined,
         requestedBy: currentUser?.name || 'Staff Member',
       }).unwrap();
@@ -681,7 +684,7 @@ export default function StockTransfersPage() {
                       {transferItems.map((item, idx) => {
                         const balance = sourceBalances.find((b) => b.sku === item.sku);
                         const available = balance ? balance.available : 0;
-                        const isExceeded = item.requestedQuantity > available;
+                        const isExceeded = (Number(item.requestedQuantity) || 0) > available;
 
                         return (
                           <tr key={idx} className={isExceeded ? 'bg-red-50/50' : ''}>
@@ -717,9 +720,19 @@ export default function StockTransfersPage() {
                                 type="number"
                                 min="1"
                                 value={item.requestedQuantity}
-                                onChange={(e) =>
-                                  handleUpdateItem(idx, 'requestedQuantity', parseInt(e.target.value) || 0)
-                                }
+                                onChange={(e) => {
+                                  if (e.target.value === '') {
+                                    handleUpdateItem(idx, 'requestedQuantity', '');
+                                    return;
+                                  }
+                                  const val = parseInt(e.target.value, 10);
+                                  handleUpdateItem(idx, 'requestedQuantity', isNaN(val) ? '' : Math.max(0, val));
+                                }}
+                                onBlur={() => {
+                                  if (item.requestedQuantity === '' || Number(item.requestedQuantity) <= 0) {
+                                    handleUpdateItem(idx, 'requestedQuantity', 1);
+                                  }
+                                }}
                                 className={`w-full px-2 py-1 text-center font-bold bg-white border rounded ${isExceeded ? 'border-red-500 text-red-600' : 'border-gray-300'
                                   }`}
                               />

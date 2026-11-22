@@ -159,8 +159,8 @@ function NewProductContent() {
   const [wholesalePrice, setWholesalePrice] = useState<number>(16200);
   const [distributorPct, setDistributorPct] = useState<number>(15);
   const [distributorPrice, setDistributorPrice] = useState<number>(15300);
-  const [initialStock, setInitialStock] = useState<number>(0);
-  const [minStockQty, setMinStockQty] = useState<number>(5);
+  const [initialStock, setInitialStock] = useState<number | ''>(0);
+  const [minStockQty, setMinStockQty] = useState<number | ''>(5);
   // Helpers to resolve entity IDs whether populated object or raw ID string
   const extractIdStr = (val: any): string => {
     if (!val) return '';
@@ -446,8 +446,8 @@ function NewProductContent() {
             wholesalePrice,
             distributorPercent: distributorPct,
             distributorPrice,
-            stock: initialStock,
-            minimumStock: minStockQty,
+            stock: Number(initialStock) || 0,
+            minimumStock: Number(minStockQty) || 0,
             reason: 'Product catalogue edit',
           }).unwrap();
 
@@ -586,8 +586,8 @@ function NewProductContent() {
           wholesalePrice,
           distributorPercent: distributorPct,
           distributorPrice,
-          stock: initialStock,
-          minimumStock: minStockQty,
+          stock: Number(initialStock) || 0,
+          minimumStock: Number(minStockQty) || 0,
         }).unwrap();
 
         if (backendRes?.success && backendRes.data?.variant) {
@@ -1220,7 +1220,13 @@ function NewProductContent() {
                       type="number"
                       min="0"
                       value={initialStock}
-                      onChange={(e) => setInitialStock(Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setInitialStock(raw === '' ? '' : Math.max(0, parseInt(raw, 10) || 0));
+                      }}
+                      onBlur={() => {
+                        if (initialStock === '') setInitialStock(0);
+                      }}
                       className="w-full px-3 py-2 bg-white rounded-lg border border-gray-200 text-sm font-semibold text-gray-800 focus:ring-2 focus:ring-blue-500/20 focus:border-brand-blue focus:outline-none"
                     />
                     <p className="text-[11px] text-gray-500 mt-1">Leave 0 if no initial floor inventory exists.</p>
@@ -1233,7 +1239,13 @@ function NewProductContent() {
                       type="number"
                       min="0"
                       value={minStockQty}
-                      onChange={(e) => setMinStockQty(Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setMinStockQty(raw === '' ? '' : Math.max(0, parseInt(raw, 10) || 0));
+                      }}
+                      onBlur={() => {
+                        if (minStockQty === '') setMinStockQty(0);
+                      }}
                       className="w-full px-3 py-2 bg-white rounded-lg border border-gray-200 text-sm font-semibold text-gray-800 focus:ring-2 focus:ring-blue-500/20 focus:border-brand-blue focus:outline-none"
                     />
                     <p className="text-[11px] text-gray-500 mt-1">Triggers low stock warnings when stock &le; threshold.</p>

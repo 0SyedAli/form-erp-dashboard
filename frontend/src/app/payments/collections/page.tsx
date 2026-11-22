@@ -578,13 +578,14 @@ function CollectionsContent() {
                               type="number"
                               min={0}
                               max={inv.amountDue ?? 0}
-                              value={allocatedVal || ''}
-                              onChange={(e) =>
+                              value={allocatedVal === 0 ? '' : allocatedVal}
+                              onChange={(e) => {
+                                const raw = e.target.value;
                                 handleInvoiceAllocChange(
                                   inv.id,
-                                  parseInt(e.target.value) || 0
-                                )
-                              }
+                                  raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0)
+                                );
+                              }}
                               placeholder="0"
                               className="w-28 px-2.5 py-1 text-right text-xs font-bold border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500"
                             />
@@ -669,8 +670,11 @@ function CollectionsContent() {
                     id="collection-amount-input"
                     required
                     min={1}
-                    value={paymentAmount || ''}
-                    onChange={(e) => handleAmountChange(Math.max(0, parseInt(e.target.value) || 0))}
+                    value={paymentAmount === 0 ? '' : paymentAmount}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      handleAmountChange(raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0));
+                    }}
                     placeholder="e.g. 25000"
                     className="w-full pl-9 pr-4 py-2.5 text-base font-black border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-emerald-500 font-sans"
                   />

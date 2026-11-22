@@ -97,7 +97,7 @@ function ProductsPageContent() {
         </div>
 
         {/* Live Counters and Navigation */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center flex-wrap gap-3">
           <div className="bg-white px-3.5 py-2 rounded-xl border border-gray-200/80 shadow-2xs">
             <span className="text-[11px] text-gray-400 block font-normal">Active SKUs</span>
             <span className="text-base font-bold text-gray-900 font-mono">

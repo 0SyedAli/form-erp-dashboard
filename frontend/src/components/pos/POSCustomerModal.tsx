@@ -414,8 +414,12 @@ export default function POSCustomerModal({
                   type="number"
                   min={0}
                   step={1000}
-                  value={newCreditLimit}
-                  onChange={(e) => setNewCreditLimit(parseInt(e.target.value) || 0)}
+                  value={newCreditLimit === 0 ? '' : newCreditLimit}
+                  placeholder="0"
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setNewCreditLimit(raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0));
+                  }}
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -428,8 +432,12 @@ export default function POSCustomerModal({
                   type="number"
                   min={0}
                   max={180}
-                  value={newDueDays}
-                  onChange={(e) => setNewDueDays(parseInt(e.target.value) || 0)}
+                  value={newDueDays === 0 ? '' : newDueDays}
+                  placeholder="0"
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setNewDueDays(raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0));
+                  }}
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                 />
               </div>

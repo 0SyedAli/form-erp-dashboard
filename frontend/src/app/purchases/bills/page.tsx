@@ -499,12 +499,12 @@ function SupplierBillsContent() {
                         <td className="py-3.5 px-4 text-center">
                           <span
                             className={`inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${isOverdue
-                                ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                : b.paymentStatus === 'PAID'
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : b.paymentStatus === 'PARTIALLY_PAID'
-                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : b.paymentStatus === 'PAID'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : b.paymentStatus === 'PARTIALLY_PAID'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-slate-100 text-slate-700 border-slate-200'
                               }`}
                           >
                             {isOverdue ? 'OVERDUE' : b.paymentStatus.replace('_', ' ')}
@@ -722,12 +722,21 @@ function SupplierBillsContent() {
                           placeholder="Qty"
                           value={row.quantity}
                           onChange={(e) => {
-                            const val = Math.max(1, parseInt(e.target.value) || 1);
+                            const raw = e.target.value;
                             setItems((prev) => {
                               const n = [...prev];
-                              n[idx] = { ...n[idx], quantity: val };
+                              n[idx] = { ...n[idx], quantity: raw === '' ? ('' as any) : Math.max(0, parseInt(raw, 10) || 0) };
                               return n;
                             });
+                          }}
+                          onBlur={() => {
+                            if ((row.quantity as any) === '' || Number(row.quantity) < 1) {
+                              setItems((prev) => {
+                                const n = [...prev];
+                                n[idx] = { ...n[idx], quantity: 1 };
+                                return n;
+                              });
+                            }
                           }}
                           className="w-full px-2 py-1.5 text-center bg-slate-50 border border-slate-200 rounded text-xs"
                         />
@@ -740,12 +749,21 @@ function SupplierBillsContent() {
                           placeholder="Cost"
                           value={row.unitCost}
                           onChange={(e) => {
-                            const val = Math.max(0, parseFloat(e.target.value) || 0);
+                            const raw = e.target.value;
                             setItems((prev) => {
                               const n = [...prev];
-                              n[idx] = { ...n[idx], unitCost: val };
+                              n[idx] = { ...n[idx], unitCost: raw === '' ? ('' as any) : Math.max(0, parseFloat(raw) || 0) };
                               return n;
                             });
+                          }}
+                          onBlur={() => {
+                            if ((row.unitCost as any) === '' || Number(row.unitCost) < 0) {
+                              setItems((prev) => {
+                                const n = [...prev];
+                                n[idx] = { ...n[idx], unitCost: 0 };
+                                return n;
+                              });
+                            }
                           }}
                           className="w-full px-2 py-1.5 text-right bg-slate-50 border border-slate-200 rounded text-xs"
                         />

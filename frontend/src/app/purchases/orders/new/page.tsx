@@ -135,7 +135,7 @@ function CreatePurchaseOrderContent() {
           item.unitCost = selectedVariant.wholesalePrice ? Math.round(selectedVariant.wholesalePrice * 0.75) : 15000;
         }
       } else {
-        item[field] = Number(val) as never;
+        item[field] = val === '' ? ('' as any) : (Number(val) as never);
       }
 
       next[index] = item;
@@ -150,7 +150,7 @@ function CreatePurchaseOrderContent() {
     let totalTax = 0;
 
     items.forEach((item) => {
-      const lineSub = item.orderedQuantity * item.unitCost;
+      const lineSub = (Number(item.orderedQuantity) || 0) * (Number(item.unitCost) || 0);
       const d = item.lineDiscount || 0;
       const t = item.taxAmount || 0;
       subtotal += lineSub;
@@ -428,9 +428,19 @@ function CreatePurchaseOrderContent() {
                           type="number"
                           min={1}
                           value={row.orderedQuantity}
-                          onChange={(e) =>
-                            handleItemChange(idx, 'orderedQuantity', Math.max(1, parseInt(e.target.value) || 1))
-                          }
+                          onChange={(e) => {
+                            if (e.target.value === '') {
+                              handleItemChange(idx, 'orderedQuantity', '');
+                              return;
+                            }
+                            const val = parseInt(e.target.value, 10);
+                            handleItemChange(idx, 'orderedQuantity', isNaN(val) ? '' : Math.max(0, val));
+                          }}
+                          onBlur={() => {
+                            if ((row.orderedQuantity as any) === '' || Number(row.orderedQuantity) < 1) {
+                              handleItemChange(idx, 'orderedQuantity', 1);
+                            }
+                          }}
                           className="w-20 px-2 py-1.5 text-xs text-center bg-slate-50 border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-brand-burgundy"
                         />
                       </td>
@@ -441,9 +451,19 @@ function CreatePurchaseOrderContent() {
                           type="number"
                           min={0}
                           value={row.unitCost}
-                          onChange={(e) =>
-                            handleItemChange(idx, 'unitCost', Math.max(0, parseFloat(e.target.value) || 0))
-                          }
+                          onChange={(e) => {
+                            if (e.target.value === '') {
+                              handleItemChange(idx, 'unitCost', '');
+                              return;
+                            }
+                            const val = parseFloat(e.target.value);
+                            handleItemChange(idx, 'unitCost', isNaN(val) ? '' : Math.max(0, val));
+                          }}
+                          onBlur={() => {
+                            if ((row.unitCost as any) === '' || Number(row.unitCost) < 0) {
+                              handleItemChange(idx, 'unitCost', 0);
+                            }
+                          }}
                           className="w-28 px-2 py-1.5 text-xs text-right bg-slate-50 border border-slate-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-brand-burgundy"
                         />
                       </td>
