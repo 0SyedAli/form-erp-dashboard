@@ -188,28 +188,34 @@ export default function POSHeader({
         </button>
 
         {/* Multi-Branch Stock Switcher (Fulfill from this branch or another branch) */}
-        {branches && branches.length > 1 && onStockBranchChange && (
+        {branches && branches.length > 0 && (
           <div className="ml-1 pl-2 border-l border-slate-200 flex items-center gap-1.5">
             <div className="flex flex-col text-left">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
-                {selectedStockBranchId && selectedStockBranchId !== activeBranch?.id ? '⚡ Cross-Stock' : 'Stock Branch'}
+                {selectedStockBranchId && selectedStockBranchId !== activeBranch?.id ? '⚡ Cross-Stock' : 'Terminal Branch'}
               </span>
-              <select
-                value={selectedStockBranchId || activeBranch?.id || ''}
-                onChange={(e) => onStockBranchChange(e.target.value)}
-                className={`text-xs font-bold rounded-lg px-2 py-1 cursor-pointer focus:ring-1 focus:ring-blue-500 focus:outline-hidden transition-colors ${
-                  selectedStockBranchId && selectedStockBranchId !== activeBranch?.id
-                    ? 'bg-amber-100 text-amber-900 border border-amber-300 font-extrabold ring-1 ring-amber-400'
-                    : 'bg-slate-50 text-slate-700 border border-slate-200'
-                }`}
-                title="Switch branch to sell/view its inventory"
-              >
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} {b.id === activeBranch?.id ? '(Terminal)' : ''}
-                  </option>
-                ))}
-              </select>
+              {branches.length > 1 && onStockBranchChange ? (
+                <select
+                  value={selectedStockBranchId || activeBranch?.id || ''}
+                  onChange={(e) => onStockBranchChange(e.target.value)}
+                  className={`text-xs font-bold rounded-lg px-2 py-1 cursor-pointer focus:ring-1 focus:ring-blue-500 focus:outline-hidden transition-colors ${
+                    selectedStockBranchId && selectedStockBranchId !== activeBranch?.id
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300 font-extrabold ring-1 ring-amber-400'
+                      : 'bg-slate-50 text-slate-700 border border-slate-200'
+                  }`}
+                  title="Switch branch to sell/view its inventory"
+                >
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} {b.id === activeBranch?.id ? '(Terminal)' : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-xs font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+                  {activeBranch?.name || branches[0]?.name || 'Terminal'}
+                </span>
+              )}
             </div>
           </div>
         )}

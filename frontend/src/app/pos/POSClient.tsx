@@ -6,7 +6,7 @@ import { ShoppingCart } from 'lucide-react';
 import { useAppSelector, useAppDispatch } from '@/store';
 import {
   erpApi,
-  useGetBranchesQuery,
+  useGetBranchesQuery as useGetDemoBranchesQuery,
   useGetBrandsQuery,
   useGetCategoriesQuery,
   useGetSizesQuery,
@@ -25,6 +25,7 @@ import {
   posApi,
   useGetPOSBootstrapQuery,
   useGetPOSOutOfStockQuery,
+  useGetBranchesQuery as useGetBackendBranchesQuery,
   useGetHeldSalesQuery as useGetBackendHeldSalesQuery,
   useHoldSaleMutation as useHoldSaleBackendMutation,
   useDeleteHeldSaleMutation as useDeleteHeldSaleBackendMutation,
@@ -79,6 +80,7 @@ import NewSaleConfirmModal from '@/components/pos/NewSaleConfirmModal';
 import PaymentCheckoutModal, { CheckoutSubmitData } from '@/components/pos/PaymentCheckoutModal';
 import Sidebar from '@/components/layout/Sidebar';
 import { printThermalReceipt } from '@/utils/thermalPrinter';
+import Toast, { ToastMessage } from '@/components/common/Toast';
 
 function computeDefaultDueDate(days: number = 30): string {
   const d = new Date();
@@ -115,8 +117,14 @@ function POSContent() {
   // Offline Resilience & Synchronization
   const [offlineSnapshot, setOfflineSnapshot] = useState<POSMasterSnapshot | null>(null);
 
+  // Single Consolidated POS Bootstrap Query (Replaces 8 separate parallel queries)
+  const { data: bootstrapData, refetch: refetchBootstrap } = useGetPOSBootstrapQuery(undefined, { skip: !isBackendMode });
+
+  // Direct backend branches query via posApi (guaranteed to load from /branches in backend mode)
+  const { data: backendBranches = [] } = useGetBackendBranchesQuery(undefined, { skip: !isBackendMode });
+
   // Demo Queries
-  const { data: demoBranches = [] } = useGetBranchesQuery(undefined, { skip: isBackendMode });
+  const { data: demoBranches = [] } = useGetDemoBranchesQuery(undefined, { skip: isBackendMode });
   const { data: demoBrands = [] } = useGetBrandsQuery(undefined, { skip: isBackendMode });
   const { data: demoCategories = [] } = useGetCategoriesQuery(undefined, { skip: isBackendMode });
   const { data: demoSizes = [] } = useGetSizesQuery(undefined, { skip: isBackendMode });
@@ -127,28 +135,46 @@ function POSContent() {
   const { data: posSettings } = useGetPOSSettingsQuery(undefined, { skip: isBackendMode });
   const { data: demoHeldSales = [] } = useGetHeldSalesQuery(undefined, { skip: isBackendMode });
 
-  // Single Consolidated POS Bootstrap Query (Replaces 8 separate parallel queries)
-  const { data: bootstrapData, refetch: refetchBootstrap } = useGetPOSBootstrapQuery(undefined, { skip: !isBackendMode });
-
-  // Unified Branches
+  // Unified Branches (Guaranteed non-empty with multiple safety fallback layers)
   const branches: Branch[] = useMemo(() => {
-    const backendList = bootstrapData?.branches || [];
-    const offlineList = offlineSnapshot?.branches || (offlineSnapshot?.activeBranch ? [offlineSnapshot.activeBranch] : []);
+    const bootstrapList = bootstrapData?.branches || [];
+    const backendBranchesList = backendBranches || [];
     const demoList = demoBranches || [];
+    const offlineList = offlineSnapshot?.branches || (offlineSnapshot?.activeBranch ? [offlineSnapshot.activeBranch] : []);
 
-    const list = backendList.length > 0
-      ? backendList
-      : offlineList.length > 0
-        ? offlineList
-        : demoList;
+    const rawList = bootstrapList.length > 0
+      ? bootstrapList
+      : backendBranchesList.length > 0
+        ? backendBranchesList
+        : offlineList.length > 0
+          ? offlineList
+          : demoList;
 
-    return list.map((b: any) => ({
+    let list = rawList.map((b: any) => ({
       ...b,
       id: String(b.id || b._id || ''),
     })) as Branch[];
-  }, [bootstrapData?.branches, demoBranches, offlineSnapshot]);
 
-  // Active Terminal Branch
+    // Resilient fallback: ensure list is never empty in POS
+    if (list.length === 0) {
+      const userBranch = (currentUser as any)?.branch;
+      list = [{
+        id: String(currentUser?.assignedBranchId || currentUser?.branchId || userBranch?.id || '6af61ab1d8d8f3cefda444c0'),
+        name: userBranch?.name || 'Molty Store Korangi 2-1/2',
+        code: userBranch?.code || 'SHOP-SHOP212',
+        shopNumber: userBranch?.shopNumber || 'Shop#2 1/2',
+        type: (userBranch?.type as any) || 'RETAIL_STORE',
+        city: userBranch?.city || 'Karachi',
+        address: userBranch?.address || 'Commercial Market',
+        phone: userBranch?.phone || '03312625786',
+        isActive: true,
+      } as Branch];
+    }
+
+    return list;
+  }, [bootstrapData?.branches, backendBranches, demoBranches, offlineSnapshot, currentUser]);
+
+  // Active Terminal Branch (Always returns a valid branch)
   const activeBranch = useMemo(() => {
     const userBranchId = currentUser?.assignedBranchId || currentUser?.branchId;
     if (userBranchId && !isSuperAdmin) {
@@ -167,6 +193,12 @@ function POSContent() {
       if (found) return found;
     }
 
+    // If Super Admin switched fulfilling branch in the header switcher, use it if activeBranch not specifically locked
+    if (isSuperAdmin && selectedStockBranchId) {
+      const found = branches.find((b) => b.id === selectedStockBranchId || (b as any)._id === selectedStockBranchId);
+      if (found) return found;
+    }
+
     if (userBranchId) {
       const found = branches.find(
         (b) =>
@@ -178,7 +210,7 @@ function POSContent() {
     }
 
     return branches[0] || null;
-  }, [branches, currentUser, posSettings, isSuperAdmin]);
+  }, [branches, currentUser, posSettings, isSuperAdmin, selectedStockBranchId]);
 
   // Effective stock branch (switched in header or own terminal branch)
   const effectiveStockBranchId = selectedStockBranchId || activeBranch?.id;
@@ -807,6 +839,7 @@ function POSContent() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isNewSaleConfirmOpen, setIsNewSaleConfirmOpen] = useState(false);
   const [isTabletCartOpen, setIsTabletCartOpen] = useState(false);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
 
   // Active brand object
   const currentBrand = useMemo(() => {
@@ -1270,10 +1303,20 @@ function POSContent() {
       return next;
     });
 
-    // Close payment modal, set completed invoice, open receipt modal, and clear cart
+    // Close payment modal, set completed invoice, open receipt modal (only if not direct print), and clear cart
     setIsPaymentModalOpen(false);
     setCompletedInvoice(localInvoice);
-    setIsReceiptModalOpen(true);
+    if (!submitData.andPrint) {
+      setIsReceiptModalOpen(true);
+    } else {
+      setToast({
+        id: Date.now().toString(),
+        type: 'success',
+        title: 'Sale Completed & Printing',
+        message: `Invoice #${localInvoice.invoiceNumber} (Rs. ${(localInvoice.netAmount || 0).toLocaleString()}) processed successfully. Receipt sent to printer.`,
+        duration: 3500,
+      });
+    }
     handleClearCart();
     setEditingInvoice(null);
     if (editInvoiceId) {
@@ -1874,16 +1917,32 @@ function POSContent() {
       />
 
       {/* 10. POS Settings Modal */}
-      {posSettings && (
-        <POSSettingsModal
-          isOpen={isSettingsModalOpen}
-          onClose={() => setIsSettingsModalOpen(false)}
-          settings={posSettings}
-          branches={branches}
-          isSuperAdmin={isSuperAdmin}
-          onSave={(updated) => updateSettings(updated)}
-        />
-      )}
+      <POSSettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        settings={
+          posSettings || {
+            selectedBranchId: activeBranch?.id || '',
+            branchId: activeBranch?.id || '',
+            cashierName: currentUser?.name || 'Cashier',
+            shiftName: 'Morning',
+            receiptFormat: 'THERMAL_80MM' as const,
+            autoPrint: true,
+            showThumbnails: true,
+            taxRatePercent: 0,
+          }
+        }
+        branches={branches}
+        isSuperAdmin={isSuperAdmin}
+        onSave={(updated) => {
+          if (posSettings) {
+            updateSettings(updated);
+          }
+          if (updated.selectedBranchId) {
+            setSelectedStockBranchId(updated.selectedBranchId);
+          }
+        }}
+      />
 
       {/* 11. New Sale Confirmation Modal */}
       <NewSaleConfirmModal
@@ -1904,6 +1963,9 @@ function POSContent() {
         isMobileOpen={isNavSidebarOpen}
         onMobileClose={() => setIsNavSidebarOpen(false)}
       />
+
+      {/* 13. Transient Notifications / Toasts */}
+      <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );
 }

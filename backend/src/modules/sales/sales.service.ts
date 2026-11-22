@@ -118,11 +118,27 @@ export class SalesService {
    * 2. GET INVOICE BY ID (WITH BRANCH ISOLATION GUARD)
    */
   public static async getInvoiceById(id: string, userContext: UserContext) {
-    const invoice = await SalesInvoice.findById(id)
-      .populate('branchId', 'name code shopNumber address city phone email')
-      .populate('sourceBranchId', 'name code shopNumber address city phone email')
-      .populate('customerId', 'name phone customerType businessName address outstandingBalance creditLimit')
-      .lean();
+    let invoice: any = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      invoice = await SalesInvoice.findById(id)
+        .populate('branchId', 'name code shopNumber address city phone email')
+        .populate('sourceBranchId', 'name code shopNumber address city phone email')
+        .populate('customerId', 'name phone customerType businessName address outstandingBalance creditLimit')
+        .lean();
+    }
+    if (!invoice) {
+      invoice = await SalesInvoice.findOne({
+        $or: [
+          { idempotencyKey: id },
+          { invoiceNumber: id },
+          { invoiceNumber: id.toUpperCase() },
+        ],
+      })
+        .populate('branchId', 'name code shopNumber address city phone email')
+        .populate('sourceBranchId', 'name code shopNumber address city phone email')
+        .populate('customerId', 'name phone customerType businessName address outstandingBalance creditLimit')
+        .lean();
+    }
 
     if (!invoice) {
       throw new AppError('Invoice not found.', 404, 'INVOICE_NOT_FOUND');
@@ -214,7 +230,19 @@ export class SalesService {
     userContext: UserContext
   ) {
     return await runTransaction(async (session) => {
-      const invoice = await SalesInvoice.findById(id).session(session);
+      let invoice: any = null;
+      if (mongoose.Types.ObjectId.isValid(id)) {
+        invoice = await SalesInvoice.findById(id).session(session);
+      }
+      if (!invoice) {
+        invoice = await SalesInvoice.findOne({
+          $or: [
+            { idempotencyKey: id },
+            { invoiceNumber: id },
+            { invoiceNumber: id.toUpperCase() },
+          ],
+        }).session(session);
+      }
       if (!invoice) {
         throw new AppError('Invoice not found.', 404, 'INVOICE_NOT_FOUND');
       }
@@ -236,13 +264,19 @@ export class SalesService {
         let targetLocation = await StockLocation.findOne({
           branchId: sourceBranchId,
           type: 'SALES_FLOOR',
-          isActive: true,
+          isActive: { $ne: false },
         }).session(session);
 
         if (!targetLocation) {
           targetLocation = await StockLocation.findOne({
             branchId: sourceBranchId,
-            isActive: true,
+            isActive: { $ne: false },
+          }).session(session);
+        }
+
+        if (!targetLocation) {
+          targetLocation = await StockLocation.findOne({
+            branchId: sourceBranchId,
           }).session(session);
         }
 

@@ -17,7 +17,7 @@ import {
 import { useAppSelector } from '@/store';
 import { Invoice } from '@/types';
 import AppLayout from '@/components/layout/AppLayout';
-import { getPendingSales } from '@/lib/offline/posOfflineDb';
+import { getPendingSales, removePendingSale } from '@/lib/offline/posOfflineDb';
 import { formatDate, formatDateTime } from '@/utils/formatters';
 import { useClientPagination } from '@/components/common/Pagination';
 import {
@@ -227,13 +227,35 @@ function SalesHistoryContent() {
     if (!deletingInvoice) return;
     setActionError(null);
     setActionSuccess(null);
+    const targetInvoice = deletingInvoice;
+    const isOfflineSale = targetInvoice.id.startsWith('TXN-');
+
     try {
-      await deleteInvoiceMutation({
-        id: deletingInvoice.id,
-        returnStock,
-      }).unwrap();
+      // 1. If it's a locally queued offline sale, remove it from IndexedDB
+      if (isOfflineSale) {
+        await removePendingSale(targetInvoice.id);
+        setOfflineInvoices((prev) => prev.filter((i) => i.id !== targetInvoice.id));
+      }
+
+      // 2. Call backend mutation to void invoice and reverse stock
+      try {
+        await deleteInvoiceMutation({
+          id: targetInvoice.id,
+          returnStock,
+        }).unwrap();
+      } catch (backendErr: any) {
+        // If it was only an offline sale that never reached the backend, local deletion is sufficient
+        const status = backendErr?.status || backendErr?.originalStatus;
+        const code = backendErr?.data?.code || backendErr?.data?.error?.code;
+        if (isOfflineSale && (status === 404 || code === 'INVOICE_NOT_FOUND')) {
+          // Cleanly removed from local offline queue
+        } else {
+          throw backendErr;
+        }
+      }
+
       setActionSuccess(
-        `Invoice #${deletingInvoice.invoiceNumber} deleted successfully (${
+        `Invoice #${targetInvoice.invoiceNumber} deleted successfully (${
           returnStock ? 'Stock restored to inventory' : 'Stock inventory unchanged'
         }).`
       );
@@ -241,7 +263,7 @@ function SalesHistoryContent() {
       setTimeout(() => setActionSuccess(null), 5000);
     } catch (err: any) {
       setActionError(
-        err?.data?.error?.message || err?.message || 'Failed to delete invoice.'
+        err?.data?.error?.message || err?.data?.message || err?.message || 'Failed to delete invoice.'
       );
     }
   };

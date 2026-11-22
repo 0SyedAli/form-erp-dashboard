@@ -278,7 +278,10 @@ export function printThermalReceipt(
   doc.write(html);
   doc.close();
 
+  let hasPrinted = false;
   const triggerPrint = () => {
+    if (hasPrinted) return;
+    hasPrinted = true;
     try {
       iframe?.contentWindow?.focus();
       iframe?.contentWindow?.print();

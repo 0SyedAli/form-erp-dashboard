@@ -1049,10 +1049,13 @@ export class PurchasingService {
     // Stock location verification
     let stockLocationId = input.stockLocationId;
     if (!stockLocationId) {
-      const defaultLoc = await StockLocation.findOne({
+      let defaultLoc = await StockLocation.findOne({
         branchId,
-        isActive: true,
+        isActive: { $ne: false },
       });
+      if (!defaultLoc) {
+        defaultLoc = await StockLocation.findOne({ branchId });
+      }
       if (!defaultLoc) throw new AppError('Active stock location required.', 404, 'LOCATION_NOT_FOUND');
       stockLocationId = defaultLoc._id.toString();
     }

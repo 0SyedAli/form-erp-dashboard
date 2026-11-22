@@ -1,0 +1,29 @@
+# Server Configuration
+PORT=5001
+NODE_ENV=development
+
+# MongoDB Connection
+MONGODB_URI=mongodb://synoxifysolutions_db_user:Cj5315EjER02thVy@ac-tdlyfrt-shard-00-00.cnuvouv.mongodb.net:27017,ac-tdlyfrt-shard-00-01.cnuvouv.mongodb.net:27017,ac-tdlyfrt-shard-00-02.cnuvouv.mongodb.net:27017/moltyformerp?ssl=true&replicaSet=atlas-r38g6w-shard-0&authSource=admin
+
+# Security & Session
+SESSION_SECRET=molty-foam-erp-super-secret-key-change-in-production-2026
+SESSION_TTL_HOURS=24
+COOKIE_DOMAIN=localhost
+COOKIE_SECURE=false
+
+# CORS & Client
+FRONTEND_URL=http://localhost:3000
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+
+# Rate Limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=500
+AUTH_RATE_LIMIT_MAX_REQUESTS=20
+
+# Logging
+LOG_LEVEL=info
+
+# Initial Provisioning Passwords (Required for database seeding; never commit production passwords)
+SEED_ADMIN_PASSWORD=Admin@Molty2026!
+SEED_BRANCH_PASSWORD=Branch@Molty2026!
+

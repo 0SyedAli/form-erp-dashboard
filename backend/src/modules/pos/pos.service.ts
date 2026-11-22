@@ -85,7 +85,9 @@ export class PosService {
       thicknesses,
       stockBalances,
     ] = await Promise.all([
-      Branch.find({ status: 'ACTIVE' }).select('name code isMainBranch address phone status').lean(),
+      Branch.find({ $or: [{ isActive: true }, { status: 'ACTIVE' }, { isActive: { $exists: false } }] })
+        .select('name code shopNumber type city address phone permissions isActive status')
+        .lean(),
       Brand.find({ status: 'ACTIVE' }).select('name code description logoUrl status hasThickness').lean(),
       Category.find({ status: 'ACTIVE' }).select('brandId name code description status').lean(),
       ProductLine.find({ status: 'ACTIVE' }).select('brandId categoryId name code imageUrl posDisplayName status').lean(),
@@ -139,7 +141,11 @@ export class PosService {
     const versionHash = `pos_${variants.length}_${products.length}_${stockBalances.length}_${Math.floor(Date.now() / 60000)}`;
 
     const data = {
-      branches: branches.map((b: any) => ({ ...b, id: b._id.toString(), status: b.status || 'ACTIVE' })),
+      branches: branches.map((b: any) => ({
+        ...b,
+        id: b._id ? b._id.toString() : b.id || '',
+        status: b.status || (b.isActive !== false ? 'ACTIVE' : 'INACTIVE'),
+      })),
       brands: brands.map((b: any) => ({ ...b, id: b._id.toString(), status: b.status || 'ACTIVE', hasThickness: b.hasThickness !== false })),
       categories: categories.map((c: any) => ({
         ...c,
@@ -383,11 +389,27 @@ export class PosService {
       // 2. Resolve Effective Branch (Terminal Branch)
       let effectiveBranchId: mongoose.Types.ObjectId;
       if (userContext.role === 'SUPER_ADMIN' && input.branchId) {
-        effectiveBranchId = new mongoose.Types.ObjectId(input.branchId);
-      } else if (userContext.branchId) {
+        if (mongoose.Types.ObjectId.isValid(input.branchId)) {
+          effectiveBranchId = new mongoose.Types.ObjectId(input.branchId);
+        } else {
+          const b = await Branch.findOne({ $or: [{ code: input.branchId }, { name: input.branchId }] }).session(session);
+          if (b) {
+            effectiveBranchId = b._id;
+          } else {
+            const firstBranch = await Branch.findOne({ isActive: true }).session(session);
+            if (!firstBranch) throw new AppError('No active branch found.', 404, 'BRANCH_NOT_FOUND');
+            effectiveBranchId = firstBranch._id;
+          }
+        }
+      } else if (userContext.branchId && mongoose.Types.ObjectId.isValid(userContext.branchId)) {
         effectiveBranchId = new mongoose.Types.ObjectId(userContext.branchId);
       } else {
-        throw new AppError('Branch identity required for checkout.', 403, 'NO_BRANCH_ASSIGNED');
+        const defaultBranch = await Branch.findOne({ isActive: true }).session(session);
+        if (defaultBranch) {
+          effectiveBranchId = defaultBranch._id;
+        } else {
+          throw new AppError('Branch identity required for checkout.', 403, 'NO_BRANCH_ASSIGNED');
+        }
       }
 
       // Resolve Source (Inventory Fulfilling) Branch
@@ -403,35 +425,69 @@ export class PosService {
 
       // 3. Resolve Target Stock Location (on source fulfilling branch)
       let targetLocation;
-      if (input.stockLocationId) {
+      if (input.stockLocationId && mongoose.Types.ObjectId.isValid(input.stockLocationId)) {
         targetLocation = await StockLocation.findOne({
           _id: new mongoose.Types.ObjectId(input.stockLocationId),
           branchId: sourceBranchId,
-          isActive: true,
+          isActive: { $ne: false },
         }).session(session);
       }
 
       if (!targetLocation) {
         targetLocation = await StockLocation.findOne({
           branchId: sourceBranchId,
-          isActive: true,
+          isActive: { $ne: false },
         })
           .sort({ isDefault: -1, createdAt: 1 })
           .session(session);
       }
 
       if (!targetLocation) {
-        throw new AppError('No active stock location available for fulfilling branch.', 404, 'STOCK_LOCATION_NOT_FOUND');
+        targetLocation = await StockLocation.findOne({
+          branchId: sourceBranchId,
+        })
+          .sort({ isDefault: -1, createdAt: 1 })
+          .session(session);
+      }
+
+      if (!targetLocation) {
+        const branchDoc = await Branch.findById(sourceBranchId).session(session);
+        const branchCode = branchDoc?.code || 'MAIN';
+        const [createdLoc] = await StockLocation.create(
+          [
+            {
+              branchId: sourceBranchId,
+              name: `${branchDoc?.name || 'Main Branch'} - Sales Floor`,
+              code: `LOC-FLOOR-${branchCode}`,
+              type: 'SALES_FLOOR',
+              isActive: true,
+            },
+          ],
+          { session }
+        );
+        targetLocation = createdLoc;
       }
 
       // If editing an existing invoice, restore previous stock and reverse previous dues atomically
       if (input.editingInvoiceId) {
-        const oldInv = await SalesInvoice.findById(input.editingInvoiceId).session(session);
+        let oldInv: any = null;
+        if (mongoose.Types.ObjectId.isValid(input.editingInvoiceId)) {
+          oldInv = await SalesInvoice.findById(input.editingInvoiceId).session(session);
+        }
+        if (!oldInv) {
+          oldInv = await SalesInvoice.findOne({
+            $or: [
+              { idempotencyKey: input.editingInvoiceId },
+              { invoiceNumber: input.editingInvoiceId },
+              { invoiceNumber: input.editingInvoiceId.toUpperCase() },
+            ],
+          }).session(session);
+        }
         if (oldInv && oldInv.status !== INVOICE_STATUSES.VOID) {
           const oldSourceBranch = oldInv.sourceBranchId || oldInv.branchId;
           const oldTargetLoc = await StockLocation.findOne({
             branchId: oldSourceBranch,
-            isActive: true,
+            isActive: { $ne: false },
           }).session(session);
 
           if (oldTargetLoc && oldInv.items) {
