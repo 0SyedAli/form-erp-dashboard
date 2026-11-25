@@ -1,5 +1,7 @@
 'use client';
 
+import { isPillowCategory } from '@/lib/pos/pillowCategory';
+
 import React, { useState } from 'react';
 import Image from 'next/image';
 import {
@@ -183,7 +185,7 @@ export default function POSCart({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-1">
                     <h4 className="font-bold text-sm text-slate-900 truncate font-sans">
-                      {item.posDisplayName || item.productName}
+                      {isPillowCategory(item.categoryName) ? item.productName : item.posDisplayName || item.productName}
                     </h4>
                     <button
                       type="button"
@@ -195,9 +197,9 @@ export default function POSCart({
                     </button>
                   </div>
 
-                  <p className="text-xs text-slate-500 font-sans mt-0.5">
+                  {!isPillowCategory(item.categoryName) && (item.sizeLabel || item.thicknessInches) && <p className="text-xs text-slate-500 font-sans mt-0.5">
                     {item.sizeLabel} • {item.thicknessInches}&quot; Thickness
-                  </p>
+                  </p>}
 
                   <div className="flex items-center gap-1.5 mt-1">
                     <span className="text-[11px] font-bold text-slate-500 font-sans">Rs.</span>

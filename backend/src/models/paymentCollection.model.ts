@@ -29,7 +29,7 @@ const CollectionAllocationSchema = new Schema<ICollectionAllocation>(
   {
     invoiceId: { type: Schema.Types.ObjectId, ref: 'SalesInvoice', required: true },
     invoiceNumber: { type: String, required: true },
-    allocatedAmount: { type: Number, required: true, min: 1 },
+    allocatedAmount: { type: Number, required: true, min: 0.01 },
   },
   { _id: false }
 );
@@ -40,7 +40,7 @@ const PaymentCollectionSchema = new Schema<IPaymentCollection>(
     branchId: { type: Schema.Types.ObjectId, ref: 'Branch', required: true, index: true },
     customerId: { type: Schema.Types.ObjectId, ref: 'Customer', required: true, index: true },
     customerName: { type: String, required: true },
-    totalCollected: { type: Number, required: true, min: 1 },
+    totalCollected: { type: Number, required: true, min: 0.01 },
     paymentMethod: {
       type: String,
       enum: ['CASH', 'CARD', 'BANK_TRANSFER', 'CHEQUE', 'ONLINE'],

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import React, { useState, useMemo, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -41,10 +41,12 @@ import {
 function CollectionsContent() {
   const searchParams = useSearchParams();
   const initialCustomerId = searchParams.get('customerId') || '';
+  const targetInvoiceId = searchParams.get('invoiceId') || '';
+  const initialBranchId = searchParams.get('branchId') || '';
 
   const currentUser = useAppSelector((state) => state.auth.currentUser);
 
-  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE !== 'demo';
 
   // Queries
   const { data: demoCustomers = [] } = useGetCustomersQuery(undefined, { skip: isBackendMode });
@@ -68,30 +70,30 @@ function CollectionsContent() {
     return isBackendMode ? backendBranches : demoBranches;
   }, [isBackendMode, backendBranches, demoBranches]);
 
-  const [selectedBranchId, setSelectedBranchId] = useState<string>('');
-
-  useEffect(() => {
-    if (currentUser?.assignedBranchId) {
-      setSelectedBranchId(currentUser.assignedBranchId);
-    } else if (currentUser?.branchId) {
-      setSelectedBranchId((currentUser as any).branchId);
-    }
-  }, [currentUser]);
+  const [adminBranchId, setSelectedBranchId] = useState(initialBranchId);
+  const selectedBranchId = isSuperAdmin ? adminBranchId : currentUser?.assignedBranchId || currentUser?.branchId || '';
 
   // Scoped Customer Query: Branch users strictly query their own branch; Super Admin can filter or view all
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [serverSearch, setServerSearch] = useState('');
+  useEffect(() => {
+    const timeout = setTimeout(() => setServerSearch(customerSearch.trim()), 250);
+    return () => clearTimeout(timeout);
+  }, [customerSearch]);
+
   const customerQueryParams = useMemo(() => {
     if (!isSuperAdmin) {
       const bId = currentUser?.assignedBranchId || (currentUser as any)?.branchId;
-      return bId ? { branchId: bId } : undefined;
+      return { branchId: bId || undefined, search: serverSearch || undefined };
     }
-    return selectedBranchId ? { branchId: selectedBranchId } : undefined;
-  }, [isSuperAdmin, currentUser, selectedBranchId]);
+    return { branchId: selectedBranchId || undefined, search: serverSearch || undefined };
+  }, [isSuperAdmin, currentUser, selectedBranchId, serverSearch]);
 
-  const { data: backendCustomers = [] } = useGetBackendCustomersQuery(customerQueryParams, {
+  const { currentData: backendCustomers = [] } = useGetBackendCustomersQuery(customerQueryParams, {
     skip: !isBackendMode,
   });
-  const { data: backendCollections = [], isLoading: isBackendColLoading } =
-    useGetBackendCollectionsQuery(undefined, { skip: !isBackendMode });
+  const { currentData: backendCollections = [], isFetching: isBackendColLoading } =
+    useGetBackendCollectionsQuery(selectedBranchId ? { branchId: selectedBranchId } : undefined, { skip: !isBackendMode });
 
   const [createBackendCollectionMutation, { isLoading: isBackendPosting }] =
     useCreateBackendCollectionMutation();
@@ -99,15 +101,15 @@ function CollectionsContent() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(initialCustomerId);
 
   // Optimized On-Demand Customer Outstanding Invoices Query (Strictly for this branch)
-  const { data: customerOutstandingData, isLoading: isOutstandingLoading } =
+  const { currentData: customerOutstandingData, isFetching: isOutstandingLoading, isError: outstandingError } =
     useGetBackendCustomerOutstandingQuery(
       selectedCustomerId
         ? {
-            id: selectedCustomerId,
-            branchId: isSuperAdmin ? selectedBranchId || undefined : selectedBranchId,
-          }
+          id: selectedCustomerId,
+          branchId: isSuperAdmin ? selectedBranchId || undefined : selectedBranchId,
+        }
         : '',
-      { skip: !isBackendMode || !selectedCustomerId }
+      { skip: !isBackendMode || !selectedCustomerId, refetchOnMountOrArgChange: true }
     );
 
   const customers = useMemo(() => {
@@ -131,7 +133,7 @@ function CollectionsContent() {
     if (!selectedCustomerId) return [];
     if (isBackendMode) {
       const list = customerOutstandingData?.invoices || [];
-      return list.map((inv: any) => ({
+      return list.filter((inv) => !targetInvoiceId || (inv.id || inv._id) === targetInvoiceId).map((inv: any) => ({
         id: inv.id || inv._id,
         invoiceNumber: inv.invoiceNumber,
         customerId: selectedCustomerId,
@@ -142,7 +144,7 @@ function CollectionsContent() {
         paidAmount: Number(inv.paidAmount ?? 0),
         amountPaid: Number(inv.paidAmount ?? 0),
         saleType: inv.saleType || 'RETAIL',
-        dueDate: inv.dueDate || inv.invoiceDate || inv.date || inv.createdAt,
+        dueDate: inv.dueDate,
         paymentStatus: Number(inv.balanceDue ?? 0) === 0 ? 'PAID' : 'PARTIAL',
         date: inv.invoiceDate || inv.date || inv.createdAt,
         branchName: inv.branchName || 'Branch',
@@ -150,11 +152,11 @@ function CollectionsContent() {
     }
     return demoInvoices.filter(
       (inv) =>
-        inv.customerId === selectedCustomerId &&
+        (!targetInvoiceId || inv.id === targetInvoiceId) && inv.customerId === selectedCustomerId &&
         inv.amountDue > 0 &&
         inv.paymentStatus !== 'PAID'
     );
-  }, [isBackendMode, selectedCustomerId, customerOutstandingData, demoInvoices]);
+  }, [isBackendMode, selectedCustomerId, customerOutstandingData, demoInvoices, targetInvoiceId]);
 
   const collections = useMemo(() => {
     if (isBackendMode) {
@@ -198,7 +200,7 @@ function CollectionsContent() {
   }, [initialCustomerId]);
 
   const selectedCustomer = useMemo(() => {
-    const cust = customers.find((c) => c.id === selectedCustomerId) || null;
+    const cust = customers.find((c) => c.id === selectedCustomerId) || customerOutstandingData?.customer || null;
     if (!cust) return null;
     if (isBackendMode && customerOutstandingData) {
       return {
@@ -216,6 +218,15 @@ function CollectionsContent() {
   const [notes, setNotes] = useState('');
   const [allocations, setAllocations] = useState<Record<string, number>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const requestRef = useRef<{ fingerprint: string; key: string } | null>(null);
+  const submittingRef = useRef(false);
+
+  const targetDue = targetInvoiceId ? openInvoices[0]?.amountDue : undefined;
+  useEffect(() => {
+    if (targetDue === undefined) return;
+    setPaymentAmount(targetDue);
+    setAllocations({ [targetInvoiceId]: targetDue });
+  }, [targetDue, targetInvoiceId]);
 
   // Completed Collection Receipt Modal
   const [completedCollection, setCompletedCollection] = useState<PaymentCollection | null>(null);
@@ -263,7 +274,17 @@ function CollectionsContent() {
   // Submit Collection
   const handleSubmitCollection = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current || isOutstandingLoading || outstandingError) return;
     setErrorMessage(null);
+
+    if (targetInvoiceId && (!targetDue || paymentAmount > targetDue || allocations[targetInvoiceId] !== paymentAmount)) {
+      setErrorMessage('Enter an amount up to the outstanding balance for this invoice.');
+      return;
+    }
+    if (isSuperAdmin && !selectedBranchId && new Set(openInvoices.map((invoice) => invoice.branchId)).size > 1) {
+      setErrorMessage('Select the branch receiving this payment.');
+      return;
+    }
 
     if (!selectedCustomer) {
       setErrorMessage('Please select a customer to collect payment from.');
@@ -287,15 +308,16 @@ function CollectionsContent() {
 
     const effectiveBranch =
       (selectedBranchId && selectedBranchId !== 'ALL' ? selectedBranchId : undefined) ||
-      (selectedCustomer as any)?.branchId ||
       openInvoices[0]?.branchId ||
+      (selectedCustomer as any)?.branchId ||
       currentUser?.assignedBranchId ||
       (currentUser as any)?.branchId ||
       (branches.length > 0 ? (branches[0].id || (branches[0] as any)._id) : undefined);
 
+    submittingRef.current = true;
     try {
       if (isBackendMode) {
-        const result = await createBackendCollectionMutation({
+        const payload = {
           customerId: selectedCustomer.id || (selectedCustomer as any)._id,
           branchId: effectiveBranch && effectiveBranch !== 'ALL' ? effectiveBranch : undefined,
           amount: paymentAmount,
@@ -306,7 +328,14 @@ function CollectionsContent() {
             invoiceId: a.invoiceId,
             allocatedAmount: a.allocatedAmount,
           })),
-        }).unwrap();
+        };
+        const fingerprint = JSON.stringify(payload);
+        if (requestRef.current?.fingerprint !== fingerprint) {
+          const key = Array.from(crypto.getRandomValues(new Uint32Array(4)), (part) => part.toString(16).padStart(8, '0')).join('');
+          requestRef.current = { fingerprint, key: `collection-${key}` };
+        }
+        const result = await createBackendCollectionMutation({ ...payload, idempotencyKey: requestRef.current.key }).unwrap();
+        requestRef.current = null;
 
         const collectionObj = (result as any).collection || result;
         setCompletedCollection({
@@ -351,6 +380,8 @@ function CollectionsContent() {
       setNotes('');
     } catch (err: any) {
       setErrorMessage(err?.data?.message || (err as Error).message || 'Failed to post collection');
+    } finally {
+      submittingRef.current = false;
     }
   };
 
@@ -377,12 +408,12 @@ function CollectionsContent() {
             </div>
           </div>
 
-          <Link
+          {/* <Link
             href="/pos"
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <span>Open POS Counter</span>
-          </Link>
+          </Link> */}
         </div>
 
         {/* Main Content */}
@@ -397,10 +428,11 @@ function CollectionsContent() {
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 text-xs text-indigo-900 font-bold">
                       <Store className="w-4 h-4 text-indigo-600 shrink-0" />
-                      <span>Super Admin: Filter Customers by Branch</span>
+                      <span>Branch</span>
                     </div>
                     <select
                       value={selectedBranchId}
+                      disabled={!!targetInvoiceId}
                       onChange={(e) => {
                         setSelectedBranchId(e.target.value);
                         setSelectedCustomerId('');
@@ -422,7 +454,7 @@ function CollectionsContent() {
                   </p>
                 </div>
               ) : (
-                <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs flex items-center justify-between">
+                <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <Store className="w-4 h-4 text-emerald-700 shrink-0" />
                     <div>
@@ -444,10 +476,21 @@ function CollectionsContent() {
                 Select Customer Account
               </label>
 
+              {!targetInvoiceId && isBackendMode && (
+                <input
+                  type="search"
+                  aria-label="Search customers"
+                  placeholder="Search by name or phone"
+                  value={customerSearch}
+                  onChange={(e) => setCustomerSearch(e.target.value)}
+                  className="mb-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
+                />
+              )}
               <div className="relative">
                 <select
                   id="collection-customer-select"
                   value={selectedCustomerId}
+                  disabled={!!targetInvoiceId}
                   onChange={(e) => {
                     setSelectedCustomerId(e.target.value);
                     setPaymentAmount(0);
@@ -456,7 +499,7 @@ function CollectionsContent() {
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 cursor-pointer"
                 >
                   <option value="">-- Choose Customer ({customers.length} available) --</option>
-                  {customers.map((c) => (
+                  {(selectedCustomer && !customers.some((c) => c.id === selectedCustomerId) ? [selectedCustomer, ...customers] : customers).map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name} {c.phone ? `(${c.phone})` : ''} {c.branchName ? `• [${c.branchName}]` : ''} • Due: Rs.{' '}
                       {(c.currentOutstanding ?? 0).toLocaleString()}
@@ -494,6 +537,9 @@ function CollectionsContent() {
                     <span className="text-base font-black text-purple-800 font-sans">
                       Rs. {(selectedCustomer.currentOutstanding ?? 0).toLocaleString()}
                     </span>
+                    <Link href={`/customers/${encodeURIComponent(selectedCustomerId)}/ledger${selectedBranchId ? `?branchId=${encodeURIComponent(selectedBranchId)}` : ''}`} className="text-xs font-semibold text-blue-700 hover:underline">
+                      View khata
+                    </Link>
                   </div>
                 </div>
               )}
@@ -577,13 +623,14 @@ function CollectionsContent() {
                             <input
                               type="number"
                               min={0}
+                              step={0.01}
                               max={inv.amountDue ?? 0}
                               value={allocatedVal === 0 ? '' : allocatedVal}
                               onChange={(e) => {
                                 const raw = e.target.value;
                                 handleInvoiceAllocChange(
                                   inv.id,
-                                  raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0)
+                                  raw === '' ? 0 : Math.max(0, Number(raw) || 0)
                                 );
                               }}
                               placeholder="0"
@@ -635,11 +682,14 @@ function CollectionsContent() {
                   </label>
                   <select
                     value={selectedBranchId}
-                    onChange={(e) => setSelectedBranchId(e.target.value)}
-                    disabled={currentUser?.role !== 'SUPER_ADMIN'}
-                    className={`w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-emerald-500 font-sans ${
-                      currentUser?.role !== 'SUPER_ADMIN' ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''
-                    }`}
+                    onChange={(e) => {
+                      setSelectedBranchId(e.target.value);
+                      setPaymentAmount(0);
+                      setAllocations({});
+                    }}
+                    disabled={!isSuperAdmin || !!targetInvoiceId}
+                    className={`w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-emerald-500 font-sans ${currentUser?.role !== 'SUPER_ADMIN' ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''
+                      }`}
                   >
                     {currentUser?.role === 'SUPER_ADMIN' && (
                       <option value="">All Branches / Auto-Detect Customer Branch</option>
@@ -658,6 +708,12 @@ function CollectionsContent() {
                 </div>
               )}
 
+              {targetInvoiceId && !isOutstandingLoading && !completedCollection && !targetDue && (
+                <p role="status" className="rounded-lg bg-slate-100 p-3 text-xs text-slate-700">
+                  {outstandingError ? 'Could not load this invoice.' : 'This invoice has no collectible balance at the selected branch.'}
+                </p>
+              )}
+
               {/* Amount Collected Input */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -669,11 +725,13 @@ function CollectionsContent() {
                     type="number"
                     id="collection-amount-input"
                     required
-                    min={1}
+                    min={0.01}
+                    step={0.01}
+                    max={targetDue}
                     value={paymentAmount === 0 ? '' : paymentAmount}
                     onChange={(e) => {
                       const raw = e.target.value;
-                      handleAmountChange(raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0));
+                      handleAmountChange(raw === '' ? 0 : Math.max(0, Number(raw) || 0));
                     }}
                     placeholder="e.g. 25000"
                     className="w-full pl-9 pr-4 py-2.5 text-base font-black border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-emerald-500 font-sans"
@@ -777,7 +835,7 @@ function CollectionsContent() {
               <button
                 type="submit"
                 id="submit-collection-btn"
-                disabled={!selectedCustomer || paymentAmount <= 0 || isPosting}
+                disabled={!selectedCustomer || paymentAmount <= 0 || isPosting || isOutstandingLoading || outstandingError || (!!targetInvoiceId && !targetDue)}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-1.5 disabled:bg-slate-300 disabled:cursor-not-allowed cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />

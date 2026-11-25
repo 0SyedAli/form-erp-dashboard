@@ -3,6 +3,7 @@ import { User } from '@/types';
 import { DEMO_USERS } from '@/data/mockData';
 import { usersRepository } from '@/lib/demo-db/users.repository';
 import { AuthenticatedAccount } from '../services/authApi';
+import { clearAuthCookies, setAuthCookies } from '@/utils/authCookies';
 
 export function accountToUser(account: AuthenticatedAccount): User {
   return {
@@ -55,32 +56,9 @@ function getInitialState(): AuthState {
   }
 
   return {
-    currentUser: DEMO_USERS[0],
-    account: {
-      id: 'USR-ADMIN-01',
-      loginId: 'admin',
-      name: 'Syed Ahtesham',
-      email: 'admin@moltyfoam.store',
-      role: 'SUPER_ADMIN',
-      permissions: {
-        pos: true,
-        viewOwnSales: true,
-        viewProducts: true,
-        addEditProducts: true,
-        viewStock: true,
-        manageStock: true,
-        stockTransfers: true,
-        customers: true,
-        customerCredit: true,
-        purchases: true,
-        suppliers: true,
-        reports: true,
-        returns: true,
-        discountsOverrides: true,
-      },
-      isActive: true,
-    },
-    isAuthenticated: true,
+    currentUser: null,
+    account: null,
+    isAuthenticated: false,
     sessionRestored: false,
   };
 }
@@ -115,6 +93,7 @@ export const authSlice = createSlice({
         try {
           localStorage.removeItem(AUTH_STORAGE_KEY);
         } catch {}
+        clearAuthCookies();
       }
     },
     markSessionChecked: (state) => {

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { createHash } from 'node:crypto';
 import {
   Brand,
   Category,
@@ -55,9 +56,16 @@ export class PosService {
     cachedAt: number;
   } | null = null;
 
+  private static cacheGeneration = 0;
+  private static bootstrapLoad?: ReturnType<typeof PosService.loadBootstrap>;
+  private static outOfStockLoad?: ReturnType<typeof PosService.loadOutOfStock>;
+
   public static invalidatePOSCache() {
+    this.cacheGeneration++;
     this.posBootstrapCache = null;
     this.posOutOfStockCache = null;
+    this.bootstrapLoad = undefined;
+    this.outOfStockLoad = undefined;
   }
 
   /**
@@ -68,14 +76,23 @@ export class PosService {
    */
   public static async getPOSBootstrap(branchId?: string, clientVersionHash?: string) {
     const now = Date.now();
-    // In-memory cache valid for 5 minutes
-    if (this.posBootstrapCache && (now - this.posBootstrapCache.cachedAt < 300000)) {
-      if (clientVersionHash && clientVersionHash === this.posBootstrapCache.versionHash) {
-        return { notModified: true, versionHash: this.posBootstrapCache.versionHash };
+    let snapshot = this.posBootstrapCache;
+    if (!snapshot || now - snapshot.cachedAt >= 10000) {
+      const load = this.bootstrapLoad ??= this.loadBootstrap(this.cacheGeneration, now);
+      try {
+        snapshot = await load;
+      } finally {
+        if (this.bootstrapLoad === load) this.bootstrapLoad = undefined;
       }
-      return { notModified: false, versionHash: this.posBootstrapCache.versionHash, ...this.posBootstrapCache.data };
     }
+    const { data, versionHash } = snapshot;
+    if (clientVersionHash && clientVersionHash === versionHash) {
+      return { notModified: true, versionHash };
+    }
+    return { notModified: false, versionHash, ...data };
+  }
 
+  private static async loadBootstrap(generation: number, now: number) {
     const [
       branches,
       brands,
@@ -93,7 +110,7 @@ export class PosService {
       ProductLine.find({ status: 'ACTIVE' }).select('brandId categoryId name code imageUrl posDisplayName status').lean(),
       Size.find({ status: 'ACTIVE' }).select('displayLabel length width unit status').lean(),
       Thickness.find({ status: 'ACTIVE' }).select('displayLabel value unit status').lean(),
-      StockBalance.find({ onHand: { $gt: 0 } }).select('branchId variantId sku onHand available reserved').lean(),
+      StockBalance.find({ onHand: { $gt: 0 } }).select('branchId stockLocationId variantId sku onHand reserved').lean(),
     ]);
 
     const inStockVariantIds = new Set(stockBalances.map((b: any) => b.variantId?.toString()).filter(Boolean));
@@ -131,14 +148,14 @@ export class PosService {
     const formattedBalances = stockBalances.map((b: any) => ({
       id: b._id.toString(),
       branchId: b.branchId ? b.branchId.toString() : '',
+      stockLocationId: b.stockLocationId?.toString() || '',
       variantId: b.variantId ? b.variantId.toString() : '',
       sku: b.sku,
       onHand: b.onHand || 0,
-      available: b.available !== undefined && b.available !== null ? b.available : (b.onHand || 0),
+      available: Math.max(0, (b.onHand || 0) - (b.reserved || 0)),
       reserved: b.reserved || 0,
     }));
 
-    const versionHash = `pos_${variants.length}_${products.length}_${stockBalances.length}_${Math.floor(Date.now() / 60000)}`;
 
     const data = {
       branches: branches.map((b: any) => ({
@@ -179,17 +196,11 @@ export class PosService {
       serverTime: new Date().toISOString(),
     };
 
-    this.posBootstrapCache = {
-      data,
-      versionHash,
-      cachedAt: Date.now(),
-    };
-
-    if (clientVersionHash && clientVersionHash === versionHash) {
-      return { notModified: true, versionHash };
-    }
-
-    return { notModified: false, versionHash, ...data };
+    const { serverTime, ...snapshot } = data;
+    const versionHash = createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
+    const result = { data, versionHash, cachedAt: now };
+    if (generation === this.cacheGeneration) this.posBootstrapCache = result;
+    return result;
   }
 
   /**
@@ -199,10 +210,18 @@ export class PosService {
    */
   public static async getPOSOutOfStockCatalogue(userContext?: UserContext, branchId?: string) {
     const now = Date.now();
-    if (this.posOutOfStockCache && (now - this.posOutOfStockCache.cachedAt < 300000)) {
+    if (this.posOutOfStockCache && (now - this.posOutOfStockCache.cachedAt < 10000)) {
       return this.posOutOfStockCache.data;
     }
+    const load = this.outOfStockLoad ??= this.loadOutOfStock(this.cacheGeneration, now);
+    try {
+      return await load;
+    } finally {
+      if (this.outOfStockLoad === load) this.outOfStockLoad = undefined;
+    }
+  }
 
+  private static async loadOutOfStock(generation: number, now: number) {
     const stockBalances = await StockBalance.find({ onHand: { $gt: 0 } }).select('variantId').lean();
     const inStockVariantIds = new Set(stockBalances.map((b: any) => b.variantId?.toString()).filter(Boolean));
 
@@ -259,10 +278,9 @@ export class PosService {
       variants: formattedVariants,
     };
 
-    this.posOutOfStockCache = {
-      data,
-      cachedAt: Date.now(),
-    };
+    if (generation === this.cacheGeneration) {
+      this.posOutOfStockCache = { data, cachedAt: now };
+    }
 
     return data;
   }
@@ -535,6 +553,12 @@ export class PosService {
         lineTotalPaisa: number;
       }> = [];
 
+      const pillowCategories = await Category.find({ name: /^\s*pillows?\s*$/i })
+        .select('_id')
+        .session(session)
+        .lean();
+      const pillowCategoryIds = new Set(pillowCategories.map((category) => String(category._id)));
+
       for (const item of input.items) {
         const variant = await Variant.findOne({
           sku: item.sku.toUpperCase(),
@@ -579,6 +603,7 @@ export class PosService {
         subtotalPaisa += itemLineTotalPaisa;
 
         const prod = variant.productId as any;
+        const isPillow = pillowCategoryIds.has(String(prod?.categoryId));
         const sz = variant.sizeId as any;
         const th = variant.thicknessId as any;
 
@@ -586,8 +611,8 @@ export class PosService {
           variantId: variant._id as mongoose.Types.ObjectId,
           sku: variant.sku,
           productName: prod?.name || variant.sku,
-          sizeLabel: sz?.displayLabel || `${sz?.length}x${sz?.width}`,
-          thicknessLabel: th?.displayLabel || `${th?.value} inch`,
+          sizeLabel: isPillow ? '' : sz?.displayLabel || `${sz?.length}x${sz?.width}`,
+          thicknessLabel: isPillow ? '' : th?.displayLabel || `${th?.value} inch`,
           quantity: item.quantity,
           unitPricePaisa: authoritativePricePaisa,
           lineTotalPaisa: itemLineTotalPaisa,
@@ -662,7 +687,10 @@ export class PosService {
                 {
                   name: nameInput,
                   phone: phoneInput,
-                  customerType: isWholesale ? CUSTOMER_TYPES.WHOLESALE : CUSTOMER_TYPES.WALK_IN,
+                  branchId: effectiveBranchId,
+                  customerType: input.saleType === SALE_TYPES.DISTRIBUTOR
+                    ? CUSTOMER_TYPES.DISTRIBUTOR
+                    : isWholesale ? CUSTOMER_TYPES.WHOLESALE : CUSTOMER_TYPES.WALK_IN,
                   creditEnabled: true,
                   creditLimit: isWholesale ? 200000 : 50000,
                   outstandingBalance: 0,

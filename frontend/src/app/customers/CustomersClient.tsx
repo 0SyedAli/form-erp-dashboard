@@ -60,7 +60,7 @@ const customerSchema = z.object({
 type CustomerFormData = z.infer<typeof customerSchema>;
 
 function CustomersContent() {
-  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE !== 'demo';
 
   const [mounted, setMounted] = useState(false);
   React.useEffect(() => {
@@ -82,13 +82,20 @@ function CustomersContent() {
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
   const [formBranchId, setFormBranchId] = useState<string>('');
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [serverSearch, setServerSearch] = useState('');
+  React.useEffect(() => {
+    const timeout = setTimeout(() => setServerSearch(searchQuery.trim()), 250);
+    return () => clearTimeout(timeout);
+  }, [searchQuery]);
+
   const customerQueryParams = useMemo(() => {
     if (!isSuperAdmin) {
       const bId = currentUser?.assignedBranchId || (currentUser as any)?.branchId;
-      return bId ? { branchId: bId } : undefined;
+      return { branchId: bId || undefined, search: serverSearch || undefined };
     }
-    return branchFilter !== 'ALL' ? { branchId: branchFilter } : undefined;
-  }, [isSuperAdmin, currentUser, branchFilter]);
+    return { branchId: branchFilter !== 'ALL' ? branchFilter : undefined, search: serverSearch || undefined };
+  }, [isSuperAdmin, currentUser, branchFilter, serverSearch]);
 
   const { data: demoCustomers = [], isLoading: isDemoLoading } = useGetCustomersQuery(undefined, {
     skip: isBackendMode,
@@ -97,7 +104,7 @@ function CustomersContent() {
   const [updateCustomerMutation, { isLoading: isDemoUpdating }] = useUpdateCustomerMutation();
   const [toggleStatusMutation] = useToggleCustomerStatusMutation();
 
-  const { data: backendCustomers = [], isLoading: isBackendLoading } = useGetBackendCustomersQuery(
+  const { currentData: backendCustomers = [], isFetching: isBackendLoading } = useGetBackendCustomersQuery(
     customerQueryParams,
     { skip: !isBackendMode }
   );
@@ -129,7 +136,6 @@ function CustomersContent() {
   const isUpdating = isBackendMode ? isBackendUpdating : isDemoUpdating;
 
   // Filters & State
-  const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [onlyExceededFilter, setOnlyExceededFilter] = useState<boolean>(false);

@@ -40,7 +40,7 @@ export default function POSFooter({
   const displayCashier = cashierName || 'Admin';
 
   return (
-    <footer className="bg-white border-t border-slate-200 px-5 py-2 flex items-center justify-between text-xs text-slate-500 font-medium select-none shrink-0">
+    <footer className="bg-white border-t border-slate-200 px-5 py-2 flex items-center justify-between text-xs text-slate-500 font-medium select-none shrink-0 flex-wrap">
       {/* Left items: Cashier, Date, Shift */}
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-1.5 text-slate-700">

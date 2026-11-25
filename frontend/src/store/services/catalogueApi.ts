@@ -187,6 +187,7 @@ export const catalogueApi = createApi({
   endpoints: (builder) => ({
     getBranches: builder.query<Branch[], void>({
       query: () => '/branches',
+      keepUnusedDataFor: 86400,
       transformResponse: (response: ApiResponse<Branch[]>) =>
         (response.data || []).map((b) => ({
           ...b,
@@ -275,7 +276,7 @@ export const catalogueApi = createApi({
 
     getBrands: builder.query<Brand[], void>({
       query: () => '/brands',
-      keepUnusedDataFor: 3600,
+      keepUnusedDataFor: 86400,
       transformResponse: (response: ApiResponse<Brand[]>) =>
         (response.data || []).map((b) => ({
           ...b,

@@ -20,6 +20,8 @@ posRoutes.get(
   PosController.getBootstrap
 );
 
+posRoutes.get('/changes', authenticate, requireBranchPermission('pos'), PosController.streamChanges);
+
 // 0b. POS Out of Stock Products & Variants (Lazy progressive background load)
 posRoutes.get(
   '/out-of-stock',

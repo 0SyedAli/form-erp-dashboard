@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { logout } from '@/store/slices/authSlice';
+import { clearAuthCookies } from '@/utils/authCookies';
 import {
   ShieldAlert,
   Building2,
@@ -19,6 +20,7 @@ export default function UnauthorizedPage() {
   const currentUser = useAppSelector((state) => state.auth.currentUser);
 
   const handleLogout = () => {
+    clearAuthCookies();
     dispatch(logout());
     router.push('/login');
   };

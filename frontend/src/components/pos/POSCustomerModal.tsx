@@ -154,11 +154,10 @@ export default function POSCustomerModal({
           <button
             type="button"
             onClick={() => setActiveTab('SELECT')}
-            className={`py-2.5 px-4 text-xs font-bold font-sans border-b-2 transition-all cursor-pointer ${
-              activeTab === 'SELECT'
+            className={`py-2.5 px-4 text-xs font-bold font-sans border-b-2 transition-all cursor-pointer ${activeTab === 'SELECT'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             Select Existing Customer ({customers.length})
           </button>
@@ -168,11 +167,10 @@ export default function POSCustomerModal({
               setActiveTab('CREATE');
               if (recommendedType) setNewType(recommendedType);
             }}
-            className={`py-2.5 px-4 text-xs font-bold font-sans border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeTab === 'CREATE'
+            className={`py-2.5 px-4 text-xs font-bold font-sans border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'CREATE'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <UserPlus className="w-3.5 h-3.5" />
             <span>Create New Customer</span>
@@ -200,19 +198,18 @@ export default function POSCustomerModal({
                     key={t}
                     type="button"
                     onClick={() => setTypeFilter(t)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
-                      typeFilter === t
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${typeFilter === t
                         ? 'bg-blue-600 text-white'
                         : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
+                      }`}
                   >
                     {t === 'ALL'
                       ? 'All'
                       : t === 'WALK_IN'
-                      ? 'Walk-in'
-                      : t === 'WHOLESALE'
-                      ? 'Wholesale'
-                      : 'Distributor'}
+                        ? 'Walk-in'
+                        : t === 'WHOLESALE'
+                          ? 'Wholesale'
+                          : 'Distributor'}
                   </button>
                 ))}
               </div>
@@ -265,25 +262,23 @@ export default function POSCustomerModal({
                         onSelectCustomer(c);
                         onClose();
                       }}
-                      className={`pt-2.5 first:pt-0 p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                        isSelected
+                      className={`py-1.5 p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${isSelected
                           ? 'border-blue-600 bg-blue-50/40 ring-1 ring-blue-500/20'
                           : isCreditExceeded
-                          ? 'border-rose-300 bg-rose-50/60 hover:bg-rose-100/70'
-                          : 'border-transparent hover:border-slate-200 hover:bg-slate-50'
-                      }`}
+                            ? 'border-rose-300 bg-rose-50/60 hover:bg-rose-100/70'
+                            : 'border-transparent hover:border-slate-200 hover:bg-slate-50'
+                        }`}
                     >
                       <div className="flex items-start gap-3">
                         <div
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-                            isCreditExceeded
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${isCreditExceeded
                               ? 'bg-rose-100 text-rose-700'
                               : c.customerType === 'DISTRIBUTOR'
-                              ? 'bg-purple-100 text-purple-700'
-                              : c.customerType === 'WHOLESALE'
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'bg-blue-100 text-blue-700'
-                          }`}
+                                ? 'bg-purple-100 text-purple-700'
+                                : c.customerType === 'WHOLESALE'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-blue-100 text-blue-700'
+                            }`}
                         >
                           {c.customerType === 'DISTRIBUTOR' ? (
                             <Truck className="w-4 h-4" />
@@ -303,13 +298,12 @@ export default function POSCustomerModal({
                               {c.customerCode || c.code}
                             </span>
                             <span
-                              className={`text-[10px] font-semibold px-2 py-0.2 rounded-full ${
-                                c.customerType === 'DISTRIBUTOR'
+                              className={`text-[10px] font-semibold px-2 py-0.2 rounded-full ${c.customerType === 'DISTRIBUTOR'
                                   ? 'bg-purple-100 text-purple-700'
                                   : c.customerType === 'WHOLESALE'
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-blue-100 text-blue-700'
-                              }`}
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-blue-100 text-blue-700'
+                                }`}
                             >
                               {c.customerType}
                             </span>
@@ -334,9 +328,8 @@ export default function POSCustomerModal({
                           Due: Rs. {c.currentOutstanding.toLocaleString()}
                         </div>
                         <div
-                          className={`text-[11px] font-semibold ${
-                            isCreditExceeded ? 'text-rose-600 font-bold' : 'text-emerald-700'
-                          }`}
+                          className={`text-[11px] font-semibold ${isCreditExceeded ? 'text-rose-600 font-bold' : 'text-emerald-700'
+                            }`}
                         >
                           {isCreditExceeded
                             ? `Over Limit: Rs. ${overLimitAmount.toLocaleString()}`

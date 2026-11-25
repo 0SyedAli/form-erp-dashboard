@@ -1,11 +1,11 @@
 'use client';
 
+import { isPillowCategory } from '@/lib/pos/pillowCategory';
 import React, { useState, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import {
   CatalogueProduct,
   ProductVariant,
-  InventoryBalance,
   SaleType,
   MattressSize,
   MattressThickness,
@@ -15,8 +15,8 @@ import { Package, AlertCircle } from 'lucide-react';
 interface ProductGridProps {
   brandName: string;
   products: CatalogueProduct[];
-  variants: ProductVariant[];
-  inventoryBalances: InventoryBalance[];
+  variantsByProductId: ReadonlyMap<string, ProductVariant[]>;
+  variantStockMap: Record<string, number>;
   onSelectProduct: (product: CatalogueProduct) => void;
   selectedProductId?: string;
   saleType?: SaleType;
@@ -200,8 +200,8 @@ function RealisticMattressImage({ name, index }: { name: string; index: number }
 export default function ProductGrid({
   brandName,
   products,
-  variants,
-  inventoryBalances,
+  variantsByProductId,
+  variantStockMap,
   onSelectProduct,
   selectedProductId,
   saleType = 'WALK_IN',
@@ -217,35 +217,6 @@ export default function ProductGrid({
   const stockFilter = stockFilterProp !== undefined ? stockFilterProp : internalStockFilter;
   const setStockFilter = onStockFilterChangeProp || setInternalStockFilter;
 
-  // 1. Fast Precomputed Balance Maps O(B) and Product Variant Grouping O(V)
-  const { balanceByVariantId, balanceBySku, activeVariantsByProductId } = useMemo(() => {
-    const balByVar = new Map<string, InventoryBalance>();
-    const balBySku = new Map<string, InventoryBalance>();
-    for (let i = 0; i < inventoryBalances.length; i++) {
-      const b = inventoryBalances[i];
-      if (b.variantId) balByVar.set(b.variantId, b);
-      if (b.sku) balBySku.set(b.sku, b);
-    }
-
-    const varByProd = new Map<string, ProductVariant[]>();
-    for (let i = 0; i < variants.length; i++) {
-      const v = variants[i];
-      if (v.status !== 'ACTIVE' && v.status) continue;
-      const list = varByProd.get(v.productId);
-      if (list) {
-        list.push(v);
-      } else {
-        varByProd.set(v.productId, [v]);
-      }
-    }
-
-    return {
-      balanceByVariantId: balByVar,
-      balanceBySku: balBySku,
-      activeVariantsByProductId: varByProd,
-    };
-  }, [inventoryBalances, variants]);
-
   // 2. Precompute metrics map for all products in-memory in a single high-performance O(P) pass!
   const productMetricsMap = useMemo(() => {
     const map = new Map<string, { startingPrice: number; inStock: boolean; totalAvailable: number }>();
@@ -258,7 +229,7 @@ export default function ProductGrid({
 
     for (let i = 0; i < products.length; i++) {
       const p = products[i];
-      const productVariants = activeVariantsByProductId.get(p.id) || [];
+      const productVariants = variantsByProductId.get(p.id) || [];
       if (productVariants.length === 0) {
         map.set(p.id, { startingPrice: 0, inStock: false, totalAvailable: 0 });
         continue;
@@ -288,11 +259,7 @@ export default function ProductGrid({
       let totalAvailable = 0;
       for (let j = 0; j < productVariants.length; j++) {
         const v = productVariants[j];
-        const bal = balanceByVariantId.get(v.id) || balanceBySku.get(v.sku);
-        const qty = bal
-          ? (bal.available !== undefined && bal.available !== null ? bal.available : bal.onHand)
-          : (v.stock ?? (v as any).onHand ?? 0);
-        totalAvailable += Math.max(0, qty || 0);
+        totalAvailable += variantStockMap[v.id] || 0;
       }
 
       map.set(p.id, {
@@ -303,7 +270,7 @@ export default function ProductGrid({
     }
 
     return map;
-  }, [products, activeVariantsByProductId, balanceByVariantId, balanceBySku, saleType, selectedSizeId, selectedThicknessId]);
+  }, [products, variantsByProductId, variantStockMap, saleType, selectedSizeId, selectedThicknessId]);
 
   // 3. Tab counts (All, In Stock, Out of Stock)
   const counts = useMemo(() => {
@@ -333,7 +300,7 @@ export default function ProductGrid({
   return (
     <div className="flex-1 bg-white rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col p-4 overflow-hidden select-none">
       {/* Header with Title on Left, and Tabs + Count on Right */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 shrink-0 mb-3.5 gap-2.5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 shrink-0 mb-3.5 gap-2.5 flex-wrap">
         <h2 className="text-base sm:text-lg font-bold text-slate-900 font-sans tracking-tight">
           {brandName} Products
         </h2>
@@ -345,20 +312,18 @@ export default function ProductGrid({
             <button
               type="button"
               onClick={() => setStockFilter('IN_STOCK')}
-              className={`relative px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                stockFilter === 'IN_STOCK'
+              className={`relative px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${stockFilter === 'IN_STOCK'
                   ? 'bg-white text-emerald-800 shadow-xs ring-1 ring-emerald-500/20'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-              }`}
+                }`}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               <span>In Stock</span>
               <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
-                  stockFilter === 'IN_STOCK'
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${stockFilter === 'IN_STOCK'
                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                     : 'bg-slate-200 text-slate-600'
-                }`}
+                  }`}
               >
                 {counts.inStock}
               </span>
@@ -368,20 +333,18 @@ export default function ProductGrid({
             <button
               type="button"
               onClick={() => setStockFilter('OUT_OF_STOCK')}
-              className={`relative px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                stockFilter === 'OUT_OF_STOCK'
+              className={`relative px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${stockFilter === 'OUT_OF_STOCK'
                   ? 'bg-white text-rose-800 shadow-xs ring-1 ring-rose-500/20'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-              }`}
+                }`}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
               <span>Out of Stock</span>
               <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
-                  stockFilter === 'OUT_OF_STOCK'
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${stockFilter === 'OUT_OF_STOCK'
                     ? 'bg-rose-100 text-rose-800 border border-rose-200'
                     : 'bg-slate-200 text-slate-600'
-                }`}
+                  }`}
               >
                 {counts.outOfStock}
               </span>
@@ -391,19 +354,17 @@ export default function ProductGrid({
             <button
               type="button"
               onClick={() => setStockFilter('ALL')}
-              className={`relative px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                stockFilter === 'ALL'
+              className={`relative px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${stockFilter === 'ALL'
                   ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-300'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-              }`}
+                }`}
             >
               <span>All</span>
               <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
-                  stockFilter === 'ALL'
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${stockFilter === 'ALL'
                     ? 'bg-slate-800 text-white'
                     : 'bg-slate-200 text-slate-600'
-                }`}
+                  }`}
               >
                 {counts.all}
               </span>
@@ -508,7 +469,7 @@ export default function ProductGrid({
                       })()}
                       <h3 className="font-bold text-sm text-slate-900  font-sans" style={{ fontSize: '17px' }}>
                         {/* {product.name} */}
-                        {product.productLineName || (product as any).productLine?.name || product.name}
+                        {isPillowCategory(product.category?.name) ? product.name : product.productLineName || (product as any).productLine?.name || product.name}
                       </h3>
 
                     </div>

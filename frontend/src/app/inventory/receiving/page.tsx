@@ -489,8 +489,8 @@ function StockReceivingContent() {
           {/* Selected Products Card */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
             {/* Card Header */}
-            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between">
-              <div className="flex items-center gap-2">
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
                   Selected Products to Add
                 </span>
@@ -503,7 +503,7 @@ function StockReceivingContent() {
                 <button
                   type="button"
                   onClick={() => setItems([])}
-                  className="text-xs text-rose-600 hover:text-rose-700 font-semibold hover:underline"
+                  className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-brand-rose whitespace-nowrap"
                 >
                   Clear All
                 </button>
@@ -537,9 +537,9 @@ function StockReceivingContent() {
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                         {/* Number badge & Product Details */}
                         <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
-                          <span className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 flex items-center justify-center text-xs font-bold shrink-0 shadow-2xs">
+                          {/* <span className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 flex items-center justify-center text-xs font-bold shrink-0 shadow-2xs">
                             {index + 1}
-                          </span>
+                          </span> */}
 
                           <div className="flex-1 min-w-0">
                             <p className="font-bold text-slate-900 text-sm sm:text-base truncate">
@@ -549,9 +549,9 @@ function StockReceivingContent() {
                               <p className="text-xs text-brand-blue font-medium">{item.posDisplayName}</p>
                             )}
                             <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 mt-1">
-                              <span className="font-mono text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                              {/* <span className="font-mono text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
                                 {item.sku}
-                              </span>
+                              </span> */}
                               {item.brandName && (
                                 <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
                                   {item.brandName}
@@ -709,12 +709,12 @@ function StockReceivingContent() {
                 {isSubmitting ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Adding to Stock...</span>
+                    <span>Adding...</span>
                   </>
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Confirm & Add to Stock</span>
+                    <span>Confirm</span>
                   </>
                 )}
               </button>

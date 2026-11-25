@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAppSelector, useAppDispatch } from '@/store';
 import { logout } from '@/store/slices/authSlice';
 import { useLogoutMutation } from '@/store/services/authApi';
+import { clearAuthCookies } from '@/utils/authCookies';
 import {
   LayoutDashboard,
   Building2,
@@ -71,6 +72,7 @@ export default function Sidebar({
     } catch {
       // Ignore network errors on logout
     }
+    clearAuthCookies();
     dispatch(logout());
     router.push('/login');
   };

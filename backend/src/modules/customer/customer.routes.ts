@@ -12,11 +12,11 @@ import {
 
 export const customerRoutes = Router();
 
-// List customers (POS cashiers and customer managers)
+// List customers for POS, account management, and collections.
 customerRoutes.get(
   '/',
   authenticate,
-  requireAnyBranchPermission(['customers', 'pos']),
+  requireAnyBranchPermission(['customers', 'pos', 'collections']),
   validateRequest(customerQuerySchema),
   CustomerController.getCustomers
 );

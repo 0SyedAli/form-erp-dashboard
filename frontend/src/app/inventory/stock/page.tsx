@@ -462,11 +462,15 @@ export default function StockBalancesPage() {
                         </td>
 
                         {/* Product & Spec */}
-                        <td className="py-3.5 px-4">
-                          <p className="font-semibold text-slate-900 text-sm">{item.productName}</p>
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          {!item.posDisplayName ?
+                            <p className="font-semibold text-slate-900 text-sm">{item.productName}</p>
+                            :
+                            <p className="font-semibold text-slate-900 text-sm">{item.posDisplayName}</p>
+                          }
+                          {/* }
                           {item.posDisplayName && (
-                            <p className="text-xs text-brand-blue font-medium">{item.posDisplayName}</p>
-                          )}
+                           )} */}
                           <p className="text-xs text-slate-500 mt-0.5">
                             Size: <span className="text-slate-700 font-medium">{item.sizeLabel}</span>
                             {item.thicknessLabel ? ` • Thickness: ${item.thicknessLabel}` : ''}
@@ -516,7 +520,7 @@ export default function StockBalancesPage() {
                         </td>
 
                         {/* Action */}
-                        <td className="py-3.5 px-4 text-right">
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
                           <Link
                             href={`/inventory/receiving?sku=${encodeURIComponent(item.sku)}`}
                             className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-brand-blue bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"

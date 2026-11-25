@@ -34,7 +34,7 @@ export default function Header({
           <Menu className="w-5 h-5" />
         </button>
 
-        <div className="relative w-full max-w-md">
+        {/* <div className="relative w-full max-w-md">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
             <Search className="w-4 h-4" />
           </div>
@@ -47,7 +47,7 @@ export default function Header({
             }
             className="w-full pl-9 pr-4 py-2.5 bg-gray-50/90 border border-gray-200/80 rounded-lg text-sm font-normal text-gray-800 placeholder-gray-400 focus:outline-hidden focus:ring-1 focus:ring-brand-blue focus:bg-white transition-all"
           />
-        </div>
+        </div> */}
       </div>
 
       {/* Right: Notifications & User Profile */}

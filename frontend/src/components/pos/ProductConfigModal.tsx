@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import { isPillowCategory } from '@/lib/pos/pillowCategory';
 import {
   CatalogueProduct,
   ProductVariant,
@@ -54,6 +55,7 @@ export default function ProductConfigModal({
   variantStockMap,
   searchQuery = '',
 }: ProductConfigModalProps) {
+  const isPillow = isPillowCategory(categoryName);
   // 1. Stock map for variants
   const stockMap = useMemo(() => {
     if (variantStockMap) return variantStockMap;
@@ -92,6 +94,7 @@ export default function ProductConfigModal({
   const uniqueProductSizes = useMemo<UniqueSizeOption[]>(() => {
     const map = new Map<string, UniqueSizeOption>();
 
+    if (isPillow) return [];
     for (const v of productVariants) {
       const s = activeSizes.find(
         (sz) => String(sz.id) === String(v.sizeId) || String((sz as any)._id) === String(v.sizeId)
@@ -125,7 +128,7 @@ export default function ProductConfigModal({
       if (a.width && b.width) return a.width - b.width;
       return a.displayLabel.localeCompare(b.displayLabel);
     });
-  }, [productVariants, activeSizes]);
+  }, [productVariants, activeSizes, isPillow]);
 
   // Helper: compute total stock for a unique dimension option
   const getSizeStock = useCallback(
@@ -218,6 +221,9 @@ export default function ProductConfigModal({
 
   // Currently matching variant
   const selectedVariant = useMemo(() => {
+    if (isPillow) {
+      return productVariants.find((v) => (stockMap[v.id] || 0) > 0) || productVariants[0] || null;
+    }
     if (!selectedSize) return null;
     if (availableThicknesses.length === 0) {
       // Product or Brand does not have thickness specifications
@@ -244,7 +250,7 @@ export default function ProductConfigModal({
         return false;
       }) || null
     );
-  }, [productVariants, selectedSize, selectedThicknessId, activeThicknesses, availableThicknesses]);
+  }, [isPillow, stockMap, productVariants, selectedSize, selectedThicknessId, activeThicknesses, availableThicknesses]);
 
   // Available stock for selected configuration
   const currentAvailableStock = useMemo(() => {
@@ -254,7 +260,12 @@ export default function ProductConfigModal({
 
   // Auto-select initial size and thickness whenever the product changes or modal opens
   useEffect(() => {
-    if (!isOpen || !product || availableSizes.length === 0) return;
+    if (!isOpen || !product) return;
+    if (isPillow) {
+      setQuantity(1);
+      return;
+    }
+    if (availableSizes.length === 0) return;
 
     // Check if searchQuery mentions a specific size dimension (e.g. "72x42", "78x60")
     let bestSize: UniqueSizeOption | undefined;
@@ -310,7 +321,7 @@ export default function ProductConfigModal({
     }
 
     setQuantity(1);
-  }, [isOpen, product, availableSizes, productVariants, stockMap, getSizeStock, searchQuery, activeThicknesses, stockTab]);
+  }, [isOpen, product, isPillow, availableSizes, productVariants, stockMap, getSizeStock, searchQuery, activeThicknesses, stockTab]);
 
   // Handle Tab Switch
   const handleTabChange = (newTab: 'in_stock' | 'out_of_stock') => {
@@ -392,7 +403,7 @@ export default function ProductConfigModal({
 
   useEffect(() => {
     setCustomPrice(unitPrice);
-  }, [unitPrice, selectedDimKey, selectedThicknessId]);
+  }, [unitPrice, selectedVariant?.id, selectedDimKey, selectedThicknessId]);
 
   const effectiveUnitPrice = typeof customPrice === 'number' && customPrice >= 0 ? customPrice : unitPrice;
   const validQty = Math.max(1, Number(quantity) || 1);
@@ -405,7 +416,7 @@ export default function ProductConfigModal({
     const variantId =
       selectedVariant?.id || `synth-${product.id}-${selectedDimKey}-${selectedThicknessId}`;
     const finalUnitPrice = typeof customPrice === 'number' && customPrice >= 0 ? customPrice : unitPrice;
-    const posDisplayName = (selectedVariant as any)?.posDisplayName
+    const posDisplayName = isPillow ? product.name : (selectedVariant as any)?.posDisplayName
       || product.posDisplayName
       || `${product.name} ${selectedSize?.displayLabel || ''}${selectedThickness?.value ? `x${selectedThickness.value}` : ''}`.trim();
 
@@ -416,8 +427,8 @@ export default function ProductConfigModal({
       posDisplayName,
       brandName: brandName || 'Foam',
       categoryName: categoryName || 'Foam',
-      sizeLabel: selectedSize?.displayLabel || 'Standard',
-      thicknessInches: selectedThickness?.value || 6,
+      sizeLabel: isPillow ? '' : selectedSize?.displayLabel || 'Standard',
+      thicknessInches: isPillow ? undefined : selectedThickness?.value || 6,
       sku:
         selectedVariant?.sku ||
         `${product.code || 'SKU'}-${selectedThickness?.value || 6}`,
@@ -484,6 +495,7 @@ export default function ProductConfigModal({
             </div>
           </div>
 
+          {!isPillow && <>
           {/* Stock Filter Tab Bar (In Stock / Out of Stock) */}
           <div className="flex items-center gap-2 bg-slate-100/90 p-1 rounded-xl border border-slate-200 select-none">
             <button
@@ -675,6 +687,7 @@ export default function ProductConfigModal({
               </div>
             </div>
           )}
+          </>}
         </div>
 
         {/* Modal Bottom Action Row */}

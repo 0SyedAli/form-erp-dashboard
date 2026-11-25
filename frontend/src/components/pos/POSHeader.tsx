@@ -34,6 +34,9 @@ interface POSHeaderProps {
   pendingOfflineCount?: number;
   isSyncing?: boolean;
   onSyncClick?: () => void;
+  onRefreshClick: () => void;
+  isRefreshing: boolean;
+  refreshDisabled: boolean;
 }
 
 export default function POSHeader({
@@ -55,6 +58,9 @@ export default function POSHeader({
   pendingOfflineCount = 0,
   isSyncing = false,
   onSyncClick,
+  onRefreshClick,
+  isRefreshing,
+  refreshDisabled,
 }: POSHeaderProps) {
   const [isMounted, setIsMounted] = useState(false);
 
@@ -132,6 +138,18 @@ export default function POSHeader({
             <span>Online</span>
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={onRefreshClick}
+          disabled={refreshDisabled || isRefreshing}
+          aria-label="Refresh POS"
+          title="Reload POS and fetch the latest stock"
+          className="flex flex-col items-center justify-center px-2 py-1 text-slate-600 hover:bg-slate-50 rounded-xl disabled:opacity-50 cursor-pointer disabled:cursor-default"
+        >
+          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <span className="text-xs font-medium mt-0.5">Refresh</span>
+        </button>
 
         {/* F2: New Sale */}
         <button

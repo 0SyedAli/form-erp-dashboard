@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PosService, UserContext } from './pos.service.js';
 import { sendSuccess, sendError } from '../../utils/apiResponse.js';
+import { subscribeToPOSChanges } from './posChanges.js';
 
 export class PosController {
   private static getUserContext(req: Request): UserContext {
@@ -44,7 +45,10 @@ export class PosController {
     try {
       const branchId = (req.query.branchId as string) || (req.account as any)?.assignedBranchId?.toString();
       const clientVersion = (req.headers['if-none-match'] as string) || (req.query.version as string);
-      const data = await PosService.getPOSBootstrap(branchId, clientVersion);
+      const forceRefresh = req.query.refresh === '1';
+      res.setHeader('Cache-Control', 'private, no-store');
+      if (forceRefresh) PosService.invalidatePOSCache();
+      const data = await PosService.getPOSBootstrap(branchId, forceRefresh ? undefined : clientVersion);
       if (data.notModified) {
         res.status(304).end();
         return;
@@ -58,10 +62,32 @@ export class PosController {
     }
   }
 
+  public static streamChanges(_req: Request, res: Response): void {
+    res.set({
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'private, no-cache, no-transform',
+      'X-Accel-Buffering': 'no',
+    });
+    res.flushHeaders();
+    res.write('retry: 5000\n\n');
+    const unsubscribe = subscribeToPOSChanges(() => res.write('data: changed\n\n'));
+    const heartbeat = setInterval(() => {
+      if (res.writableNeedDrain) res.end();
+      else res.write(': heartbeat\n\n');
+    }, 15000);
+    const lifetime = setTimeout(() => res.end(), 300000);
+    res.once('close', () => {
+      unsubscribe();
+      clearInterval(heartbeat);
+      clearTimeout(lifetime);
+    });
+  }
+
   public static async getOutOfStock(req: Request, res: Response): Promise<void> {
     try {
       const userContext = PosController.getUserContext(req);
       const branchId = (req.query.branchId as string) || userContext.branchId;
+      res.setHeader('Cache-Control', 'private, no-store');
       const data = await PosService.getPOSOutOfStockCatalogue(userContext, branchId);
       sendSuccess(res, data, 'Out of stock catalogue retrieved successfully.');
     } catch (error) {

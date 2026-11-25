@@ -15,6 +15,19 @@ export class CustomerService {
   /**
    * 1. LIST CUSTOMERS WITH SEARCH & FILTERS
    */
+  private static async assertBranchCustomerAccess(
+    customer: { _id: mongoose.Types.ObjectId; branchId?: mongoose.Types.ObjectId },
+    userContext: UserContext
+  ) {
+    if (userContext.role === 'SUPER_ADMIN') return;
+    const branchId = userContext.branchId;
+    if (branchId && (String(customer.branchId) === branchId || await SalesInvoice.exists({
+      customerId: customer._id,
+      branchId,
+    }))) return;
+    throw new AppError('Customer does not have an account at this branch.', 403, 'FORBIDDEN_CUSTOMER_ACCESS');
+  }
+
   public static async getCustomers(query: CustomerQuery, _userContext: UserContext) {
     const page = Math.max(1, query.page || 1);
     const limit = Math.max(1, Math.min(100, query.limit || 50));
@@ -30,19 +43,26 @@ export class CustomerService {
       filter.status = query.status;
     }
 
-    // Branch Isolation: Branch users strictly see only their own branch customers
-    if (_userContext.role !== 'SUPER_ADMIN' && _userContext.branchId) {
-      filter.branchId = new mongoose.Types.ObjectId(_userContext.branchId);
-    } else if (query.branchId && query.branchId !== 'ALL') {
-      filter.branchId = new mongoose.Types.ObjectId(query.branchId);
+    const branch = _userContext.role === 'SUPER_ADMIN' ? query.branchId : _userContext.branchId;
+    if (_userContext.role !== 'SUPER_ADMIN' && !branch) {
+      throw new AppError('Branch assignment required to view customers.', 403, 'NO_BRANCH_ASSIGNED');
+    }
+    const scopedBranchId = branch && branch !== 'ALL' ? new mongoose.Types.ObjectId(branch) : undefined;
+    if (scopedBranchId) {
+      const invoicedCustomers = await SalesInvoice.distinct('customerId', {
+        branchId: scopedBranchId,
+        customerId: { $ne: null },
+      });
+      filter.$and = [{ $or: [{ branchId: scopedBranchId }, { _id: { $in: invoicedCustomers } }] }];
     }
 
     if (query.search && query.search.trim()) {
-      const q = query.search.trim();
+      const q = query.search.trim().replace(/[.*+?^$\x7B\x7D()|[\]\\]/g, '\\$&');
       filter.$or = [
         { name: { $regex: q, $options: 'i' } },
         { phone: { $regex: q, $options: 'i' } },
         { businessName: { $regex: q, $options: 'i' } },
+        { customerCode: { $regex: q, $options: 'i' } },
       ];
     }
 
@@ -58,15 +78,13 @@ export class CustomerService {
 
     // Branch Isolation: Calculate branch-specific dues for branch users
     const branchDuesMap = new Map<string, number>();
-    const isBranchUser = _userContext.role !== 'SUPER_ADMIN' && !!_userContext.branchId;
-
-    if (isBranchUser && customers.length > 0) {
+    if (customers.length > 0) {
       const customerIds = customers.map((c) => c._id);
       const branchDues = await SalesInvoice.aggregate([
         {
           $match: {
             customerId: { $in: customerIds },
-            branchId: new mongoose.Types.ObjectId(_userContext.branchId),
+            ...(scopedBranchId ? { branchId: scopedBranchId } : {}),
             balanceDue: { $gt: 0 },
           },
         },
@@ -83,9 +101,7 @@ export class CustomerService {
     }
 
     const formattedCustomers = customers.map((c: any) => {
-      const outstanding = isBranchUser
-        ? (branchDuesMap.get(c._id.toString()) || 0)
-        : (c.outstandingBalance || 0);
+      const outstanding = branchDuesMap.get(c._id.toString()) || 0;
 
       const branchObj = typeof c.branchId === 'object' && c.branchId ? c.branchId : null;
       const bId = branchObj ? branchObj._id?.toString() || branchObj.id : (c.branchId ? c.branchId.toString() : '');
@@ -98,6 +114,7 @@ export class CustomerService {
         branchId: bId,
         branchName: bName,
         branchCode: bCode,
+        outstandingBalance: outstanding,
         currentOutstanding: outstanding,
         availableCredit: Math.max(0, (c.creditLimit || 0) - outstanding),
       };
@@ -265,7 +282,7 @@ export class CustomerService {
 
     let effectiveBranchId: string | undefined = undefined;
     if (userContext.role !== 'SUPER_ADMIN') {
-      const branchStr = userContext.branchId || branchFilter;
+      const branchStr = userContext.branchId;
       if (!branchStr) {
         throw new AppError('Branch assignment required to view customer ledger.', 403, 'NO_BRANCH_ASSIGNED');
       }
@@ -273,6 +290,8 @@ export class CustomerService {
     } else if (branchFilter && branchFilter !== 'ALL') {
       effectiveBranchId = branchFilter;
     }
+
+    await this.assertBranchCustomerAccess(customer, userContext);
 
     const query: Record<string, unknown> = {
       customerId: new mongoose.Types.ObjectId(customerId),
@@ -292,7 +311,7 @@ export class CustomerService {
     const computedEntries = rawEntries.map((e: any) => {
       const debit = Number(e.debit || 0);
       const credit = Number(e.credit || 0);
-      running = running + debit - credit;
+      running = Math.round((running + debit - credit) * 100) / 100;
       return {
         ...e,
         id: e._id.toString(),
@@ -313,6 +332,11 @@ export class CustomerService {
     const totalDebit = computedEntries.reduce((sum, e) => sum + e.debit, 0);
     const totalCredit = computedEntries.reduce((sum, e) => sum + e.credit, 0);
     const branchBalance = totalDebit - totalCredit;
+    const [receivable] = await SalesInvoice.aggregate([
+      { $match: { ...query, balanceDue: { $gt: 0 } } },
+      { $group: { _id: null, total: { $sum: '$balanceDue' } } },
+    ]);
+    const outstanding = receivable?.total || 0;
 
     // Display newest entries first for UI table
     const reversedEntries = [...computedEntries].reverse();
@@ -322,17 +346,18 @@ export class CustomerService {
         ...customer,
         id: customer._id.toString(),
         code: (customer as any).customerCode || `CUST-${customer.phone?.slice(-4)}`,
-        currentOutstanding: effectiveBranchId ? branchBalance : (customer.outstandingBalance || 0),
+        outstandingBalance: outstanding,
+        currentOutstanding: outstanding,
         availableCredit: Math.max(
           0,
-          (customer.creditLimit || 0) - (effectiveBranchId ? branchBalance : (customer.outstandingBalance || 0))
+          (customer.creditLimit || 0) - outstanding
         ),
         scopeBranchId: effectiveBranchId || null,
       },
       summary: {
         totalDebit,
         totalCredit,
-        currentBalance: effectiveBranchId ? branchBalance : (customer.outstandingBalance || 0),
+        currentBalance: branchBalance,
         transactionCount: computedEntries.length,
       },
       entries: reversedEntries,
@@ -353,13 +378,16 @@ export class CustomerService {
 
     let effectiveBranchId: string | undefined = undefined;
     if (userContext.role !== 'SUPER_ADMIN') {
-      const branchStr = userContext.branchId || branchFilter;
-      if (branchStr) {
-        effectiveBranchId = branchStr;
+      const branchStr = userContext.branchId;
+      if (!branchStr) {
+        throw new AppError('Branch assignment required to view outstanding invoices.', 403, 'NO_BRANCH_ASSIGNED');
       }
+      effectiveBranchId = branchStr;
     } else if (branchFilter && branchFilter !== 'ALL') {
       effectiveBranchId = branchFilter;
     }
+
+    await this.assertBranchCustomerAccess(customer, userContext);
 
     const invoiceFilter: Record<string, unknown> = {
       customerId: new mongoose.Types.ObjectId(customerId),
@@ -382,20 +410,23 @@ export class CustomerService {
         id: customer._id.toString(),
         name: customer.name,
         phone: customer.phone,
-        outstandingBalance: effectiveBranchId ? branchOutstanding : (customer.outstandingBalance || 0),
+        customerType: customer.customerType,
+        outstandingBalance: branchOutstanding,
         creditLimit: customer.creditLimit,
       },
       invoices: invoices.map((inv: any) => ({
         id: inv._id.toString(),
         invoiceNumber: inv.invoiceNumber,
         invoiceDate: inv.invoiceDate || inv.createdAt,
+        dueDate: inv.dueDate,
+        saleType: inv.saleType,
         totalAmount: inv.totalAmount,
         paidAmount: inv.paidAmount,
         balanceDue: inv.balanceDue,
         branchId: inv.branchId?._id?.toString() || inv.branchId?.toString(),
         branchName: inv.branchId?.name || inv.branchId?.code || 'Branch',
       })),
-      totalOutstanding: effectiveBranchId ? branchOutstanding : (customer.outstandingBalance || 0),
+      totalOutstanding: branchOutstanding,
     };
   }
 

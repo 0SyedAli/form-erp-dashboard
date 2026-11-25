@@ -277,13 +277,13 @@ export interface SalesSummaryData {
   byPaymentStatus: Record<string, { count: number; invoiced: number; balanceDue: number }>;
 }
 
-const API_BASE_URL =
+export const POS_API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
 
 export const posApi = createApi({
   reducerPath: 'posApi',
   baseQuery: fetchBaseQuery({
-    baseUrl: API_BASE_URL,
+    baseUrl: POS_API_BASE_URL,
     credentials: 'include',
   }),
   tagTypes: [

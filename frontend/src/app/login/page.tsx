@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,6 +9,7 @@ import { useAppDispatch } from '@/store';
 import { setAuthenticatedAccount } from '@/store/slices/authSlice';
 import { setBranchFilter } from '@/store/slices/filterSlice';
 import { useLoginMutation } from '@/store/services/authApi';
+import { setAuthCookies } from '@/utils/authCookies';
 import {
   Lock,
   User as UserIcon,
@@ -27,8 +28,9 @@ const loginSchema = z.object({
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const dispatch = useAppDispatch();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -62,7 +64,30 @@ export default function LoginPage() {
 
       if (response.success && response.data?.account) {
         const account = response.data.account;
+        const token = (response.data as any).token || account.id;
+
+        // Synchronize auth cookies for Next.js Proxy/Middleware
+        setAuthCookies(token, account.role);
+
         dispatch(setAuthenticatedAccount(account));
+
+        // Honor callbackUrl if provided from middleware redirect
+        const callbackUrl = searchParams.get('callbackUrl');
+        if (
+          callbackUrl &&
+          callbackUrl.startsWith('/') &&
+          !callbackUrl.startsWith('//') &&
+          callbackUrl !== '/login'
+        ) {
+          // If branch role tries to open an admin callback, redirect to POS instead
+          if (account.role !== 'SUPER_ADMIN' && callbackUrl.startsWith('/admin')) {
+            dispatch(setBranchFilter(account.branchId || 'BR-MAIN-01'));
+            router.push('/pos');
+          } else {
+            router.push(callbackUrl);
+          }
+          return;
+        }
 
         // Automatic smart redirection based on role / branch
         if (account.role === 'SUPER_ADMIN') {
@@ -109,17 +134,14 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-50/70 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto sm:w-full sm:max-w-md flex flex-col items-center text-center">
-        {/* Molty Brand Icon */}
-        {/* <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 via-red-600 to-red-700 text-white text-2xl font-bold shadow-lg shadow-red-950/20 mb-3 border border-amber-300/40">
-          <span className="text-amber-200">M</span>
-        </div>
-        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-          MASTER MOLTY FOAM
-        </h1>
-        <p className="text-xs uppercase tracking-wider font-semibold text-brand-burgundy mt-1">
-          Retail & Wholesale ERP System
-        </p> */}
-        <Image src="/assets/brands/brand-logo.png" alt="Molty Logo" width={180} height={100} className="w-40 h-30 object-contain" />
+        <Image
+          src="/assets/brands/brand-logo.png"
+          alt="Molty Logo"
+          width={180}
+          height={100}
+          className="w-40 h-30 object-contain"
+          priority
+        />
         <p className="text-xs uppercase tracking-wider font-semibold text-brand-burgundy mt-1">
           Retail & Wholesale ERP System
         </p>
@@ -209,5 +231,19 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="w-8 h-8 rounded-full border-2 border-brand-burgundy border-t-transparent animate-spin" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

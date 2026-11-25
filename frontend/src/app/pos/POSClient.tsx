@@ -23,6 +23,7 @@ import {
 } from '@/store/services/apiSlice';
 import {
   posApi,
+  POS_API_BASE_URL,
   useGetPOSBootstrapQuery,
   useGetPOSOutOfStockQuery,
   useGetBranchesQuery as useGetBackendBranchesQuery,
@@ -67,7 +68,7 @@ import SaleTypeSelector from '@/components/pos/SaleTypeSelector';
 import RepriceConfirmModal from '@/components/pos/RepriceConfirmModal';
 import POSCustomerModal from '@/components/pos/POSCustomerModal';
 import BrandSelector from '@/components/pos/BrandSelector';
-import SizeThicknessSelector from '@/components/pos/SizeThicknessSelector';
+import { isPillowCategory } from '@/lib/pos/pillowCategory';
 import CategorySidebar from '@/components/pos/CategorySidebar';
 import ProductGrid from '@/components/pos/ProductGrid';
 import ProductConfigModal from '@/components/pos/ProductConfigModal';
@@ -98,7 +99,8 @@ function POSContent() {
   const currentUser = useAppSelector((state) => state.auth.currentUser);
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
-  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
+  // In production or with active API, default to backend mode unless explicitly overridden to 'demo'
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE !== 'demo';
 
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => {
@@ -106,7 +108,6 @@ function POSContent() {
   }, []);
 
   // Optimistic tracking for smooth instant stock updates after checkout
-  const [soldQuantitiesBySku, setSoldQuantitiesBySku] = useState<Record<string, number>>({});
 
   // Selected fulfilling branch for cross-branch stock viewing & selling
   const [selectedStockBranchId, setSelectedStockBranchId] = useState<string | null>(null);
@@ -118,12 +119,15 @@ function POSContent() {
   const [offlineSnapshot, setOfflineSnapshot] = useState<POSMasterSnapshot | null>(null);
 
   // Single Consolidated POS Bootstrap Query (Replaces 8 separate parallel queries)
-  const { data: bootstrapData, refetch: refetchBootstrap } = useGetPOSBootstrapQuery(undefined, { skip: !isBackendMode });
+  const { data: bootstrapData } = useGetPOSBootstrapQuery(undefined, {
+    skip: !isBackendMode,
+    refetchOnMountOrArgChange: true,
+  });
 
-  // Direct backend branches query via posApi (guaranteed to load from /branches in backend mode)
-  const { data: backendBranches = [] } = useGetBackendBranchesQuery(undefined, { skip: !isBackendMode });
+  // Direct backend branches query skipped in backend mode because pos/bootstrap already returns all branches
+  const { data: backendBranches = [] } = useGetBackendBranchesQuery(undefined, { skip: true });
 
-  // Demo Queries
+  // Demo Queries strictly skipped when in backend mode (eliminating extra network waterfall)
   const { data: demoBranches = [] } = useGetDemoBranchesQuery(undefined, { skip: isBackendMode });
   const { data: demoBrands = [] } = useGetBrandsQuery(undefined, { skip: isBackendMode });
   const { data: demoCategories = [] } = useGetCategoriesQuery(undefined, { skip: isBackendMode });
@@ -142,7 +146,7 @@ function POSContent() {
     const demoList = demoBranches || [];
     const offlineList = offlineSnapshot?.branches || (offlineSnapshot?.activeBranch ? [offlineSnapshot.activeBranch] : []);
 
-    const rawList = bootstrapList.length > 0
+    const rawList = bootstrapData?.branches
       ? bootstrapList
       : backendBranchesList.length > 0
         ? backendBranchesList
@@ -229,9 +233,9 @@ function POSContent() {
 
   // Progressive Lazy Out-of-Stock Query (Stage 2: Runs seamlessly in background ONLY when user needs out-of-stock or searches)
   const shouldSkipOutOfStock = !isBackendMode || !bootstrapData || (stockFilter === 'IN_STOCK' && !debouncedSearchQuery.trim());
-  const { data: outOfStockData } = useGetPOSOutOfStockQuery(
+  const { currentData: outOfStockData } = useGetPOSOutOfStockQuery(
     effectiveStockBranchId ? { branchId: effectiveStockBranchId } : undefined,
-    { skip: shouldSkipOutOfStock }
+    { skip: shouldSkipOutOfStock, refetchOnMountOrArgChange: true }
   );
 
   const { data: backendHeldSales = [] } = useGetBackendHeldSalesQuery(undefined, { skip: !isBackendMode });
@@ -261,6 +265,7 @@ function POSContent() {
   const {
     isOnline,
     pendingCount,
+    pendingSales,
     isSyncing,
     triggerSync,
     refreshPendingCount,
@@ -275,11 +280,35 @@ function POSContent() {
       (result: SyncResult) => {
         dispatch(inventoryApi.util.invalidateTags(['StockBalance', 'InventorySummary', 'StockMovement']));
         dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
-        refetchBootstrap();
+        dispatch(posApi.util.invalidateTags(['POSCatalogue']));
       },
-      [dispatch, refetchBootstrap]
+      [dispatch]
     )
   );
+
+  useEffect(() => {
+    if (!isBackendMode || !isOnline) return;
+
+    const refreshCatalogue = () => {
+      if (document.visibilityState === 'visible') {
+        dispatch(posApi.util.invalidateTags(['POSCatalogue']));
+      }
+    };
+    const changes = typeof EventSource === 'undefined' ? null : new EventSource(`${POS_API_BASE_URL}/pos/changes`, { withCredentials: true });
+    if (changes) {
+      changes.onopen = refreshCatalogue;
+      changes.onmessage = refreshCatalogue;
+    } else {
+      refreshCatalogue();
+    }
+    document.addEventListener('visibilitychange', refreshCatalogue);
+    const fallback = window.setInterval(refreshCatalogue, 30000);
+    return () => {
+      changes?.close();
+      window.clearInterval(fallback);
+      document.removeEventListener('visibilitychange', refreshCatalogue);
+    };
+  }, [dispatch, isBackendMode, isOnline]);
 
   // Load offline snapshot on mount
   useEffect(() => {
@@ -297,15 +326,7 @@ function POSContent() {
 
   // Unified Data (Online Primary with Offline Snapshot Fallback)
   const brands: Brand[] = useMemo(() => {
-    const backendList = bootstrapData?.brands || [];
-    const offlineList = offlineSnapshot?.brands || [];
-    const demoList = demoBrands || [];
-
-    const list = backendList.length > 0
-      ? backendList
-      : offlineList.length > 0
-        ? offlineList
-        : demoList;
+    const list = bootstrapData?.brands ?? offlineSnapshot?.brands ?? demoBrands;
 
     return list.map((b: any) => ({
       ...b,
@@ -314,15 +335,7 @@ function POSContent() {
   }, [bootstrapData?.brands, demoBrands, offlineSnapshot]);
 
   const categories: Category[] = useMemo(() => {
-    const backendList = bootstrapData?.categories || [];
-    const offlineList = offlineSnapshot?.categories || [];
-    const demoList = demoCategories || [];
-
-    const list = backendList.length > 0
-      ? backendList
-      : offlineList.length > 0
-        ? offlineList
-        : demoList;
+    const list = bootstrapData?.categories ?? offlineSnapshot?.categories ?? demoCategories;
 
     return list.map((c: any) => ({
       ...c,
@@ -333,15 +346,7 @@ function POSContent() {
   }, [bootstrapData?.categories, demoCategories, offlineSnapshot]);
 
   const sizes: MattressSize[] = useMemo(() => {
-    const backendList = bootstrapData?.sizes || [];
-    const offlineList = offlineSnapshot?.sizes || [];
-    const demoList = demoSizes || [];
-
-    const list = backendList.length > 0
-      ? backendList
-      : offlineList.length > 0
-        ? offlineList
-        : demoList;
+    const list = bootstrapData?.sizes ?? offlineSnapshot?.sizes ?? demoSizes;
 
     return list.map((s: any) => ({
       ...s,
@@ -351,15 +356,7 @@ function POSContent() {
   }, [bootstrapData?.sizes, demoSizes, offlineSnapshot]);
 
   const thicknesses: MattressThickness[] = useMemo(() => {
-    const backendList = bootstrapData?.thicknesses || [];
-    const offlineList = offlineSnapshot?.thicknesses || [];
-    const demoList = demoThicknesses || [];
-
-    const list = backendList.length > 0
-      ? backendList
-      : offlineList.length > 0
-        ? offlineList
-        : demoList;
+    const list = bootstrapData?.thicknesses ?? offlineSnapshot?.thicknesses ?? demoThicknesses;
 
     return list.map((t: any) => ({
       ...t,
@@ -399,6 +396,7 @@ function POSContent() {
     return { productLineMap: idMap, productLineMapByCompound: compoundMap };
   }, [bootstrapData?.productLines]);
 
+  const hasBootstrapData = !!bootstrapData;
   const products: CatalogueProduct[] = useMemo(() => {
     const backendInStock = bootstrapData?.products || [];
     const backendOutOfStock = outOfStockData?.products || [];
@@ -406,7 +404,7 @@ function POSContent() {
     const demoList = demoProducts || [];
 
     let list: any[] = [];
-    if (backendInStock.length > 0 || backendOutOfStock.length > 0) {
+    if (hasBootstrapData || outOfStockData) {
       const seen = new Set<string>();
       const merged: any[] = [];
       for (const p of [...backendInStock, ...backendOutOfStock]) {
@@ -448,14 +446,14 @@ function POSContent() {
         productLineId: plId || plObj?.id || plObj?._id,
         productLine: plObj || p.productLine,
         productLineName: p.productLineName || plObj?.name || p.productLine?.name || '',
-        imageUrl: lineImg || '/assets/mattress/foam1.png',
+        imageUrl: p.imageUrl || lineImg || '/assets/mattress/foam1.png',
         code: p.code || `${brandObj?.code || p.brand?.code || 'MF'}-${catObj?.code || p.category?.code || 'CAT'}`.toUpperCase(),
         name: p.name || 'Unnamed Product',
         posDisplayName: p.posDisplayName || plObj?.posDisplayName || '',
         status: p.status || 'ACTIVE',
       };
     }) as CatalogueProduct[];
-  }, [bootstrapData?.products, outOfStockData?.products, demoProducts, offlineSnapshot, productLineMap, productLineMapByCompound, categoryMap, brandMap]);
+  }, [hasBootstrapData, bootstrapData?.products, outOfStockData, demoProducts, offlineSnapshot, productLineMap, productLineMapByCompound, categoryMap, brandMap]);
 
   const variants: ProductVariant[] = useMemo(() => {
     const backendInStock = bootstrapData?.variants || [];
@@ -464,7 +462,7 @@ function POSContent() {
     const demoList = demoVariants || [];
 
     let list: any[] = [];
-    if (backendInStock.length > 0 || backendOutOfStock.length > 0) {
+    if (hasBootstrapData || outOfStockData) {
       const seen = new Set<string>();
       const merged: any[] = [];
       for (const v of [...backendInStock, ...backendOutOfStock]) {
@@ -506,28 +504,19 @@ function POSContent() {
         status: v.status || 'ACTIVE',
       };
     }) as ProductVariant[];
-  }, [bootstrapData?.variants, outOfStockData?.variants, demoVariants, offlineSnapshot]);
+  }, [hasBootstrapData, bootstrapData?.variants, outOfStockData, demoVariants, offlineSnapshot]);
 
   const isRetailAllowed = activeBranch?.settings?.allowRetailSales ?? true;
 
   const rawStock = useMemo(() => {
-    const backendList = bootstrapData?.inventoryBalances || [];
-    const offlineList = offlineSnapshot?.inventoryBalances || [];
-    const demoList = demoInventoryBalances || [];
-
-    return backendList.length > 0
-      ? backendList
-      : offlineList.length > 0
-        ? offlineList
-        : demoList;
+    return bootstrapData?.inventoryBalances ?? offlineSnapshot?.inventoryBalances ?? demoInventoryBalances;
   }, [bootstrapData?.inventoryBalances, offlineSnapshot, demoInventoryBalances]);
 
   const inventoryBalances: InventoryBalance[] = useMemo(() => {
     const list = Array.isArray(rawStock) ? rawStock : [];
     return list.map((b: any) => {
-      const soldQty = soldQuantitiesBySku[b.sku] || 0;
       const rawAvail = b.available !== undefined && b.available !== null ? Number(b.available) : Number(b.onHand || 0);
-      const av = Math.max(0, rawAvail - soldQty);
+      const av = Math.max(0, rawAvail);
       return {
         id: String(b.id || b._id || ''),
         sku: b.sku || '',
@@ -540,7 +529,7 @@ function POSContent() {
         categoryName: b.variant?.productId?.categoryId?.name || b.categoryName || '',
         sizeLabel: b.variant?.sizeId?.displayLabel || b.sizeLabel || '',
         thicknessInches: Number(b.variant?.thicknessId?.value || b.thicknessInches || 0),
-        onHand: Math.max(0, Number(b.onHand || 0) - soldQty),
+        onHand: Math.max(0, Number(b.onHand || 0)),
         reserved: Number(b.reserved || 0),
         available: av,
         reorderLevel: Number(b.reorderLevel || 5),
@@ -548,21 +537,38 @@ function POSContent() {
         updatedAt: b.updatedAt || new Date().toISOString(),
       };
     });
-  }, [rawStock, soldQuantitiesBySku]);
+  }, [rawStock]);
 
   const rawHeld = isBackendMode
     ? (Array.isArray(backendHeldSales) ? backendHeldSales : (backendHeldSales as any)?.data || [])
     : demoHeldSales;
   const heldSales: HeldSale[] = (Array.isArray(rawHeld) ? rawHeld : []) as HeldSale[];
 
+  const pendingQuantities = useMemo(() => {
+    const quantities = new Map<string, number>();
+    for (const { checkoutPayload } of pendingSales) {
+      const branchId = checkoutPayload.sourceBranchId || checkoutPayload.branchId;
+      if (branchId !== effectiveStockBranchId) continue;
+      for (const { sku, quantity } of checkoutPayload.items) {
+        quantities.set(sku, (quantities.get(sku) || 0) + quantity);
+      }
+    }
+    return quantities;
+  }, [pendingSales, effectiveStockBranchId]);
+
   // Filtered inventory balances for effective stock branch
   const branchBalances = useMemo(() => {
     if (!effectiveStockBranchId) return inventoryBalances;
-    return inventoryBalances.filter((b) => {
-      const bId = String(b.branchId || '');
-      return bId === effectiveStockBranchId;
+    return inventoryBalances.filter((b) => b.branchId === effectiveStockBranchId).map((balance) => {
+      const pending = pendingQuantities.get(balance.sku) || 0;
+      if (!pending) return balance;
+      return {
+        ...balance,
+        onHand: Math.max(0, balance.onHand - pending),
+        available: Math.max(0, (balance.available ?? balance.onHand) - pending),
+      };
     });
-  }, [inventoryBalances, effectiveStockBranchId]);
+  }, [inventoryBalances, effectiveStockBranchId, pendingQuantities]);
 
   // Fast O(1) balance maps to eliminate O(N*M) lookup lag
   const { balanceByVariantId, balanceBySku } = useMemo(() => {
@@ -582,18 +588,16 @@ function POSContent() {
     for (let i = 0; i < variants.length; i++) {
       const v = variants[i];
       const balance = balanceByVariantId.get(v.id) || balanceBySku.get(v.sku);
-      const soldQty = soldQuantitiesBySku[v.sku] || 0;
       let baseStock = 0;
       if (balance) {
         baseStock = balance.available !== undefined && balance.available !== null ? balance.available : (balance.onHand || 0);
-      } else {
-        baseStock = v.stock ?? (v as any).onHand ?? 0;
+      } else if (!isBackendMode || !effectiveStockBranchId) {
+        baseStock = Math.max(0, (v.stock ?? 0) - (pendingQuantities.get(v.sku) || 0));
       }
-      const stock = Math.max(0, baseStock - soldQty);
-      map[v.id] = stock;
+      map[v.id] = baseStock;
     }
     return map;
-  }, [variants, balanceByVariantId, balanceBySku, soldQuantitiesBySku, isBackendMode, effectiveStockBranchId]);
+  }, [variants, balanceByVariantId, balanceBySku, pendingQuantities, isBackendMode, effectiveStockBranchId]);
 
   // Fast O(V) group variants by product ID
   const variantsByProductId = useMemo(() => {
@@ -704,19 +708,6 @@ function POSContent() {
     }
   }, [brands, categories, sizes, thicknesses, products, variants, inventoryBalances, activeBranch, branches, isOnline]);
 
-  // Auto-refresh when internet is restored from offline mode
-  const wasOfflineRef = useRef<boolean>(false);
-  useEffect(() => {
-    if (!isOnline) {
-      wasOfflineRef.current = true;
-    } else if (wasOfflineRef.current && isOnline) {
-      wasOfflineRef.current = false;
-      setTimeout(() => {
-        window.location.reload();
-      }, 500);
-    }
-  }, [isOnline]);
-
   // Selected Brand and Category States
   const [chosenBrandId, setChosenBrandId] = useState<string | null>(null);
 
@@ -784,6 +775,10 @@ function POSContent() {
   const [cartItems, setCartItems] = useState<POSCartItem[]>(() => {
     return demoStorage.getItem<POSCartItem[]>(STORAGE_KEYS.POS_CART, []);
   });
+
+  useEffect(() => {
+    if (isMounted) demoStorage.setItem(STORAGE_KEYS.POS_CART, cartItems);
+  }, [cartItems, isMounted]);
 
   // Pre-load existing invoice items and configuration when editing an invoice
   useEffect(() => {
@@ -1156,6 +1151,7 @@ function POSContent() {
         const newQty = existing.quantity + item.quantity;
         updated[existingIdx] = {
           ...existing,
+          categoryName: item.categoryName,
           quantity: newQty,
           lineTotal: existing.unitPrice * newQty,
         };
@@ -1348,8 +1344,8 @@ function POSContent() {
         discount: (it as any).discount || 0,
         total: it.unitPrice * it.quantity,
         lineTotal: it.unitPrice * it.quantity,
-        sizeLabel: it.sizeLabel || '',
-        thicknessLabel: it.thicknessLabel || '',
+        sizeLabel: isPillowCategory(it.categoryName) ? '' : it.sizeLabel || '',
+        thicknessLabel: isPillowCategory(it.categoryName) ? '' : it.thicknessLabel || '',
       })),
     };
 
@@ -1374,18 +1370,6 @@ function POSContent() {
     }
 
     // 4. Instant Sale Completion (Zero waiting for network!)
-    // Decrement local inventory cache immediately
-    const soldMap: Record<string, number> = {};
-    cartItems.forEach((item) => {
-      soldMap[item.sku] = (soldMap[item.sku] || 0) + item.quantity;
-    });
-    setSoldQuantitiesBySku((prev) => {
-      const next = { ...prev };
-      Object.entries(soldMap).forEach(([sku, qty]) => {
-        next[sku] = (next[sku] || 0) + qty;
-      });
-      return next;
-    });
 
     // Close payment modal, set completed invoice, open receipt modal (only if not direct print), and clear cart
     setIsPaymentModalOpen(false);
@@ -1641,29 +1625,39 @@ function POSContent() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // 1. Auto-refresh page once internet is restored (switching from offline to online)
-  useEffect(() => {
-    let wasOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-    const handleOffline = () => {
-      wasOffline = true;
-    };
-
-    const handleOnline = () => {
-      if (wasOffline) {
-        // Automatically refresh once when online connection returns
-        window.location.reload();
+  const handleHardRefresh = async () => {
+    if (!isOnline || isCheckingOut || isSyncing || isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      if (isBackendMode) {
+        const response = await fetch(`${POS_API_BASE_URL}/pos/bootstrap?refresh=1`, {
+          credentials: 'include',
+          cache: 'no-store',
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!response.ok) throw new Error('POS bootstrap refresh failed');
       }
-    };
-
-    window.addEventListener('offline', handleOffline);
-    window.addEventListener('online', handleOnline);
-
-    return () => {
-      window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('online', handleOnline);
-    };
-  }, []);
+      if (isCheckoutLockRef.current || handlersRef.current.isCheckingOut) {
+        setIsRefreshing(false);
+        return;
+      }
+      if (!demoStorage.setItem(STORAGE_KEYS.POS_CART, handlersRef.current.cartItems)) {
+        throw new Error('Could not save cart');
+      }
+      window.location.reload();
+    } catch {
+      setIsRefreshing(false);
+      setToast({
+        id: Date.now().toString(),
+        type: 'error',
+        title: 'Refresh failed',
+        message: 'Could not load the latest POS data. Try again.',
+        duration: 3500,
+      });
+    }
+  };
 
   // 2. Block accidental refresh (F5, Ctrl+R, reload dialog) while offline
   useEffect(() => {
@@ -1745,6 +1739,9 @@ function POSContent() {
         pendingOfflineCount={pendingCount}
         isSyncing={isSyncing}
         onSyncClick={triggerSync}
+        onRefreshClick={handleHardRefresh}
+        isRefreshing={isRefreshing}
+        refreshDisabled={!isOnline || isCheckingOut || isSyncing}
       />
 
       {/* Editing Invoice Mode Banner */}
@@ -1821,8 +1818,8 @@ function POSContent() {
                 stockFilter === 'IN_STOCK'
                   ? brandProductsInStockCount
                   : stockFilter === 'OUT_OF_STOCK'
-                  ? brandProductsOutOfStockCount
-                  : brandProductsTotalCount
+                    ? brandProductsOutOfStockCount
+                    : brandProductsTotalCount
               }
             />
 
@@ -1830,8 +1827,8 @@ function POSContent() {
             <ProductGrid
               brandName={currentBrand?.name || 'Products'}
               products={filteredProducts}
-              variants={variants}
-              inventoryBalances={branchBalances}
+              variantsByProductId={variantsByProductId}
+              variantStockMap={variantStockMap}
               onSelectProduct={(product) => setConfigModalProduct(product)}
               selectedProductId={configModalProduct?.id}
               saleType={saleType}
@@ -1913,9 +1910,9 @@ function POSContent() {
         product={configModalProduct}
         brandName={currentBrand?.name || ''}
         categoryName={
-          categoryMap.get(String(configModalProduct?.categoryId))?.name || 'Foam'
+          categoryMap.get(String(configModalProduct?.categoryId))?.name || configModalProduct?.category?.name || 'Foam'
         }
-        variants={variants}
+        variants={configModalProduct ? variantsByProductId.get(String(configModalProduct.id)) || [] : []}
         sizes={sizes}
         thicknesses={thicknesses}
         inventoryBalances={branchBalances}

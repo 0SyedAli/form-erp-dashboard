@@ -5,9 +5,11 @@ import { z } from 'zod';
 const currentDir = typeof __dirname !== 'undefined' ? __dirname : path.resolve(process.cwd(), 'src/config');
 const backendDir = path.resolve(currentDir, '../..');
 
-// Load environment variables from backend/.env or cwd/.env
+// Load environment variables from backend/.env, backend/env or cwd/.env
 dotenv.config({ path: path.resolve(backendDir, '.env') });
+dotenv.config({ path: path.resolve(backendDir, 'env') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), 'env') });
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(5001),

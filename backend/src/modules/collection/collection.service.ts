@@ -41,6 +41,11 @@ export class CollectionService {
         }).session(session);
 
         if (existingCol) {
+          if (String(existingCol.customerId) !== input.customerId ||
+              (input.branchId && String(existingCol.branchId) !== input.branchId) ||
+              (userContext.role !== 'SUPER_ADMIN' && String(existingCol.branchId) !== userContext.branchId)) {
+            throw new AppError('Collection reference is unavailable for this customer and branch.', 409, 'COLLECTION_KEY_CONFLICT');
+          }
           return {
             collection: existingCol,
             message: 'Idempotent replay: original collection record returned.',
@@ -58,8 +63,13 @@ export class CollectionService {
       // 3. Resolve Branch & Enforce Strict Branch Boundary
       let effectiveBranchId: mongoose.Types.ObjectId | null = null;
       const explicitBranchStr =
-        (userContext.branchId && userContext.branchId !== 'ALL' ? userContext.branchId : undefined) ||
-        (input.branchId && input.branchId !== 'ALL' ? input.branchId : undefined);
+        (userContext.role === 'SUPER_ADMIN' ? input.branchId : userContext.branchId) || undefined;
+      if (userContext.role !== 'SUPER_ADMIN' && (!explicitBranchStr || (input.branchId && input.branchId !== explicitBranchStr))) {
+        throw new AppError('Collections must be recorded at your assigned branch.', 403, 'FORBIDDEN_CROSS_BRANCH_COLLECTION');
+      }
+      if (explicitBranchStr && !mongoose.Types.ObjectId.isValid(explicitBranchStr)) {
+        throw new AppError('Select a valid collection branch.', 400, 'INVALID_BRANCH');
+      }
 
       if (explicitBranchStr && mongoose.Types.ObjectId.isValid(explicitBranchStr)) {
         effectiveBranchId = new mongoose.Types.ObjectId(explicitBranchStr);
@@ -112,7 +122,7 @@ export class CollectionService {
       }
 
       // 4. Find open invoices with balanceDue > 0
-      let openInvoices = await SalesInvoice.find({
+      const openInvoices = await SalesInvoice.find({
         customerId: customer._id,
         branchId: effectiveBranchId,
         balanceDue: { $gt: 0 },
@@ -120,22 +130,7 @@ export class CollectionService {
         .sort({ createdAt: 1 }) // FIFO / Oldest first
         .session(session);
 
-      // If user is SUPER_ADMIN and no open invoices found at the initially resolved branch,
-      // fallback to customer's open invoices at other branches
-      if (openInvoices.length === 0 && userContext.role === 'SUPER_ADMIN') {
-        const anyBranchInvoices = await SalesInvoice.find({
-          customerId: customer._id,
-          balanceDue: { $gt: 0 },
-        })
-          .sort({ createdAt: 1 })
-          .session(session);
-
-        if (anyBranchInvoices.length > 0) {
-          openInvoices = anyBranchInvoices;
-          effectiveBranchId = anyBranchInvoices[0].branchId as mongoose.Types.ObjectId;
-        }
-      }
-
+      const openInvoicesById = new Map(openInvoices.map((invoice) => [invoice._id.toString(), invoice]));
       const totalBranchOutstanding = openInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
 
       // Branch Isolation Guard: A branch user cannot collect payments for a customer assigned to another branch
@@ -158,11 +153,16 @@ export class CollectionService {
         allocatedAmount: number;
       }> = [];
 
-      if (input.allocations && input.allocations.length > 0) {
+      if (input.allocations) {
         // Manual allocation
         let manualSum = 0;
+        const allocatedInvoices = new Set<string>();
         for (const alloc of input.allocations) {
-          const inv = openInvoices.find((i) => i._id.toString() === alloc.invoiceId);
+          if (allocatedInvoices.has(alloc.invoiceId)) {
+            throw new AppError('Each invoice can only be allocated once.', 400, 'DUPLICATE_INVOICE_ALLOCATION');
+          }
+          allocatedInvoices.add(alloc.invoiceId);
+          const inv = openInvoicesById.get(alloc.invoiceId);
           if (!inv) {
             throw new AppError(
               `Invoice ${alloc.invoiceId} does not belong to this branch or has no balance due. Cross-branch collection is strictly prohibited.`,
@@ -179,7 +179,7 @@ export class CollectionService {
             );
           }
 
-          manualSum += alloc.allocatedAmount;
+          manualSum = Math.round((manualSum + alloc.allocatedAmount) * 100) / 100;
           finalAllocations.push({
             invoiceId: inv._id as mongoose.Types.ObjectId,
             invoiceNumber: inv.invoiceNumber,
@@ -195,7 +195,7 @@ export class CollectionService {
           );
         }
 
-        remainingToAllocate = input.amount - manualSum;
+        remainingToAllocate = Math.round((input.amount - manualSum) * 100) / 100;
       } else {
         // Automatic oldest-invoice-first FIFO allocation
         for (const inv of openInvoices) {
@@ -206,28 +206,27 @@ export class CollectionService {
             invoiceNumber: inv.invoiceNumber,
             allocatedAmount: allocAmount,
           });
-          remainingToAllocate -= allocAmount;
+          remainingToAllocate = Math.round((remainingToAllocate - allocAmount) * 100) / 100;
         }
       }
 
       // 6. Update Each Allocated Invoice
-      let totalAppliedToInvoices = 0;
       for (const alloc of finalAllocations) {
-        totalAppliedToInvoices += alloc.allocatedAmount;
-
-        const inv = openInvoices.find((i) => i._id.toString() === alloc.invoiceId.toString());
+        const inv = openInvoicesById.get(alloc.invoiceId.toString());
         if (inv) {
-          inv.paidAmount += alloc.allocatedAmount;
-          inv.balanceDue = Math.max(0, inv.balanceDue - alloc.allocatedAmount);
+          inv.paidAmount = Math.round((inv.paidAmount + alloc.allocatedAmount) * 100) / 100;
+          inv.balanceDue = Math.max(0, Math.round((inv.balanceDue - alloc.allocatedAmount) * 100) / 100);
           inv.paymentStatus = inv.balanceDue === 0 ? PAYMENT_STATUSES.PAID : PAYMENT_STATUSES.PARTIAL;
           await inv.save({ session });
         }
       }
 
       // 7. Update Customer Outstanding Balance
-      const previousOutstanding = customer.outstandingBalance || 0;
-      const amountToReduce = Math.min(previousOutstanding, Math.max(totalAppliedToInvoices, input.amount));
-      const newOutstanding = Math.max(0, previousOutstanding - amountToReduce);
+      const [receivable] = await SalesInvoice.aggregate([
+        { $match: { customerId: customer._id, balanceDue: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: '$balanceDue' } } },
+      ]).session(session);
+      const newOutstanding = Math.round((receivable?.total || 0) * 100) / 100;
       customer.outstandingBalance = newOutstanding;
       await customer.save({ session });
 
@@ -327,7 +326,7 @@ export class CollectionService {
         totalCollected: collection.totalCollected,
         unallocatedAdvance: collection.unallocatedAmount || 0,
         unallocatedAmount: remainingToAllocate,
-        appliedAmount: totalAppliedToInvoices,
+        appliedAmount: Math.round((input.amount - remainingToAllocate) * 100) / 100,
         newCustomerOutstanding: newOutstanding,
         message: 'Payment collection recorded and allocated successfully.',
         isReplay: false,

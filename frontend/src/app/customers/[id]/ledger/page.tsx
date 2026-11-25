@@ -2,6 +2,7 @@
 
 import React, { use, useState, useMemo, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   useGetCustomerByIdQuery,
   useGetCustomerLedgerQuery,
@@ -43,13 +44,14 @@ interface LedgerPageProps {
 function LedgerContent({ params }: LedgerPageProps) {
   const resolvedParams = use(params);
   const customerId = resolvedParams.id;
-  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE !== 'demo';
 
   const currentUser = useAppSelector((state) => state.auth.currentUser);
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
   // Branch selector state (Super Admin can switch; Branch staff is locked to their branch)
-  const [selectedBranch, setSelectedBranch] = useState<string>('ALL');
+  const searchParams = useSearchParams();
+  const [selectedBranch, setSelectedBranch] = useState(searchParams.get('branchId') || 'ALL');
 
   // Demo Queries
   const { data: demoCustomer, isLoading: isDemoCustLoading } = useGetCustomerByIdQuery(customerId, {
@@ -273,7 +275,7 @@ function LedgerContent({ params }: LedgerPageProps) {
 
           <div className="flex flex-wrap items-center gap-2.5">
             <Link
-              href={`/payments/collections?customerId=${customerId}`}
+              href={`/payments/collections?customerId=${encodeURIComponent(customerId)}${selectedBranch === 'ALL' ? '' : `&branchId=${encodeURIComponent(selectedBranch)}`}`}
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Receipt className="w-4 h-4" />
@@ -327,7 +329,7 @@ function LedgerContent({ params }: LedgerPageProps) {
             </div>
 
             <Link
-              href={`/payments/collections?customerId=${customerId}`}
+              href={`/payments/collections?customerId=${encodeURIComponent(customerId)}${selectedBranch === 'ALL' ? '' : `&branchId=${encodeURIComponent(selectedBranch)}`}`}
               className="shrink-0 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 self-stretch sm:self-auto justify-center cursor-pointer"
             >
               <Receipt className="w-4 h-4" />

@@ -4,7 +4,7 @@ export const createCollectionSchema = z.object({
   body: z.object({
     customerId: z.string().min(1, 'Customer ID is required'),
     branchId: z.string().optional(),
-    amount: z.number().min(1, 'Collection amount must be at least 1'),
+    amount: z.number().min(0.01).multipleOf(0.01),
     paymentMethod: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'CHEQUE', 'ONLINE']).default('CASH'),
     reference: z.string().optional(),
     notes: z.string().optional(),
@@ -12,7 +12,7 @@ export const createCollectionSchema = z.object({
       .array(
         z.object({
           invoiceId: z.string().min(1),
-          allocatedAmount: z.number().min(1),
+          allocatedAmount: z.number().min(0.01).multipleOf(0.01),
         })
       )
       .optional(), // If omitted, oldest-first auto-allocation is applied

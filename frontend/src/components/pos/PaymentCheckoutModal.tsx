@@ -247,9 +247,9 @@ export default function PaymentCheckoutModal({
                 {saleType}
               </span>
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5 font-medium">
+            {/* <p className="text-xs text-slate-500 mt-0.5 font-medium">
               Review payment amount, select khata terms, and confirm customer record
-            </p>
+            </p> */}
           </div>
           <button
             type="button"
@@ -358,14 +358,14 @@ export default function PaymentCheckoutModal({
                 {parsedReceived < totalAmount && (
                   <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-3 text-xs space-y-2">
                     <div className="flex items-center justify-between text-amber-900 font-bold">
-                      <span>Shortfall (Kam Raqam Di):</span>
+                      <span>Remaining:</span>
                       <span className="text-sm font-black text-amber-950">
                         Rs. {shortfallAmount.toLocaleString()}
                       </span>
                     </div>
-                    <p className="text-[11px] text-amber-800 leading-relaxed font-normal">
+                    {/* <p className="text-[11px] text-amber-800 leading-relaxed font-normal">
                       Customer gave Rs. {parsedReceived.toLocaleString()} instead of Rs. {totalAmount.toLocaleString()}.
-                    </p>
+                    </p> */}
                     <label className="flex items-center gap-2 text-slate-800 font-semibold cursor-pointer pt-1 border-t border-amber-200/60">
                       <input
                         type="checkbox"
@@ -374,12 +374,12 @@ export default function PaymentCheckoutModal({
                         className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4"
                       />
                       <span className="text-[11px]">
-                        Waive remaining <strong>Rs. {shortfallAmount.toLocaleString()}</strong> as discount / concession (Bill marked Paid)
+                        <strong>Rs. {shortfallAmount.toLocaleString()}</strong> Bill marked Paid
                       </span>
                     </label>
                     {!applyShortfallAsConcession && (
                       <p className="text-[11px] text-amber-900 font-bold pt-1">
-                        👉 Remaining Rs. {shortfallAmount.toLocaleString()} will be recorded as Khata / Udhaar for this customer.
+                        Remaining <span className='text-[13px]'>Rs. {shortfallAmount.toLocaleString()}</span> will be recorded as Khata.
                       </p>
                     )}
                   </div>
@@ -438,13 +438,13 @@ export default function PaymentCheckoutModal({
                 <div className="flex items-center justify-between text-xs font-bold text-amber-950">
                   <label htmlFor="modal-credit-advance" className="flex items-center gap-1.5">
                     <Banknote className="w-3.5 h-3.5 text-amber-700" />
-                    <span>Advance / Partial Amount Paid Now (Rs.)</span>
+                    <span>Advance (Rs.)</span>
                   </label>
                   <span className="text-[11px] text-amber-700 font-semibold">(Optional)</span>
                 </div>
-                <p className="text-[11px] text-amber-800 leading-tight">
+                {/* <p className="text-[11px] text-amber-800 leading-tight">
                   Agar customer abhi kuch peshgi (down-payment) de raha ho to yahan likhein:
-                </p>
+                </p> */}
                 <div className="relative mt-1">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">
                     Rs.
@@ -507,7 +507,7 @@ export default function PaymentCheckoutModal({
 
                 {/* Calculation Summary */}
                 <div className="mt-2 pt-2 border-t border-amber-200/60 flex items-center justify-between text-xs font-bold">
-                  <span className="text-amber-900">Remaining Khata Balance (Udhaar):</span>
+                  <span className="text-amber-900">Remaining:</span>
                   <span className="text-amber-950 font-black text-sm">
                     Rs. {remainingKhataAmount.toLocaleString()}
                   </span>
@@ -548,7 +548,7 @@ export default function PaymentCheckoutModal({
                     <span>Customer Details</span>
                     {isCreditActive ? (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200">
-                        Required for Khata (Lazmi)
+                        Required for Khata
                       </span>
                     ) : (
                       <span className="text-[10px] text-slate-400 font-semibold">(Optional)</span>
@@ -557,11 +557,11 @@ export default function PaymentCheckoutModal({
                   <span className="text-[11px] text-slate-400">Walk-in</span>
                 </div>
 
-                {isCreditActive && (
+                {/* {isCreditActive && (
                   <p className="text-[11px] text-amber-800 font-medium bg-amber-50 border border-amber-200/80 rounded-lg p-2 leading-relaxed">
                     Udhaar / Khata sale ke liye customer ka Name aur Phone Number lazmi likhein taake ledger record ban sake.
                   </p>
-                )}
+                )} */}
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="relative">
@@ -672,15 +672,15 @@ export default function PaymentCheckoutModal({
                       <div className="p-2.5 bg-rose-100/80 border border-rose-300 rounded-lg text-rose-900 text-xs space-y-1">
                         <div className="flex items-center gap-1.5 font-bold">
                           <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                          <span>Customer Credit Limit Exceeded!</span>
+                          <span>Khata Limit Exceeded!</span>
                         </div>
                         <p className="text-[11px] text-rose-800 leading-tight">
-                          Customer limit is <strong>Rs. {customerCreditLimit.toLocaleString()}</strong>.
-                          New outstanding will be <strong>Rs. {newProjectedOutstanding.toLocaleString()}</strong> (Exceeded by Rs. {(newProjectedOutstanding - customerCreditLimit).toLocaleString()}).
+                          Limit <strong>Rs. {customerCreditLimit.toLocaleString()}</strong>.
+                          New <strong>Rs. {newProjectedOutstanding.toLocaleString()}</strong> (Exceeded by Rs. {(newProjectedOutstanding - customerCreditLimit).toLocaleString()}).
                         </p>
-                        <p className="text-[10px] text-rose-700 font-semibold italic pt-0.5">
+                        {/* <p className="text-[10px] text-rose-700 font-semibold italic pt-0.5">
                           Notice: This is for information. You can still proceed and complete this sale.
-                        </p>
+                        </p> */}
                       </div>
                     )}
                   </div>
@@ -738,12 +738,12 @@ export default function PaymentCheckoutModal({
           </div>
 
           {/* Inline Validation Hints (Replaces intrusive alerts) */}
-          {isWalkInCreditMissing && (
+          {/* {isWalkInCreditMissing && (
             <p className="text-[11px] text-rose-600 font-semibold text-center flex items-center justify-center gap-1.5">
               <ShieldAlert className="w-3.5 h-3.5" />
               <span>Khata / Udhaar sale ke liye Customer Name aur Phone Number likhna lazmi hai.</span>
             </p>
-          )}
+          )} */}
 
           {isWholesaleCustomerMissing && (
             <p className="text-[11px] text-blue-600 font-semibold text-center flex items-center justify-center gap-1.5">

@@ -21,7 +21,6 @@ import { getPendingSales, removePendingSale } from '@/lib/offline/posOfflineDb';
 import { formatDate, formatDateTime } from '@/utils/formatters';
 import { useClientPagination } from '@/components/common/Pagination';
 import {
-  ArrowLeft,
   Search,
   Printer,
   Store,
@@ -44,15 +43,28 @@ import {
 } from 'lucide-react';
 import InvoiceReceiptModal from '@/components/pos/InvoiceReceiptModal';
 
+function collectionHref(invoice: Invoice) {
+  return `/payments/collections?${new URLSearchParams({
+    customerId: invoice.customerId || '',
+    invoiceId: invoice.id,
+    branchId: invoice.branchId || '',
+  })}`;
+}
+
+function canCollect(invoice: Invoice) {
+  return Boolean(invoice.customerId && invoice.amountDue > 0 &&
+    invoice.status !== 'VOID' && invoice.status !== 'CANCELLED' && !invoice.id.startsWith('TXN-'));
+}
+
 function SalesHistoryContent() {
   const currentUser = useAppSelector((state) => state.auth.currentUser);
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
-  const isBackendMode =
-    process.env.NEXT_PUBLIC_DATA_MODE === 'backend' ||
-    process.env.NEXT_PUBLIC_USE_BACKEND !== 'false';
+  const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE !== 'demo';
 
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<'SALES' | 'DISPATCHES'>('SALES');
+  const userBranchId = currentUser?.assignedBranchId || currentUser?.branchId;
+  const [selectedBranchId, setSelectedBranchId] = useState('ALL');
 
   React.useEffect(() => {
     setMounted(true);
@@ -65,8 +77,8 @@ function SalesHistoryContent() {
   const { data: demoBranches = [] } = useGetBranchesQuery(undefined, { skip: !mounted || isBackendMode });
   const { data: demoCustomers = [] } = useGetCustomersQuery(undefined, { skip: !mounted || isBackendMode });
 
-  const { data: backendInvoices = [], isLoading: isBackendLoading } = useGetBackendInvoicesQuery(
-    { limit: 100, scope: activeTab === 'DISPATCHES' ? 'dispatches' : 'sales' },
+  const { currentData: backendInvoices = [], isFetching: isBackendLoading } = useGetBackendInvoicesQuery(
+    { limit: 100, scope: activeTab === 'DISPATCHES' ? 'dispatches' : 'sales', branchId: selectedBranchId === 'ALL' ? undefined : selectedBranchId },
     { skip: !mounted || !isBackendMode, refetchOnMountOrArgChange: true }
   );
   const { data: backendBranches = [] } = useGetBackendBranchesQuery(undefined, {
@@ -175,7 +187,7 @@ function SalesHistoryContent() {
           amountPaid: paid,
           amountReceived: paid,
           amountDue: due,
-          paymentStatus: inv.paymentStatus || 'PAID',
+          paymentStatus: inv.paymentStatus === 'PARTIAL' ? 'PARTIALLY_PAID' : inv.paymentStatus || 'PAID',
           paymentMethod: inv.paymentArrangement || inv.paymentMethod || 'CASH',
           status: inv.status || 'COMPLETED',
           date: inv.date || inv.createdAt,
@@ -204,10 +216,6 @@ function SalesHistoryContent() {
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const userBranchId = currentUser?.assignedBranchId || currentUser?.branchId;
-  const [selectedBranchId, setSelectedBranchId] = useState<string>(
-    userBranchId || 'ALL'
-  );
   const [selectedSaleType, setSelectedSaleType] = useState<string>('ALL');
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>('ALL');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('ALL');
@@ -255,8 +263,7 @@ function SalesHistoryContent() {
       }
 
       setActionSuccess(
-        `Invoice #${targetInvoice.invoiceNumber} deleted successfully (${
-          returnStock ? 'Stock restored to inventory' : 'Stock inventory unchanged'
+        `Invoice #${targetInvoice.invoiceNumber} deleted successfully (${returnStock ? 'Stock restored to inventory' : 'Stock inventory unchanged'
         }).`
       );
       setDeletingInvoice(null);
@@ -392,13 +399,13 @@ function SalesHistoryContent() {
         {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <Link
+            {/* <Link
               href="/pos"
               className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 bg-white border border-slate-200 hover:bg-blue-50 px-3 py-2 rounded-xl transition-colors shadow-2xs"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Back to POS</span>
-            </Link>
+            </Link> */}
             <div>
               <h1 className="text-xl font-extrabold text-slate-900 tracking-tight font-sans">
                 POS Sales History &amp; Invoices
@@ -655,7 +662,7 @@ function SalesHistoryContent() {
                     </tr>
                   ) : (
                     <tr>
-                      <th className="py-3.5 px-4">Invoice # &amp; Date</th>
+                      <th className="py-3.5 px-4 whitespace-nowrap">Invoice # &amp; Date</th>
                       <th className="py-3.5 px-4">Customer</th>
                       <th className="py-3.5 px-4">Branch</th>
                       <th className="py-3.5 px-4">Sale Tier</th>
@@ -701,7 +708,7 @@ function SalesHistoryContent() {
                       if (activeTab === 'DISPATCHES') {
                         return (
                           <tr key={inv.id} className="hover:bg-amber-50/40 transition-colors">
-                            <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
+                            <td className="py-3.5 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
                               {inv.invoiceNumber}
                             </td>
                             <td className="py-3.5 px-4 text-slate-500">{formattedDate}</td>
@@ -763,13 +770,12 @@ function SalesHistoryContent() {
                       return (
                         <tr
                           key={inv.id}
-                          className={`transition-colors ${
-                            isVoided ? 'bg-slate-50/70 hover:bg-slate-100/60 opacity-75' : 'hover:bg-slate-50/80'
-                          }`}
+                          className={`transition-colors ${isVoided ? 'bg-slate-50/70 hover:bg-slate-100/60 opacity-75' : 'hover:bg-slate-50/80'
+                            }`}
                         >
                           {/* 1. Invoice & Date */}
                           <td className="py-3 px-4">
-                            <span className="font-mono font-bold text-slate-900 block">
+                            <span className="font-mono font-bold text-slate-900 whitespace-nowrap">
                               {inv.invoiceNumber}
                             </span>
                             <span className="text-[11px] text-slate-400 font-sans block">
@@ -790,7 +796,7 @@ function SalesHistoryContent() {
                           </td>
 
                           {/* 3. Branch */}
-                          <td className="py-3 px-4">
+                          <td className="py-3 px-4 whitespace-nowrap">
                             <div className="font-semibold text-slate-800">{branchName}</div>
                             {inv.isInterBranch && inv.sourceBranchName && (
                               <span className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-extrabold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
@@ -803,13 +809,12 @@ function SalesHistoryContent() {
                           {/* 4. Sale Tier */}
                           <td className="py-3 px-4">
                             <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                sType === 'DISTRIBUTOR'
-                                  ? 'bg-purple-100 text-purple-700'
-                                  : sType === 'WHOLESALE'
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${sType === 'DISTRIBUTOR'
+                                ? 'bg-purple-100 text-purple-700'
+                                : sType === 'WHOLESALE'
                                   ? 'bg-amber-100 text-amber-700'
                                   : 'bg-blue-100 text-blue-700'
-                              }`}
+                                }`}
                             >
                               {sType === 'DISTRIBUTOR' ? (
                                 <Truck className="w-3 h-3" />
@@ -896,6 +901,12 @@ function SalesHistoryContent() {
                           {/* 9. Actions (Eye, Edit, Receipt, Delete) */}
                           <td className="py-3 px-4 text-right">
                             <div className="flex items-center justify-end gap-1">
+                              {canCollect(inv) && (
+                                <Link href={collectionHref(inv)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">
+                                  <DollarSign className="h-4 w-4" />
+                                  Collect Due
+                                </Link>
+                              )}
                               {/* View Details Modal (Eye Button) */}
                               <button
                                 type="button"
@@ -989,13 +1000,12 @@ function SalesHistoryContent() {
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
                         {viewingInvoice.saleType}
                       </span>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        viewingInvoice.paymentStatus === 'PAID'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : viewingInvoice.paymentStatus === 'PARTIALLY_PAID'
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${viewingInvoice.paymentStatus === 'PAID'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : viewingInvoice.paymentStatus === 'PARTIALLY_PAID'
                           ? 'bg-amber-100 text-amber-800'
                           : 'bg-purple-100 text-purple-800'
-                      }`}>
+                        }`}>
                         {viewingInvoice.paymentStatus}
                       </span>
                     </div>
@@ -1023,6 +1033,11 @@ function SalesHistoryContent() {
                     {viewingInvoice.customerName}
                   </div>
                   <div className="text-slate-500">Phone: {viewingInvoice.customerPhone || 'Not recorded'}</div>
+                  {viewingInvoice.customerId && (
+                    <Link href={`/customers/${encodeURIComponent(viewingInvoice.customerId)}/ledger?branchId=${encodeURIComponent(viewingInvoice.branchId || '')}`} className="text-xs font-semibold text-blue-700 hover:underline">
+                      View customer khata
+                    </Link>
+                  )}
                   <div className="text-slate-500">Tier: {viewingInvoice.customerType || viewingInvoice.saleType}</div>
                 </div>
 
@@ -1123,6 +1138,11 @@ function SalesHistoryContent() {
                 </button>
 
                 <div className="flex items-center gap-2">
+                  {canCollect(viewingInvoice) && (
+                    <Link href={collectionHref(viewingInvoice)} className="rounded-xl bg-emerald-700 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-800">
+                      Collect Due
+                    </Link>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
