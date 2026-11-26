@@ -803,6 +803,13 @@ export const catalogueApi = createApi({
         method: 'POST',
         body,
       }),
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch({ type: 'inventoryApi/invalidateTags', payload: ['StockBalance', 'InventorySummary', 'StockMovement'] });
+          dispatch({ type: 'api/invalidateTags', payload: ['InventoryBalances', 'Products', 'KPIs'] });
+        } catch {}
+      },
       invalidatesTags: ['Product', 'Variant', 'Brand', 'Category', 'ProductLine'],
     }),
   }),

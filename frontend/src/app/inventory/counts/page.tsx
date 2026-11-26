@@ -29,14 +29,35 @@ import {
 
 export default function StockCountsPage() {
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
   const { data: allBranches = [] } = useGetBranchesQuery();
   const authorizedBranches = getUserAuthorizedBranches(currentUser, allBranches);
   const { data: stockLocations = [] } = useGetStockLocationsQuery();
 
+  const duraBranch = React.useMemo(() => {
+    return (
+      allBranches.find(
+        (b: any) =>
+          b.name?.toLowerCase().includes('dura') ||
+          b.code?.toLowerCase().includes('312')
+      ) || allBranches[0]
+    );
+  }, [allBranches]);
+
   const [selectedBranchId, setSelectedBranchId] = useState<string>(
-    authorizedBranches[0]?.id || 'BR-MAIN-01'
+    currentUser?.assignedBranchId || ''
   );
+
+  React.useEffect(() => {
+    if (isSuperAdmin && !selectedBranchId && duraBranch?.id) {
+      setSelectedBranchId(duraBranch.id);
+    }
+  }, [isSuperAdmin, selectedBranchId, duraBranch]);
+
+  const effectiveBranchId = isSuperAdmin
+    ? selectedBranchId || duraBranch?.id
+    : currentUser?.assignedBranchId;
 
   // Active Count Session View
   const [activeSession, setActiveSession] = useState<StockCount | null>(null);
@@ -55,9 +76,14 @@ export default function StockCountsPage() {
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   // Queries & Mutations
-  const { data: counts = [], isLoading: isCountsLoading } = useGetStockCountsQuery({
-    branchId: selectedBranchId,
-  });
+  const { data: counts = [], isLoading: isCountsLoading } = useGetStockCountsQuery(
+    {
+      branchId: effectiveBranchId,
+    },
+    {
+      skip: isSuperAdmin && !effectiveBranchId,
+    }
+  );
 
   // Client Pagination (Hidden if <= 10 items)
   const { paginatedItems: paginatedCounts, PaginationComponent: CountsPagination } =
@@ -218,7 +244,7 @@ export default function StockCountsPage() {
             {/* Branch selector */}
             <select
               aria-label="Filter stock count by branch"
-              value={selectedBranchId}
+              value={effectiveBranchId || ''}
               onChange={(e) => {
                 setSelectedBranchId(e.target.value);
                 setActiveSession(null);
@@ -227,7 +253,7 @@ export default function StockCountsPage() {
             >
               {authorizedBranches.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name}
+                  {b.name} {b.code ? `(${b.code})` : ''}
                 </option>
               ))}
             </select>

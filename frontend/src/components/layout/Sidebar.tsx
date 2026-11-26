@@ -131,23 +131,7 @@ export default function Sidebar({
         { title: 'Inventory Overview', href: '/inventory', icon: LayoutDashboard },
       ],
     },
-    {
-      title: 'Purchases',
-      href: '/purchases/orders',
-      icon: ShoppingCart,
-      requiredPermission: 'purchases.view',
-      subItems: [
-        { title: 'Purchase Orders', href: '/purchases/orders', icon: ShoppingCart },
-        { title: 'Receive Stock', href: '/purchases/receiving', icon: ArrowDownToLine },
-        { title: 'Purchase Bills', href: '/purchases/bills', icon: Receipt },
-      ],
-    },
-    {
-      title: 'Suppliers',
-      href: '/suppliers',
-      icon: Building,
-      requiredPermission: 'suppliers.view',
-    },
+
     {
       title: 'Customers',
       href: '/customers',
@@ -171,10 +155,15 @@ export default function Sidebar({
       ]
       : []),
     {
-      title: 'Reports & Analytics',
-      href: '/reports',
-      icon: FileSpreadsheet,
-      requiredPermission: 'reports:view',
+      title: 'Purchases',
+      href: '/purchases/orders',
+      icon: ShoppingCart,
+      requiredPermission: 'purchases.view',
+      subItems: [
+        { title: 'Purchase Orders', href: '/purchases/orders', icon: ShoppingCart },
+        { title: 'Receive Stock', href: '/purchases/receiving', icon: ArrowDownToLine },
+        { title: 'Purchase Bills', href: '/purchases/bills', icon: Receipt },
+      ],
     },
     {
       title: 'Product Settings',
@@ -182,6 +171,19 @@ export default function Sidebar({
       icon: Settings,
       requiredPermission: 'catalogue:manage',
     },
+    {
+      title: 'Suppliers',
+      href: '/suppliers',
+      icon: Building,
+      requiredPermission: 'suppliers.view',
+    },
+    {
+      title: 'Reports & Analytics',
+      href: '/reports',
+      icon: FileSpreadsheet,
+      requiredPermission: 'reports:view',
+    },
+
   ];
 
   const visibleItems = navItems.filter((item) => {
@@ -222,9 +224,8 @@ export default function Sidebar({
 
       {/* Slide-over Drawer Sidebar Container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-brand-navy text-slate-300 flex flex-col transition-transform duration-300 ease-in-out border-r border-slate-800 shadow-2xl ${
-          isMobileOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-brand-navy text-slate-300 flex flex-col transition-transform duration-300 ease-in-out border-r border-slate-800 shadow-2xl ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         {/* Brand Header with Close Button */}
         <div className="h-18 flex items-center justify-between px-5 border-b border-slate-800/60 bg-[#0A101D] shrink-0">

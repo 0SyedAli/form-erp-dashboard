@@ -116,7 +116,7 @@ export default function AppLayout({
 
         {/* Footer */}
         <footer className="py-4 px-6 border-t border-gray-200/80 bg-white/70 text-center text-xs text-gray-500">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 max-w-7xl mx-auto">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 ">
             <span>
               © {new Date().getFullYear()} Master Molty Foam (Pvt) Ltd. All Rights Reserved.
             </span>

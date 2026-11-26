@@ -30,22 +30,49 @@ export default function StockMovementsPage() {
   const { data: variants = [] } = useGetProductVariantsQuery();
 
   // Filters
-  const defaultBranchId = isSuperAdmin ? 'all' : (currentUser?.assignedBranchId || 'all');
+  const duraBranch = React.useMemo(() => {
+    return (
+      allBranches.find(
+        (b: any) =>
+          b.name?.toLowerCase().includes('dura') ||
+          b.code?.toLowerCase().includes('312')
+      ) || allBranches[0]
+    );
+  }, [allBranches]);
+
   const [search, setSearch] = useState('');
-  const [branchFilter, setBranchFilter] = useState(defaultBranchId);
+  const [branchFilter, setBranchFilter] = useState<string>(
+    currentUser?.assignedBranchId || ''
+  );
+
+  React.useEffect(() => {
+    if (isSuperAdmin && (!branchFilter || branchFilter === 'all') && duraBranch?.id) {
+      setBranchFilter(duraBranch.id);
+    }
+  }, [isSuperAdmin, branchFilter, duraBranch]);
+
+  const effectiveBranchId = isSuperAdmin
+    ? branchFilter || duraBranch?.id
+    : currentUser?.assignedBranchId;
+
   const [typeFilter, setTypeFilter] = useState<StockMovementType | 'all'>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
   const [selectedMovementForView, setSelectedMovementForView] = useState<StockMovement | null>(null);
 
-  const { data: movements = [], isLoading } = useGetStockMovementsQuery({
-    branchId: branchFilter === 'all' ? undefined : branchFilter,
-    movementType: typeFilter === 'all' ? undefined : typeFilter,
-    startDate: startDate || undefined,
-    endDate: endDate || undefined,
-    search: search.trim() || undefined,
-  });
+  const { data: movements = [], isLoading } = useGetStockMovementsQuery(
+    {
+      branchId: effectiveBranchId,
+      movementType: typeFilter === 'all' ? undefined : typeFilter,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      search: search.trim() || undefined,
+    },
+    {
+      skip: isSuperAdmin && !effectiveBranchId,
+    }
+  );
 
   // Client Pagination (Hidden if <= 10 items)
   const { paginatedItems: paginatedMovements, PaginationComponent: MovementsPagination } =
@@ -127,14 +154,13 @@ export default function StockMovementsPage() {
             <div>
               <select
                 aria-label="Filter ledger by branch"
-                value={branchFilter}
+                value={effectiveBranchId || ''}
                 onChange={(e) => setBranchFilter(e.target.value)}
                 className="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-hidden focus:border-brand-blue"
               >
-                {isSuperAdmin && <option value="all">Consolidated (All Branches)</option>}
                 {authorizedBranches.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.name}
+                    {b.name} {b.code ? `(${b.code})` : ''}
                   </option>
                 ))}
               </select>
@@ -162,16 +188,16 @@ export default function StockMovementsPage() {
 
             {/* Clear Filters */}
             <div className="flex items-center justify-end">
-              {(search || branchFilter !== defaultBranchId || typeFilter !== 'all' || startDate || endDate) && (
+              {(search || (branchFilter && branchFilter !== effectiveBranchId) || typeFilter !== 'all' || startDate || endDate) && (
                 <button
                   onClick={() => {
                     setSearch('');
-                    setBranchFilter(defaultBranchId);
+                    setBranchFilter(effectiveBranchId || '');
                     setTypeFilter('all');
                     setStartDate('');
                     setEndDate('');
                   }}
-                  className="text-xs font-semibold text-brand-blue hover:underline"
+                  className="text-xs font-semibold text-brand-blue hover:underline cursor-pointer"
                 >
                   Reset Filters
                 </button>

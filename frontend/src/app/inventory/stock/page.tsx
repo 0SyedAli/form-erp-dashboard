@@ -4,7 +4,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAppSelector, RootState } from '@/store';
-import { useGetSkusQuery, useGetBrandsQuery } from '@/store/services/catalogueApi';
+import { useGetSkusQuery, useGetBrandsQuery, useGetBranchesQuery } from '@/store/services/catalogueApi';
 import { rankSearchResults } from '@/utils/searchRanker';
 import { Pagination } from '@/components/common/Pagination';
 import {
@@ -17,11 +17,47 @@ import {
   Package,
   ChevronRight,
   Filter,
+  Building2,
 } from 'lucide-react';
 
 export default function StockBalancesPage() {
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
-  const activeBranchId = currentUser?.assignedBranchId;
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+
+  // Optimized branch query (only Super Admin needs to fetch all branches for switching)
+  const { data: allBranches = [] } = useGetBranchesQuery(undefined, {
+    skip: !isSuperAdmin,
+  });
+
+  // Default Super Admin to DURA branch
+  const duraBranch = useMemo(() => {
+    return (
+      allBranches.find(
+        (b: any) =>
+          b.name?.toLowerCase().includes('dura') ||
+          b.code?.toLowerCase().includes('312')
+      ) || allBranches[0]
+    );
+  }, [allBranches]);
+
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(
+    currentUser?.assignedBranchId || ''
+  );
+
+  useEffect(() => {
+    if (isSuperAdmin && !selectedBranchId && duraBranch?.id) {
+      setSelectedBranchId(duraBranch.id);
+    }
+  }, [isSuperAdmin, selectedBranchId, duraBranch]);
+
+  const effectiveBranchId = isSuperAdmin
+    ? selectedBranchId || duraBranch?.id
+    : currentUser?.assignedBranchId;
+
+  const selectedBranchObj = useMemo(() => {
+    if (!effectiveBranchId) return null;
+    return allBranches.find((b: any) => b.id === effectiveBranchId) || null;
+  }, [allBranches, effectiveBranchId]);
 
   const { data: brands = [] } = useGetBrandsQuery();
 
@@ -68,10 +104,16 @@ export default function StockBalancesPage() {
     data: skusResponse,
     isLoading,
     isFetching,
-  } = useGetSkusQuery({
-    all: true,
-    ...(activeBranchId ? { branchId: activeBranchId } : {}),
-  });
+    refetch,
+  } = useGetSkusQuery(
+    {
+      all: true,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+    },
+    {
+      skip: isSuperAdmin && !effectiveBranchId,
+    }
+  );
 
   const rawBalances = useMemo(() => {
     if (Array.isArray(skusResponse?.data)) return skusResponse.data;
@@ -142,6 +184,15 @@ export default function StockBalancesPage() {
     });
   }, [rawBalances]);
 
+  // Dynamic branch-specific brand options (so other branch's brands don't leak)
+  const availableBrands = useMemo(() => {
+    const activeBrandIds = new Set(
+      normalizedBalances.map((b: any) => String(b.brandId)).filter(Boolean)
+    );
+    if (activeBrandIds.size === 0) return brands;
+    return brands.filter((br: any) => activeBrandIds.has(String(br.id || br._id)));
+  }, [brands, normalizedBalances]);
+
   // High-performance 0ms In-Memory Filter & Search with posDisplayName + productLineName First Priority!
   const filteredBalances = useMemo(() => {
     let list = normalizedBalances;
@@ -196,9 +247,17 @@ export default function StockBalancesPage() {
         {/* Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-              Stock Balances
-            </h1>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+                Stock Balances
+              </h1>
+              {selectedBranchObj && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-brand-blue border border-blue-200">
+                  <Building2 className="w-3 h-3" />
+                  {selectedBranchObj.name}
+                </span>
+              )}
+            </div>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">
               Live stock in hand. Formula:{' '}
               <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
@@ -208,6 +267,16 @@ export default function StockBalancesPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              title="Refresh stock balances"
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-sm font-medium rounded-xl shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 text-slate-500 ${isFetching ? 'animate-spin text-brand-blue' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
             <Link
               href="/inventory/receiving"
               className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-brand-blue hover:bg-brand-blue-hover text-white text-sm font-semibold rounded-xl shadow-2xs transition-all active:scale-95"
@@ -342,6 +411,30 @@ export default function StockBalancesPage() {
                 Filter:
               </span>
 
+              {/* Branch Selector for Super Admin */}
+              {isSuperAdmin && allBranches.length > 0 && (
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
+                  <Building2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase">Branch:</span>
+                  <select
+                    aria-label="Filter by branch"
+                    value={effectiveBranchId || ''}
+                    onChange={(e) => {
+                      setSelectedBranchId(e.target.value);
+                      setBrandFilter('all');
+                      setStockStatusFilter('all');
+                    }}
+                    className="bg-transparent text-xs font-bold text-slate-900 focus:outline-hidden cursor-pointer"
+                  >
+                    {allBranches.map((br: any) => (
+                      <option key={br.id} value={br.id}>
+                        {br.name} ({br.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Status Pills */}
               <button
                 type="button"
@@ -384,7 +477,7 @@ export default function StockBalancesPage() {
                 Out of Stock
               </button>
 
-              {/* Brand Filter */}
+              {/* Brand Filter (Dynamic per branch) */}
               <select
                 aria-label="Filter by brand"
                 value={brandFilter}
@@ -392,8 +485,8 @@ export default function StockBalancesPage() {
                 className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-hidden focus:border-brand-blue"
               >
                 <option value="all">All Brands</option>
-                {brands.map((br) => (
-                  <option key={br.id} value={br.id}>
+                {availableBrands.map((br: any) => (
+                  <option key={br.id || br._id} value={br.id || br._id}>
                     {br.name}
                   </option>
                 ))}

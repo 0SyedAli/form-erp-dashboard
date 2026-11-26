@@ -45,12 +45,34 @@ export default function InventoryOverviewPage() {
   const { data: allBranches = [] } = useGetBranchesQuery();
   const authorizedBranches = getUserAuthorizedBranches(currentUser, allBranches);
 
-  // Super Admin can view all or filter by branch; Branch Managers are scoped to their branch
+  // Super Admin defaults to DURA branch; Branch Managers are scoped to their branch
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
-  const defaultBranchId = isSuperAdmin ? 'all' : (currentUser?.assignedBranchId || 'all');
-  const [selectedBranchId, setSelectedBranchId] = useState<string>(defaultBranchId);
 
-  const activeBranchFilter = selectedBranchId === 'all' ? undefined : selectedBranchId;
+  const duraBranch = React.useMemo(() => {
+    return (
+      allBranches.find(
+        (b: any) =>
+          b.name?.toLowerCase().includes('dura') ||
+          b.code?.toLowerCase().includes('312')
+      ) || allBranches[0]
+    );
+  }, [allBranches]);
+
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(
+    currentUser?.assignedBranchId || ''
+  );
+
+  React.useEffect(() => {
+    if (isSuperAdmin && (!selectedBranchId || selectedBranchId === 'all') && duraBranch?.id) {
+      setSelectedBranchId(duraBranch.id);
+    }
+  }, [isSuperAdmin, selectedBranchId, duraBranch]);
+
+  const effectiveBranchId = isSuperAdmin
+    ? selectedBranchId || duraBranch?.id
+    : currentUser?.assignedBranchId;
+
+  const activeBranchFilter = effectiveBranchId;
   const { data: kpis, isLoading: isKPIsLoading } = useGetInventoryDashboardKPIsQuery(activeBranchFilter);
   const { data: lowStockBalances = [] } = useGetInventoryBalancesQuery({
     branchId: activeBranchFilter,
@@ -83,14 +105,13 @@ export default function InventoryOverviewPage() {
               <select
                 id="inventory-branch-select"
                 aria-label="Filter inventory by branch"
-                value={selectedBranchId}
+                value={effectiveBranchId || ''}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
                 className="bg-transparent text-sm font-semibold text-gray-900 focus:outline-hidden cursor-pointer"
               >
-                {isSuperAdmin && <option value="all">Consolidated (All Branches)</option>}
                 {authorizedBranches.map((br) => (
                   <option key={br.id} value={br.id}>
-                    {br.name}
+                    {br.name} {br.code ? `(${br.code})` : ''}
                   </option>
                 ))}
               </select>

@@ -255,6 +255,16 @@ function LedgerContent({ params }: LedgerPageProps) {
         {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden">
           <div className="flex items-center gap-3">
+
+            <div>
+              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight font-sans flex items-center gap-2">
+                {/* <FileSpreadsheet className="w-5 h-5 text-blue-600" /> */}
+                <span>Customer Account Ledger</span>
+              </h1>
+              <p className="text-xs text-slate-500 font-sans">
+                Complete chronological statement of credit sales, recoveries, and running balance
+              </p>
+            </div>
             <Link
               href="/customers"
               className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 bg-white border border-slate-200 hover:bg-blue-50 px-3 py-2 rounded-xl transition-colors shadow-2xs cursor-pointer"
@@ -262,15 +272,6 @@ function LedgerContent({ params }: LedgerPageProps) {
               <ArrowLeft className="w-4 h-4" />
               <span>Back to Customers</span>
             </Link>
-            <div>
-              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight font-sans flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5 text-blue-600" />
-                <span>Customer Account Ledger</span>
-              </h1>
-              <p className="text-xs text-slate-500 font-sans">
-                Complete chronological statement of credit sales, recoveries, and running balance
-              </p>
-            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
@@ -454,7 +455,7 @@ function LedgerContent({ params }: LedgerPageProps) {
             {/* 4 Financial KPI Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-5">
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                <span className="text-xs text-slate-500 font-semibold block">Total Invoiced (Debits)</span>
+                <span className="text-xs text-slate-500 font-semibold block">Total Purchase</span>
                 <span className="text-lg font-black text-slate-900 font-sans block mt-0.5">
                   Rs. {summary.totalDebit.toLocaleString()}
                 </span>
@@ -462,7 +463,7 @@ function LedgerContent({ params }: LedgerPageProps) {
               </div>
 
               <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
-                <span className="text-xs text-emerald-800 font-semibold block">Total Recovered (Credits)</span>
+                <span className="text-xs text-emerald-800 font-semibold block">Total Paid</span>
                 <span className="text-lg font-black text-emerald-700 font-sans block mt-0.5">
                   Rs. {summary.totalCredit.toLocaleString()}
                 </span>
@@ -476,7 +477,7 @@ function LedgerContent({ params }: LedgerPageProps) {
                   }`}
               >
                 <span className="text-xs font-semibold block text-slate-600">
-                  Current Balance Due (Baqaya)
+                  Balance (Bakaya)
                 </span>
                 <span
                   className={`text-lg font-black font-sans block mt-0.5 ${summary.outstanding > 0 ? 'text-rose-600' : 'text-emerald-700'
@@ -490,12 +491,12 @@ function LedgerContent({ params }: LedgerPageProps) {
               </div>
 
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                <span className="text-xs text-slate-500 font-semibold block">Credit Limit &amp; Avail</span>
+                <span className="text-xs text-slate-500 font-semibold block">Credit Limit</span>
                 <span className="text-lg font-black text-slate-900 font-sans block mt-0.5">
                   Rs. {summary.availableCredit.toLocaleString()}
                 </span>
                 <span className="text-[10px] text-slate-500">
-                  Limit: Rs. {summary.creditLimit.toLocaleString()} • {customer.creditTerms}
+                  Limit: Rs. {summary.creditLimit.toLocaleString()}
                 </span>
               </div>
             </div>
@@ -585,8 +586,8 @@ function LedgerContent({ params }: LedgerPageProps) {
                   <th className="py-3 px-4">Type</th>
                   <th className="py-3 px-4">Reference #</th>
                   <th className="py-3 px-4">Branch</th>
-                  <th className="py-3 px-4">Narration / Description</th>
-                  <th className="py-3 px-4">Staff</th>
+                  {/* <th className="py-3 px-4">Narration / Description</th> */}
+                  {/* <th className="py-3 px-4">Staff</th> */}
                   <th className="py-3 px-4 text-right">Debit (Rs.)</th>
                   <th className="py-3 px-4 text-right">Credit (Rs.)</th>
                   <th className="py-3 px-4 text-right">Balance (Rs.)</th>
@@ -595,13 +596,13 @@ function LedgerContent({ params }: LedgerPageProps) {
               <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
                 {isLedgerLoading ? (
                   <tr>
-                    <td colSpan={9} className="py-12 text-center text-slate-400">
+                    <td colSpan={7} className="py-12 text-center text-slate-400">
                       Loading ledger transactions...
                     </td>
                   </tr>
                 ) : filteredEntries.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-12 text-center text-slate-400">
+                    <td colSpan={7} className="py-12 text-center text-slate-400">
                       {rawEntries.length === 0
                         ? 'No posted ledger entries recorded for this customer account yet.'
                         : 'No transactions match the selected search or filter.'}
@@ -639,12 +640,12 @@ function LedgerContent({ params }: LedgerPageProps) {
                             <span>{entry.branchName}</span>
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-slate-600 max-w-sm text-xs leading-relaxed">
+                        {/* <td className="py-3.5 px-4 text-slate-600 max-w-sm text-xs leading-relaxed">
                           {entry.description}
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap text-[11px]">
+                        </td> */}
+                        {/* <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap text-[11px]">
                           {entry.performedBy}
-                        </td>
+                        </td> */}
                         <td className="py-3.5 px-4 text-right font-bold text-slate-900 font-sans whitespace-nowrap">
                           {entry.debit > 0 ? entry.debit.toLocaleString() : '-'}
                         </td>
@@ -663,7 +664,7 @@ function LedgerContent({ params }: LedgerPageProps) {
               {filteredEntries.length > 0 && (
                 <tfoot className="bg-slate-50/90 border-t-2 border-slate-200 font-black text-xs text-slate-900">
                   <tr>
-                    <td colSpan={6} className="py-3.5 px-4 text-right font-bold text-slate-600">
+                    <td colSpan={4} className="py-3.5 px-4 text-right font-bold text-slate-600">
                       Total for Current View:
                     </td>
                     <td className="py-3.5 px-4 text-right font-black text-slate-900 font-sans">

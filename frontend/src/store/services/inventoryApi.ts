@@ -1,4 +1,5 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import { catalogueApi } from './catalogueApi';
 
 export interface PaginationMeta {
   total: number;
@@ -316,6 +317,15 @@ export const inventoryApi = createApi({
         method: 'POST',
         body,
       }),
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
+          dispatch({ type: 'api/invalidateTags', payload: ['InventoryBalances', 'Products', 'KPIs', 'StockMovements'] });
+        } catch {
+          // ignore error
+        }
+      },
       invalidatesTags: [
         { type: 'StockBalance', id: 'LIST' },
         { type: 'StockMovement', id: 'LIST' },
@@ -348,6 +358,15 @@ export const inventoryApi = createApi({
         method: 'POST',
         body,
       }),
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
+          dispatch({ type: 'api/invalidateTags', payload: ['InventoryBalances', 'Products', 'KPIs', 'StockMovements'] });
+        } catch {
+          // ignore error
+        }
+      },
       invalidatesTags: [
         { type: 'StockBalance', id: 'LIST' },
         { type: 'StockReceipt', id: 'LIST' },
@@ -397,6 +416,15 @@ export const inventoryApi = createApi({
         method: 'POST',
         body,
       }),
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
+          dispatch({ type: 'api/invalidateTags', payload: ['InventoryBalances', 'Products', 'KPIs', 'StockMovements'] });
+        } catch {
+          // ignore error
+        }
+      },
       invalidatesTags: [
         { type: 'StockBalance', id: 'LIST' },
         { type: 'StockAdjustment', id: 'LIST' },
@@ -476,6 +504,13 @@ export const inventoryApi = createApi({
         url: `/inventory/transfers/${id}/dispatch`,
         method: 'POST',
       }),
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
+          dispatch({ type: 'api/invalidateTags', payload: ['InventoryBalances', 'Products', 'KPIs', 'StockMovements', 'StockTransfers'] });
+        } catch {}
+      },
       invalidatesTags: [
         { type: 'StockTransfer', id: 'LIST' },
         { type: 'StockBalance', id: 'LIST' },
@@ -489,6 +524,13 @@ export const inventoryApi = createApi({
         url: `/inventory/transfers/${id}/receive`,
         method: 'POST',
       }),
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
+          dispatch({ type: 'api/invalidateTags', payload: ['InventoryBalances', 'Products', 'KPIs', 'StockMovements', 'StockTransfers'] });
+        } catch {}
+      },
       invalidatesTags: [
         { type: 'StockTransfer', id: 'LIST' },
         { type: 'StockBalance', id: 'LIST' },
@@ -503,6 +545,13 @@ export const inventoryApi = createApi({
         method: 'POST',
         body: { reason },
       }),
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch(catalogueApi.util.invalidateTags(['Variant', 'Product']));
+          dispatch({ type: 'api/invalidateTags', payload: ['InventoryBalances', 'Products', 'KPIs', 'StockMovements', 'StockTransfers'] });
+        } catch {}
+      },
       invalidatesTags: [
         { type: 'StockTransfer', id: 'LIST' },
         { type: 'StockBalance', id: 'LIST' },

@@ -28,9 +28,30 @@ export default function InventoryReportsPage() {
 
   const { data: allBranches = [] } = useGetBranchesQuery();
   const authorizedBranches = getUserAuthorizedBranches(currentUser, allBranches);
+
+  const duraBranch = React.useMemo(() => {
+    return (
+      allBranches.find(
+        (b: any) =>
+          b.name?.toLowerCase().includes('dura') ||
+          b.code?.toLowerCase().includes('312')
+      ) || allBranches[0]
+    );
+  }, [allBranches]);
+
   const [selectedBranchId, setSelectedBranchId] = useState<string>(
-    isSuperAdmin ? 'all' : (currentUser?.assignedBranchId || 'all')
+    currentUser?.assignedBranchId || ''
   );
+
+  React.useEffect(() => {
+    if (isSuperAdmin && (!selectedBranchId || selectedBranchId === 'all') && duraBranch?.id) {
+      setSelectedBranchId(duraBranch.id);
+    }
+  }, [isSuperAdmin, selectedBranchId, duraBranch]);
+
+  const effectiveBranchId = isSuperAdmin
+    ? selectedBranchId || duraBranch?.id
+    : currentUser?.assignedBranchId;
 
   const [activeReportTab, setActiveReportTab] = useState<'valuation' | 'lowstock' | 'movement'>(
     'valuation'
@@ -42,16 +63,18 @@ export default function InventoryReportsPage() {
     setMounted(true);
   }, []);
 
-  const activeBranchFilter = selectedBranchId === 'all' ? undefined : selectedBranchId;
+  const activeBranchFilter = effectiveBranchId;
   const { data: balances = [] } = useGetInventoryBalancesQuery(
     { branchId: activeBranchFilter },
-    { skip: !mounted }
+    { skip: !mounted || (isSuperAdmin && !activeBranchFilter) }
   );
-  const { data: kpis } = useGetInventoryDashboardKPIsQuery(activeBranchFilter, { skip: !mounted });
+  const { data: kpis } = useGetInventoryDashboardKPIsQuery(activeBranchFilter, {
+    skip: !mounted || (isSuperAdmin && !activeBranchFilter),
+  });
   const { data: backendValuation } = useGetInventoryValuationQuery(undefined, { skip: !mounted || !isBackendMode || !isSuperAdmin });
   const { data: backendLowStock } = useGetInventoryLowStockQuery(
     { branchId: activeBranchFilter },
-    { skip: !mounted || !isBackendMode }
+    { skip: !mounted || !isBackendMode || (isSuperAdmin && !activeBranchFilter) }
   );
 
   // Valuation computations
@@ -88,14 +111,13 @@ export default function InventoryReportsPage() {
             {/* Branch selector */}
             <select
               aria-label="Filter report by branch"
-              value={selectedBranchId}
+              value={effectiveBranchId || ''}
               onChange={(e) => setSelectedBranchId(e.target.value)}
               className="px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:outline-hidden focus:border-brand-blue"
             >
-              {isSuperAdmin && <option value="all">Consolidated (All Branches)</option>}
               {authorizedBranches.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name}
+                  {b.name} {b.code ? `(${b.code})` : ''}
                 </option>
               ))}
             </select>

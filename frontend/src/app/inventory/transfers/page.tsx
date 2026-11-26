@@ -41,9 +41,31 @@ export default function StockTransfersPage() {
   const { data: stockLocations = [] } = useGetStockLocationsQuery();
   const { data: variants = [] } = useGetProductVariantsQuery();
 
+  const duraBranch = React.useMemo(() => {
+    return (
+      allBranches.find(
+        (b: any) =>
+          b.name?.toLowerCase().includes('dura') ||
+          b.code?.toLowerCase().includes('312')
+      ) || allBranches[0]
+    );
+  }, [allBranches]);
+
   const [statusFilter, setStatusFilter] = useState<StockTransferStatus | 'all'>('all');
   const [search, setSearch] = useState('');
-  const branchFilter = isSuperAdmin ? 'all' : (currentUser?.assignedBranchId || 'all');
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(
+    currentUser?.assignedBranchId || ''
+  );
+
+  React.useEffect(() => {
+    if (isSuperAdmin && !selectedBranchId && duraBranch?.id) {
+      setSelectedBranchId(duraBranch.id);
+    }
+  }, [isSuperAdmin, selectedBranchId, duraBranch]);
+
+  const effectiveBranchId = isSuperAdmin
+    ? selectedBranchId || duraBranch?.id
+    : currentUser?.assignedBranchId;
 
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -53,8 +75,15 @@ export default function StockTransfersPage() {
 
   // Form State for New Transfer
   const [sourceBranchId, setSourceBranchId] = useState<string>(
-    authorizedBranches[0]?.id || 'BR-MAIN-01'
+    effectiveBranchId || authorizedBranches[0]?.id || ''
   );
+
+  React.useEffect(() => {
+    if (effectiveBranchId && !sourceBranchId) {
+      setSourceBranchId(effectiveBranchId);
+    }
+  }, [effectiveBranchId, sourceBranchId]);
+
   const [sourceLocationId, setSourceLocationId] = useState<string>('LOC-MAIN-01');
   const [destBranchId, setDestBranchId] = useState<string>('BR-DISP-02');
   const [destLocationId, setDestLocationId] = useState<string>('LOC-DISP-01');
@@ -66,11 +95,16 @@ export default function StockTransfersPage() {
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   // Queries & Mutations
-  const { data: transfers = [], isLoading } = useGetStockTransfersQuery({
-    branchId: branchFilter === 'all' ? undefined : branchFilter,
-    status: statusFilter === 'all' ? undefined : statusFilter,
-    search: search.trim() || undefined,
-  });
+  const { data: transfers = [], isLoading } = useGetStockTransfersQuery(
+    {
+      branchId: effectiveBranchId,
+      status: statusFilter === 'all' ? undefined : statusFilter,
+      search: search.trim() || undefined,
+    },
+    {
+      skip: isSuperAdmin && !effectiveBranchId,
+    }
+  );
 
   const { data: sourceBalances = [] } = useGetInventoryBalancesQuery({
     stockLocationId: sourceLocationId,
@@ -370,15 +404,33 @@ export default function StockTransfersPage() {
             )}
           </div>
 
-          {/* Search */}
-          <div className="w-full sm:w-64">
-            <input
-              type="text"
-              placeholder="Search transfer # or notes..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-hidden focus:border-brand-blue"
-            />
+          {/* Branch & Search Controls */}
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            {isSuperAdmin && authorizedBranches.length > 0 && (
+              <select
+                aria-label="Filter transfers by branch"
+                value={effectiveBranchId || ''}
+                onChange={(e) => setSelectedBranchId(e.target.value)}
+                className="px-3 py-1.5 text-xs font-semibold bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:outline-hidden focus:border-brand-blue cursor-pointer"
+              >
+                {authorizedBranches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} {b.code ? `(${b.code})` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Search */}
+            <div className="w-full sm:w-64">
+              <input
+                type="text"
+                placeholder="Search transfer # or notes..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-hidden focus:border-brand-blue"
+              />
+            </div>
           </div>
         </div>
 

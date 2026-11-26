@@ -580,10 +580,10 @@ function CustomersContent() {
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
                   <tr>
                     {/* <th className="py-3.5 px-4">Code</th> */}
-                    <th className="py-3.5 px-4">Customer / Business</th>
+                    <th className="py-3.5 px-4">Customer Name</th>
+                    <th className="py-3.5 px-4">Phone / City</th>
                     <th className="py-3.5 px-4">Branch</th>
                     <th className="py-3.5 px-4">Tier Type</th>
-                    <th className="py-3.5 px-4">Phone / City</th>
                     <th className="py-3.5 px-4 text-right">Limit</th>
                     <th className="py-3.5 px-4 text-right">Credit</th>
                     <th className="py-3.5 px-4 text-right">Available Credit</th>
@@ -624,8 +624,9 @@ function CustomersContent() {
                           <td className="py-3.5 px-4 capitalize">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className={`font-bold font-sans  ${isExceeded ? 'text-rose-950 font-black' : 'text-slate-900'}`}>
-                                {c.name} <br />
-                                {c.phone}
+                                {c.name}
+                                {/* <br />
+                                {c.phone} */}
                               </span>
                               {isExceeded && (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-600 text-white font-extrabold text-[9px] tracking-tight shadow-xs animate-pulse">
@@ -639,6 +640,10 @@ function CustomersContent() {
                                 {c.businessName}
                               </span>
                             )}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="text-[13px] font-bold font-sans text-slate-800 block">{c.phone}</span>
+                            <span className="text-[11px] text-slate-400 block">{c.city || 'Punjab'}</span>
                           </td>
                           <td className="py-3.5 px-4">
                             <span className="font-semibold text-slate-800 flex items-center gap-1.5">
@@ -669,10 +674,6 @@ function CustomersContent() {
                               )}
                               <span>{c.customerType}</span>
                             </span>
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <span className="font-mono text-slate-800 block">{c.phone}</span>
-                            <span className="text-[11px] text-slate-400 block">{c.city || 'Punjab'}</span>
                           </td>
                           <td className="py-3.5 px-4 text-right font-bold text-slate-800 font-sans">
                             Rs. {c.creditLimit.toLocaleString()}

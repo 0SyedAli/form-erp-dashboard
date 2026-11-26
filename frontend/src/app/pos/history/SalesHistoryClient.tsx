@@ -202,8 +202,8 @@ function SalesHistoryContent() {
             discount: it.discount || 0,
             total: it.lineTotal ?? it.total ?? ((it.unitPrice || 0) * (it.quantity || 1)),
             lineTotal: it.lineTotal ?? it.total ?? ((it.unitPrice || 0) * (it.quantity || 1)),
-            sizeLabel: it.sizeLabel || '',
-            thicknessLabel: it.thicknessLabel || '',
+            sizeLabel: it.sizeLabel || it.size?.displayLabel || it.size?.name || it.size || '',
+            thicknessLabel: it.thicknessLabel || it.thickness?.displayLabel || it.thickness?.value || it.thickness || '',
           })),
         };
       }) as Invoice[];
@@ -792,6 +792,38 @@ function SalesHistoryContent() {
                               <span className="text-[12px] text-slate-400 block font-mono">
                                 {inv.customerPhone}
                               </span>
+                            )}
+                            {inv.items && inv.items.length > 0 && (
+                              <div className="mt-1 space-y-0.5">
+                                {inv.items.slice(0, 1).map((it: any, idx: number) => {
+                                  const size = it.sizeLabel || it.size?.displayLabel || it.size?.name || it.size || '';
+                                  const thickness = it.thicknessLabel || it.thickness?.displayLabel || it.thickness?.value || it.thickness || '';
+                                  const specs = [size, thickness].filter(Boolean).join(' • ');
+
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className="text-[11px] leading-snug text-slate-600 truncate max-w-[220px]"
+                                      title={`${it.quantity > 1 ? `${it.quantity}× ` : ''}${it.productName || it.sku}${specs ? ` (${specs})` : ''}`}
+                                    >
+                                      <span className="font-semibold text-slate-800">
+                                        {it.quantity > 1 ? `${it.quantity}× ` : ''}
+                                        {it.productName || it.sku}
+                                      </span>
+                                      {specs && (
+                                        <span className="text-slate-500 text-[10px] ml-1 font-mono">
+                                          ({specs})
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                                {inv.items.length > 1 && (
+                                  <span className="text-[10px] font-bold text-brand-blue block">
+                                    +{inv.items.length - 1} more items
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </td>
 

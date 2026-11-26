@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import InventoryNavTabs from '@/components/inventory/InventoryNavTabs';
@@ -9,25 +9,64 @@ import {
   useGetStockBalancesQuery,
   useCreateAdjustmentsMutation,
 } from '@/store/services/inventoryApi';
-import { useGetSkusQuery } from '@/store/services/catalogueApi';
+import { useGetSkusQuery, useGetBranchesQuery } from '@/store/services/catalogueApi';
 import Toast, { ToastMessage } from '@/components/common/Toast';
 import {
   SlidersHorizontal,
   CheckCircle2,
   Boxes,
   ArrowRight,
+  Building2,
 } from 'lucide-react';
 
 export default function StockAdjustmentsPage() {
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
-  const activeBranchId = currentUser?.assignedBranchId;
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
-  // Balances and SKUs
-  const { data: stockBalances = [], isLoading: isBalancesLoading } = useGetStockBalancesQuery(
-    activeBranchId ? { branchId: activeBranchId } : undefined
+  // Optimized branch query for Super Admin
+  const { data: allBranches = [] } = useGetBranchesQuery(undefined, { skip: !isSuperAdmin });
+
+  const duraBranch = React.useMemo(() => {
+    return (
+      allBranches.find(
+        (b: any) =>
+          b.name?.toLowerCase().includes('dura') ||
+          b.code?.toLowerCase().includes('312')
+      ) || allBranches[0]
+    );
+  }, [allBranches]);
+
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(
+    currentUser?.assignedBranchId || ''
   );
-  const { data: skusData } = useGetSkusQuery({ limit: 300 });
-  const allSkus = skusData?.data || [];
+
+  useEffect(() => {
+    if (isSuperAdmin && !selectedBranchId && duraBranch?.id) {
+      setSelectedBranchId(duraBranch.id);
+    }
+  }, [isSuperAdmin, selectedBranchId, duraBranch]);
+
+  const effectiveBranchId = isSuperAdmin
+    ? selectedBranchId || duraBranch?.id
+    : currentUser?.assignedBranchId;
+
+  // Balances and SKUs strictly scoped to the active branch
+  const { data: stockBalances = [], isLoading: isBalancesLoading, refetch: refetchBalances } = useGetStockBalancesQuery(
+    effectiveBranchId ? { branchId: effectiveBranchId } : undefined,
+    { skip: isSuperAdmin && !effectiveBranchId }
+  );
+  const { data: skusData, refetch: refetchSkus } = useGetSkusQuery(
+    {
+      all: true,
+      ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}),
+    },
+    { skip: isSuperAdmin && !effectiveBranchId }
+  );
+  const allSkus = useMemo(() => {
+    if (Array.isArray(skusData?.data)) return skusData.data;
+    if (Array.isArray((skusData as any)?.items)) return (skusData as any).items;
+    return [];
+  }, [skusData]);
 
   // Form State
   const [selectedSku, setSelectedSku] = useState<string>('');
@@ -38,12 +77,17 @@ export default function StockAdjustmentsPage() {
   const [reason, setReason] = useState<string>('');
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
-  // Auto-select first SKU
+  // Auto-select first SKU when branch or SKU list changes
   useEffect(() => {
-    if (!selectedSku && allSkus.length > 0) {
-      setSelectedSku(allSkus[0].sku);
+    if (allSkus.length > 0) {
+      const exists = allSkus.some((s: any) => s.sku === selectedSku);
+      if (!exists) {
+        setSelectedSku(allSkus[0].sku);
+      }
+    } else {
+      setSelectedSku('');
     }
-  }, [allSkus, selectedSku]);
+  }, [allSkus, effectiveBranchId]);
 
   // Active current stock
   const currentBalance = stockBalances.find((b: any) => b.sku === selectedSku);
@@ -105,7 +149,7 @@ export default function StockAdjustmentsPage() {
 
     try {
       await createAdjustments({
-        branchId: activeBranchId,
+        branchId: effectiveBranchId,
         items: [
           {
             sku: selectedSku,
@@ -115,6 +159,10 @@ export default function StockAdjustmentsPage() {
           },
         ],
       }).unwrap();
+
+      // Silently refetch balances and SKUs immediately
+      refetchBalances();
+      refetchSkus();
 
       setToast({
         id: Date.now().toString(),
@@ -167,6 +215,31 @@ export default function StockAdjustmentsPage() {
 
         {/* Main Adjustment Form */}
         <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-5">
+          {/* Target Branch Selector for Super Admin */}
+          {isSuperAdmin && allBranches.length > 0 && (
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80">
+              <label
+                htmlFor="adj-branch-select"
+                className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5"
+              >
+                <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                <span>Adjusting Stock For Branch *</span>
+              </label>
+              <select
+                id="adj-branch-select"
+                value={effectiveBranchId || ''}
+                onChange={(e) => setSelectedBranchId(e.target.value)}
+                className="w-full px-3.5 py-2.5 text-sm font-semibold bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue text-slate-900 shadow-2xs cursor-pointer"
+              >
+                {allBranches.map((b: any) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* SKU Selection & Current Balance Preview */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="sm:col-span-2">
