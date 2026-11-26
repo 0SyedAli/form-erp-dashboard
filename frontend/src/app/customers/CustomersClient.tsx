@@ -579,7 +579,7 @@ function CustomersContent() {
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
                   <tr>
-                    <th className="py-3.5 px-4">Code</th>
+                    {/* <th className="py-3.5 px-4">Code</th> */}
                     <th className="py-3.5 px-4">Customer / Business</th>
                     <th className="py-3.5 px-4">Branch</th>
                     <th className="py-3.5 px-4">Tier Type</th>
@@ -618,13 +618,14 @@ function CustomersContent() {
                             : 'hover:bg-slate-50/80'
                             }`}
                         >
-                          <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
+                          {/* <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
                             {c.customerCode}
-                          </td>
-                          <td className="py-3.5 px-4">
+                          </td> */}
+                          <td className="py-3.5 px-4 capitalize">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className={`font-bold font-sans ${isExceeded ? 'text-rose-950 font-black' : 'text-slate-900'}`}>
-                                {c.name}
+                              <span className={`font-bold font-sans  ${isExceeded ? 'text-rose-950 font-black' : 'text-slate-900'}`}>
+                                {c.name} <br />
+                                {c.phone}
                               </span>
                               {isExceeded && (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-600 text-white font-extrabold text-[9px] tracking-tight shadow-xs animate-pulse">

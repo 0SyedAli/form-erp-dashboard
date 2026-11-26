@@ -21,6 +21,7 @@ import {
   Banknote,
   User,
   AlertCircle,
+  X,
 } from 'lucide-react';
 
 interface POSCartProps {
@@ -45,6 +46,7 @@ interface POSCartProps {
   saleType: SaleType;
   selectedCustomer: Customer | null;
   onOpenCustomerModal: () => void;
+  onClearCustomer?: () => void;
   paymentArrangement: PaymentArrangement;
   onPaymentArrangementChange: (arr: PaymentArrangement) => void;
   dueDate: string;
@@ -74,6 +76,7 @@ export default function POSCart({
   saleType,
   selectedCustomer,
   onOpenCustomerModal,
+  onClearCustomer,
   paymentArrangement,
   onPaymentArrangementChange,
   dueDate,
@@ -132,24 +135,65 @@ export default function POSCart({
         )}
       </div>
 
-      {/* Customer bar if Wholesale or Distributor */}
-      {saleType !== 'WALK_IN' && (
-        <div className="px-3.5 py-2 bg-blue-50/60 border-b border-blue-100 text-xs shrink-0 flex items-center justify-between">
-          <div className="flex items-center gap-1.5 truncate">
-            <User className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-            <span className="font-semibold text-slate-800 truncate">
-              {selectedCustomer ? selectedCustomer.name : 'Select Customer Account'}
+      {/* Customer Bar: Accessible in ALL Modes (Walk-in, Wholesale, Distributor) */}
+      <div
+        className={`px-3.5 py-2 border-b text-xs shrink-0 flex items-center justify-between transition-colors ${
+          selectedCustomer
+            ? 'bg-emerald-50/70 border-emerald-100'
+            : 'bg-slate-50/80 border-slate-100'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 truncate min-w-0 pr-2">
+          <User
+            className={`w-3.5 h-3.5 shrink-0 ${
+              selectedCustomer ? 'text-emerald-700' : 'text-slate-400'
+            }`}
+          />
+          {selectedCustomer ? (
+            <div className="flex items-center gap-1.5 truncate min-w-0">
+              <span className="font-bold truncate text-slate-900 font-sans">
+                {selectedCustomer.name}
+              </span>
+              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-white text-slate-700 border border-slate-200 shrink-0">
+                {selectedCustomer.customerType || 'CUSTOMER'}
+              </span>
+              {typeof selectedCustomer.currentOutstanding === 'number' && selectedCustomer.currentOutstanding > 0 && (
+                <span className="text-[10px] font-black text-rose-600 shrink-0">
+                  Due: Rs. {selectedCustomer.currentOutstanding.toLocaleString()}
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-slate-600 font-medium truncate">
+              {saleType === 'WALK_IN' ? 'Walk-in Customer' : 'Select Customer Account'}
             </span>
-          </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={onOpenCustomerModal}
-            className="text-blue-600 font-bold hover:underline shrink-0 text-[11px]"
+            className={`font-bold text-[11px] px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
+              selectedCustomer
+                ? 'text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100/60'
+                : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
+            }`}
           >
-            {selectedCustomer ? 'Change' : 'Assign'}
+            {selectedCustomer ? 'Change' : '+ Assign'}
           </button>
+          {selectedCustomer && onClearCustomer && (
+            <button
+              type="button"
+              onClick={onClearCustomer}
+              className="text-slate-400 hover:text-rose-600 p-0.5 rounded transition-colors cursor-pointer"
+              title="Revert to Walk-in customer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
-      )}
+      </div>
 
       {/* 2. Cart Items List matching reference mockup */}
       <div className="flex-1 min-h-[300px] overflow-y-auto p-3.5 space-y-3 scrollbar-thin">
@@ -285,11 +329,10 @@ export default function POSCart({
                 onClick={() => {
                   setDiscountMode('RS');
                 }}
-                className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${
-                  discountMode === 'RS'
+                className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${discountMode === 'RS'
                     ? 'bg-white text-emerald-700 shadow-2xs font-extrabold'
                     : 'text-slate-600 hover:text-slate-900'
-                }`}
+                  }`}
               >
                 Rs.
               </button>
@@ -300,11 +343,10 @@ export default function POSCart({
                   const p = subtotal > 0 ? Math.min(100, Math.round((discountAmount / subtotal) * 100)) : 0;
                   setPercentValue(p);
                 }}
-                className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${
-                  discountMode === 'PERCENT'
+                className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${discountMode === 'PERCENT'
                     ? 'bg-white text-emerald-700 shadow-2xs font-extrabold'
                     : 'text-slate-600 hover:text-slate-900'
-                }`}
+                  }`}
               >
                 %
               </button>
@@ -390,7 +432,7 @@ export default function POSCart({
         </button>
 
         {/* Secondary Buttons: Hold Sale (F3) & Print Invoice (F6) */}
-        <div className="flex items-center gap-2 pt-1">
+        {/* <div className="flex items-center gap-2 pt-1">
           <button
             type="button"
             onClick={onHoldSale}
@@ -410,7 +452,7 @@ export default function POSCart({
             <Printer className="w-3.5 h-3.5 text-slate-600" />
             <span>Print Invoice (F6)</span>
           </button>
-        </div>
+        </div> */}
       </div>
     </div>
   );

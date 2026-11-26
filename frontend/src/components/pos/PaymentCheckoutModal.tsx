@@ -39,6 +39,7 @@ interface PaymentCheckoutModalProps {
   saleType: SaleType;
   selectedCustomer: Customer | null;
   onOpenCustomerModal: () => void;
+  onClearCustomer?: () => void;
   onConfirmSale: (data: CheckoutSubmitData) => Promise<void>;
   isProcessing?: boolean;
 }
@@ -52,6 +53,7 @@ export default function PaymentCheckoutModal({
   saleType,
   selectedCustomer,
   onOpenCustomerModal,
+  onClearCustomer,
   onConfirmSale,
   isProcessing = false,
 }: PaymentCheckoutModalProps) {
@@ -139,9 +141,9 @@ export default function PaymentCheckoutModal({
     newProjectedOutstanding > customerCreditLimit &&
     remainingKhataAmount > 0;
 
-  // Validation: Missing walk-in credit details
+  // Validation: Missing walk-in credit details (only if no customer account is assigned)
   const isWalkInCreditMissing =
-    saleType === 'WALK_IN' && isCreditActive && (!walkInName.trim() || !walkInPhone.trim());
+    saleType === 'WALK_IN' && !selectedCustomer && isCreditActive && (!walkInName.trim() || !walkInPhone.trim());
 
   // Validation: Missing wholesale customer
   const isWholesaleCustomerMissing =
@@ -539,8 +541,104 @@ export default function PaymentCheckoutModal({
 
           {/* 3. Customer Info Section */}
           <div className="pt-2 border-t border-slate-100">
-            {saleType === 'WALK_IN' ? (
-              /* Walk-in Customer Details */
+            {selectedCustomer ? (
+              /* Assigned Customer Account & Credit Ledger (Works for Walk-in, Wholesale, Distributor) */
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Assigned Customer &amp; Khata Ledger</span>
+                    {saleType === 'WALK_IN' && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                        Walk-in Mode
+                      </span>
+                    )}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={onOpenCustomerModal}
+                      className="text-blue-600 hover:underline font-bold text-[11px] cursor-pointer"
+                    >
+                      Switch Customer
+                    </button>
+                    {saleType === 'WALK_IN' && onClearCustomer && (
+                      <button
+                        type="button"
+                        onClick={onClearCustomer}
+                        className="text-slate-400 hover:text-rose-600 text-[11px] font-semibold cursor-pointer"
+                      >
+                        (Revert to Walk-in)
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  className={`rounded-xl border p-3 text-xs space-y-2.5 transition-colors ${
+                    isCreditLimitExceeded
+                      ? 'bg-rose-50/90 border-rose-300 text-rose-950'
+                      : 'bg-slate-50/80 border-slate-200 text-slate-800'
+                  }`}
+                >
+                  {/* Customer Header */}
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-900 leading-tight">
+                        {selectedCustomer.name}
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        {selectedCustomer.phone} • {selectedCustomer.city || selectedCustomer.customerType || 'Customer'}
+                      </p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 font-bold text-[10px] text-slate-700">
+                      {selectedCustomer.customerType}
+                    </span>
+                  </div>
+
+                  {/* Credit Breakdown Grid */}
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-white/80 p-2 rounded-lg border border-slate-200/60">
+                      <span className="text-[10px] text-slate-500 block">Credit Limit</span>
+                      <span className="font-bold text-slate-800 text-xs">
+                        Rs. {customerCreditLimit.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="bg-white/80 p-2 rounded-lg border border-slate-200/60">
+                      <span className="text-[10px] text-slate-500 block">Current Khata</span>
+                      <span className="font-bold text-amber-700 text-xs">
+                        Rs. {currentCustomerOutstanding.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="bg-white/80 p-2 rounded-lg border border-slate-200/60">
+                      <span className="text-[10px] text-slate-500 block">After This Sale</span>
+                      <span
+                        className={`font-black text-xs ${
+                          isCreditLimitExceeded ? 'text-rose-700' : 'text-slate-900'
+                        }`}
+                      >
+                        Rs. {newProjectedOutstanding.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Light Danger Credit Limit Warning (Informational per user request) */}
+                  {isCreditLimitExceeded && (
+                    <div className="p-2.5 bg-rose-100/80 border border-rose-300 rounded-lg text-rose-900 text-xs space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>Khata Limit Exceeded!</span>
+                      </div>
+                      <p className="text-[11px] text-rose-800 leading-tight">
+                        Limit <strong>Rs. {customerCreditLimit.toLocaleString()}</strong>.
+                        New <strong>Rs. {newProjectedOutstanding.toLocaleString()}</strong> (Exceeded by Rs. {(newProjectedOutstanding - customerCreditLimit).toLocaleString()}).
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : saleType === 'WALK_IN' ? (
+              /* Walk-in Customer Details (No Customer Assigned) */
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-slate-800 flex items-center gap-1.5">
@@ -554,14 +652,14 @@ export default function PaymentCheckoutModal({
                       <span className="text-[10px] text-slate-400 font-semibold">(Optional)</span>
                     )}
                   </span>
-                  <span className="text-[11px] text-slate-400">Walk-in</span>
+                  <button
+                    type="button"
+                    onClick={onOpenCustomerModal}
+                    className="text-blue-600 hover:underline font-bold text-[11px] cursor-pointer"
+                  >
+                    + Assign from Khata
+                  </button>
                 </div>
-
-                {/* {isCreditActive && (
-                  <p className="text-[11px] text-amber-800 font-medium bg-amber-50 border border-amber-200/80 rounded-lg p-2 leading-relaxed">
-                    Udhaar / Khata sale ke liye customer ka Name aur Phone Number lazmi likhein taake ledger record ban sake.
-                  </p>
-                )} */}
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="relative">
@@ -571,10 +669,11 @@ export default function PaymentCheckoutModal({
                       placeholder={isCreditActive ? 'Customer Name *' : 'Customer Name'}
                       value={walkInName}
                       onChange={(e) => setWalkInName(e.target.value)}
-                      className={`w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border focus:bg-white focus:ring-1 ${isCreditActive && !walkInName.trim()
-                        ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:ring-emerald-500'
-                        : 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:ring-emerald-500'
-                        }`}
+                      className={`w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border focus:bg-white focus:ring-1 ${
+                        isCreditActive && !walkInName.trim()
+                          ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:ring-emerald-500'
+                          : 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:ring-emerald-500'
+                      }`}
                     />
                   </div>
                   <div className="relative">
@@ -584,10 +683,11 @@ export default function PaymentCheckoutModal({
                       placeholder={isCreditActive ? 'Phone (e.g. 0300...) *' : 'Phone (e.g. 0300...)'}
                       value={walkInPhone}
                       onChange={(e) => setWalkInPhone(e.target.value)}
-                      className={`w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border focus:bg-white focus:ring-1 ${isCreditActive && !walkInPhone.trim()
-                        ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:ring-emerald-500'
-                        : 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:ring-emerald-500'
-                        }`}
+                      className={`w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border focus:bg-white focus:ring-1 ${
+                        isCreditActive && !walkInPhone.trim()
+                          ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:ring-emerald-500'
+                          : 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:ring-emerald-500'
+                      }`}
                     />
                   </div>
                 </div>
@@ -605,86 +705,20 @@ export default function PaymentCheckoutModal({
                     onClick={onOpenCustomerModal}
                     className="text-blue-600 hover:underline font-bold text-[11px] cursor-pointer"
                   >
-                    {selectedCustomer ? 'Switch Customer' : '+ Select Customer'}
+                    + Select Customer
                   </button>
                 </div>
 
-                {!selectedCustomer ? (
-                  <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-blue-900">
-                    <span>No customer selected. {saleType} requires an account.</span>
-                    <button
-                      type="button"
-                      onClick={onOpenCustomerModal}
-                      className="px-2.5 py-1 bg-blue-600 text-white rounded-lg font-bold text-[11px] hover:bg-blue-700 transition-colors"
-                    >
-                      Assign Customer
-                    </button>
-                  </div>
-                ) : (
-                  <div
-                    className={`rounded-xl border p-3 text-xs space-y-2.5 transition-colors ${isCreditLimitExceeded
-                      ? 'bg-rose-50/90 border-rose-300 text-rose-950'
-                      : 'bg-slate-50/80 border-slate-200 text-slate-800'
-                      }`}
+                <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-blue-900">
+                  <span>No customer selected. {saleType} requires an account.</span>
+                  <button
+                    type="button"
+                    onClick={onOpenCustomerModal}
+                    className="px-2.5 py-1 bg-blue-600 text-white rounded-lg font-bold text-[11px] hover:bg-blue-700 transition-colors"
                   >
-                    {/* Customer Header */}
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
-                      <div>
-                        <h4 className="font-bold text-sm text-slate-900 leading-tight">
-                          {selectedCustomer.name}
-                        </h4>
-                        <p className="text-[11px] text-slate-500">
-                          {selectedCustomer.phone} • {selectedCustomer.city || 'Wholesale Client'}
-                        </p>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 font-bold text-[10px] text-slate-700">
-                        {selectedCustomer.customerType}
-                      </span>
-                    </div>
-
-                    {/* Credit Breakdown Grid */}
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div className="bg-white/80 p-2 rounded-lg border border-slate-200/60">
-                        <span className="text-[10px] text-slate-500 block">Credit Limit</span>
-                        <span className="font-bold text-slate-800 text-xs">
-                          Rs. {customerCreditLimit.toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="bg-white/80 p-2 rounded-lg border border-slate-200/60">
-                        <span className="text-[10px] text-slate-500 block">Current Khata</span>
-                        <span className="font-bold text-amber-700 text-xs">
-                          Rs. {currentCustomerOutstanding.toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="bg-white/80 p-2 rounded-lg border border-slate-200/60">
-                        <span className="text-[10px] text-slate-500 block">New Balance</span>
-                        <span
-                          className={`font-black text-xs ${isCreditLimitExceeded ? 'text-rose-700' : 'text-slate-900'
-                            }`}
-                        >
-                          Rs. {newProjectedOutstanding.toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Light Danger Credit Limit Warning (Informational per user request) */}
-                    {isCreditLimitExceeded && (
-                      <div className="p-2.5 bg-rose-100/80 border border-rose-300 rounded-lg text-rose-900 text-xs space-y-1">
-                        <div className="flex items-center gap-1.5 font-bold">
-                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                          <span>Khata Limit Exceeded!</span>
-                        </div>
-                        <p className="text-[11px] text-rose-800 leading-tight">
-                          Limit <strong>Rs. {customerCreditLimit.toLocaleString()}</strong>.
-                          New <strong>Rs. {newProjectedOutstanding.toLocaleString()}</strong> (Exceeded by Rs. {(newProjectedOutstanding - customerCreditLimit).toLocaleString()}).
-                        </p>
-                        {/* <p className="text-[10px] text-rose-700 font-semibold italic pt-0.5">
-                          Notice: This is for information. You can still proceed and complete this sale.
-                        </p> */}
-                      </div>
-                    )}
-                  </div>
-                )}
+                    Assign Customer
+                  </button>
+                </div>
               </div>
             )}
           </div>

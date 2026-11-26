@@ -42,7 +42,7 @@ export default function BranchesManagementPage() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Query branches and dynamic counts
-  const { data: branches = [], isLoading } = useGetBranchesQuery({
+  const { data: branches = [], isLoading, refetch } = useGetBranchesQuery({
     search: searchQuery,
     status: activeTab === 'all' ? undefined : activeTab,
   });
@@ -185,13 +185,21 @@ export default function BranchesManagementPage() {
         return next;
       });
 
+      // Silently refresh branches data in background
+      refetch();
+
       showToast(
         'success',
         'Branch Access & Settings Saved',
         `Permissions and operational settings updated for ${selectedBranch.name}.`
       );
-    } catch {
-      showToast('error', 'Update Failed', 'Could not update branch access permissions.');
+    } catch (err: any) {
+      const errorMsg =
+        err?.data?.message ||
+        err?.data ||
+        err?.message ||
+        'Could not update branch access permissions.';
+      showToast('error', 'Update Failed', errorMsg);
     }
   };
 
@@ -880,6 +888,7 @@ export default function BranchesManagementPage() {
         onClose={() => setIsAddOpen(false)}
         onSuccess={(created) => {
           setSelectedBranchId(created.id);
+          refetch();
           showToast(
             'success',
             'Branch Registered Successfully',
@@ -894,6 +903,7 @@ export default function BranchesManagementPage() {
         isOpen={Boolean(editTargetBranch)}
         onClose={() => setEditTargetBranch(null)}
         onSuccess={(updated) => {
+          refetch();
           showToast(
             'success',
             'Branch Updated Successfully',
@@ -908,6 +918,7 @@ export default function BranchesManagementPage() {
         isOpen={Boolean(statusTargetBranch)}
         onClose={() => setStatusTargetBranch(null)}
         onSuccess={(updated) => {
+          refetch();
           showToast(
             'info',
             updated.isActive ? 'Branch Activated' : 'Branch Deactivated',

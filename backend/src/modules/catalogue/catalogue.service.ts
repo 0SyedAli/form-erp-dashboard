@@ -850,11 +850,7 @@ export class CatalogueService {
       filter.name = { $regex: query.search, $options: 'i' };
     }
     if (query.branchId && query.branchId !== 'ALL' && mongoose.Types.ObjectId.isValid(query.branchId)) {
-      filter.$or = [
-        { branchId: new mongoose.Types.ObjectId(query.branchId) },
-        { branchId: { $exists: false } },
-        { branchId: null },
-      ];
+      filter.branchId = new mongoose.Types.ObjectId(query.branchId);
     }
 
     const meta = await getMasterMetadata();
@@ -1337,7 +1333,7 @@ export class CatalogueService {
     } catch (variantErr) {
       // Rollback newly created product if variant creation or stock balance failed
       if (isNewlyCreatedProduct && product?._id) {
-        await Product.findByIdAndDelete(product._id).catch(() => {});
+        await Product.findByIdAndDelete(product._id).catch(() => { });
       }
       throw variantErr;
     }
@@ -1378,8 +1374,10 @@ export class CatalogueService {
       andConditions.push({ status: 'ACTIVE' });
     }
 
+    // Strict branch isolation: each branch has its own distinct product catalogue and inventory
     if (query.branchId && query.branchId !== 'ALL' && mongoose.Types.ObjectId.isValid(query.branchId)) {
-      const branchProducts = await Product.find({ branchId: new mongoose.Types.ObjectId(query.branchId) }).select('_id').lean();
+      const targetBranchId = new mongoose.Types.ObjectId(query.branchId);
+      const branchProducts = await Product.find({ branchId: targetBranchId }).select('_id').lean();
       const branchProductIds = branchProducts.map((p) => p._id);
       andConditions.push({ productId: { $in: branchProductIds } });
     }
@@ -1447,9 +1445,12 @@ export class CatalogueService {
     }
 
     // Stock Status filter ('IN_STOCK' or 'OUT_OF_STOCK')
+    const hasBranchScope = Boolean(query.branchId && query.branchId !== 'ALL' && mongoose.Types.ObjectId.isValid(query.branchId));
+    const targetBranchObjId = hasBranchScope ? new mongoose.Types.ObjectId(query.branchId) : null;
+
     if (query.stockStatus === 'IN_STOCK' || query.stockStatus === 'in_stock') {
       const stockCriteria: any = { onHand: { $gt: 0 } };
-      if (query.branchId) stockCriteria.branchId = query.branchId;
+      if (targetBranchObjId) stockCriteria.branchId = targetBranchObjId;
       const inStockBalances = await StockBalance.find(stockCriteria).select('variantId sku').lean();
       const inStockVariantIds = inStockBalances.map((s) => s.variantId).filter(Boolean);
       const inStockSkus = inStockBalances.map((s) => s.sku).filter(Boolean);
@@ -1462,7 +1463,7 @@ export class CatalogueService {
       });
     } else if (query.stockStatus === 'OUT_OF_STOCK' || query.stockStatus === 'out_of_stock') {
       const stockCriteria: any = { onHand: { $gt: 0 } };
-      if (query.branchId) stockCriteria.branchId = query.branchId;
+      if (targetBranchObjId) stockCriteria.branchId = targetBranchObjId;
       const inStockBalances = await StockBalance.find(stockCriteria).select('variantId sku').lean();
       const inStockVariantIds = inStockBalances.map((s) => s.variantId).filter(Boolean);
       const inStockSkus = inStockBalances.map((s) => s.sku).filter(Boolean);
@@ -1473,7 +1474,7 @@ export class CatalogueService {
       });
     } else if (query.stockStatus === 'LOW_STOCK' || query.stockStatus === 'low_stock') {
       const stockCriteria: any = { onHand: { $gt: 0 } };
-      if (query.branchId) stockCriteria.branchId = query.branchId;
+      if (targetBranchObjId) stockCriteria.branchId = targetBranchObjId;
       const candidateBalances = await StockBalance.find(stockCriteria).select('variantId sku onHand reserved reorderLevel').lean();
       const lowStockVariantIds: any[] = [];
       const lowStockSkus: string[] = [];
@@ -1529,8 +1530,8 @@ export class CatalogueService {
       const stockQuery: any = {
         $or: [{ variantId: { $in: variantIds } }, { sku: { $in: variantSkus } }],
       };
-      if (query.branchId) {
-        stockQuery.branchId = query.branchId;
+      if (targetBranchObjId) {
+        stockQuery.branchId = targetBranchObjId;
       }
       stockBalances = await StockBalance.find(stockQuery).lean();
     }
@@ -2141,12 +2142,26 @@ export class CatalogueService {
     return variant.save();
   }
 
-  public static async getBranches(): Promise<Array<Record<string, any>>> {
-    const branches = await Branch.find({ isActive: true }).sort({ name: 1 }).lean();
-    return branches.map((b) => ({
+  public static async getBranches(query?: { status?: string; includeInactive?: boolean }): Promise<Array<Record<string, any>>> {
+    const filter: any = {};
+    if (query?.status === 'active') {
+      filter.isActive = true;
+    } else if (query?.status === 'inactive') {
+      filter.isActive = false;
+    } else if (!query?.includeInactive && query?.status !== 'all') {
+      filter.isActive = true;
+    }
+    const branches = await Branch.find(filter).sort({ name: 1 }).lean();
+    return branches.map((b: any) => ({
       ...b,
       id: b._id.toString(),
       _id: b._id.toString(),
+      settings: b.settings || {
+        allowRetailSales: b.permissions?.pos ?? true,
+        allowWholesaleSales: b.permissions?.customerCredit ?? true,
+        manageOwnInventory: b.permissions?.manageStock ?? false,
+        showInReports: b.permissions?.reports ?? true,
+      },
     }));
   }
 
@@ -2203,17 +2218,22 @@ export class CatalogueService {
       }
     }
 
-    // Pre-load all catalogue metadata in parallel (1 single fast fetch)
-    const [allBrands, allCategories, allLines, allProducts, allSizes, allThicks, allVariants, allBalances] = await Promise.all([
-      Brand.find({}).lean(),
-      Category.find({}).lean(),
-      ProductLine.find({}).lean(),
-      Product.find({}).lean(),
+    // Pre-load catalogue metadata scoped to destination branch in parallel
+    const branchScopedFilter = targetBranch ? { branchId: targetBranch._id } : {};
+    const [allBrands, allCategories, allLines, allProducts, allSizes, allThicks, allBalances] = await Promise.all([
+      Brand.find(branchScopedFilter).lean(),
+      Category.find(branchScopedFilter).lean(),
+      ProductLine.find(branchScopedFilter).lean(),
+      Product.find(branchScopedFilter).lean(),
       Size.find({}).lean(),
       Thickness.find({}).lean(),
-      Variant.find({}).select('_id productId sizeId thicknessId sku listPrice retailPrice wholesalePrice distributorPrice notes minStock posDisplayName').lean(),
       targetBranch ? StockBalance.find({ branchId: targetBranch._id }).lean() : Promise.resolve([]),
     ]);
+
+    const branchProdIds = allProducts.map((p: any) => p._id);
+    const allVariants = await Variant.find(branchProdIds.length > 0 ? { productId: { $in: branchProdIds } } : {})
+      .select('_id productId sizeId thicknessId sku listPrice retailPrice wholesalePrice distributorPrice notes minStock posDisplayName')
+      .lean();
 
     const brandsCache = new Map<string, any>();
     const categoriesCache = new Map<string, any>();
@@ -2441,7 +2461,7 @@ export class CatalogueService {
         productLinesCache.set(plKey, productLine);
       }
 
-      // 4. Resolve Base Product
+      // 4. Resolve Base Product (branch-scoped)
       const prodKey = `${brand._id.toString()}::${category._id.toString()}::${productLine._id.toString()}`;
       let product = productsCache.get(prodKey);
       if (!product) {
@@ -2449,6 +2469,7 @@ export class CatalogueService {
           brandId: brand._id,
           categoryId: category._id,
           productLineId: productLine._id,
+          ...(targetBranch ? { branchId: targetBranch._id } : {}),
         });
         if (!product) {
           product = await Product.create({

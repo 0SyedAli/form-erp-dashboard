@@ -785,11 +785,11 @@ function SalesHistoryContent() {
 
                           {/* 2. Customer */}
                           <td className="py-3 px-4">
-                            <span className="font-bold text-slate-900 block truncate max-w-[150px]">
+                            <span className="font-bold text-[12px] capitalize text-slate-900 block truncate max-w-[150px]">
                               {inv.customerName}
                             </span>
                             {inv.customerPhone && (
-                              <span className="text-[10px] text-slate-400 block font-mono">
+                              <span className="text-[12px] text-slate-400 block font-mono">
                                 {inv.customerPhone}
                               </span>
                             )}

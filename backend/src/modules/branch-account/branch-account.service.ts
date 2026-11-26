@@ -394,6 +394,12 @@ export class BranchAccountService {
       loginId,
       targetMonthlySales: input.targetMonthlySales || 0,
       permissions,
+      settings: input.settings || {
+        allowRetailSales: true,
+        allowWholesaleSales: true,
+        manageOwnInventory: false,
+        showInReports: true,
+      },
       isActive: true,
     });
 
@@ -466,6 +472,7 @@ export class BranchAccountService {
     if (input.targetMonthlySales !== undefined) branch.targetMonthlySales = input.targetMonthlySales;
     if (input.isActive !== undefined) branch.isActive = input.isActive;
     if (input.settings) {
+      (branch as any).settings = { ...((branch as any).settings || {}), ...input.settings };
       branch.permissions = { ...(branch.permissions || {}), ...input.settings } as any;
     }
 
@@ -484,7 +491,7 @@ export class BranchAccountService {
       loginId: branch.loginId,
       targetMonthlySales: branch.targetMonthlySales,
       permissions: branch.permissions,
-      settings: branch.permissions,
+      settings: (branch as any).settings || branch.permissions,
       isActive: branch.isActive,
       createdAt: branch.createdAt,
       updatedAt: branch.updatedAt,

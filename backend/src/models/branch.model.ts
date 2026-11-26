@@ -12,6 +12,13 @@ export interface IBranch extends Document {
   loginId: string;
   targetMonthlySales: number;
   permissions: BranchPermissions;
+  settings?: {
+    allowRetailSales: boolean;
+    allowWholesaleSales: boolean;
+    manageOwnInventory: boolean;
+    showInReports: boolean;
+    [key: string]: boolean;
+  };
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -69,6 +76,15 @@ const BranchSchema = new Schema<IBranch>(
     permissions: {
       type: Schema.Types.Mixed,
       default: () => ({ ...STANDARD_BRANCH_PERMISSIONS }),
+    },
+    settings: {
+      type: Schema.Types.Mixed,
+      default: () => ({
+        allowRetailSales: true,
+        allowWholesaleSales: true,
+        manageOwnInventory: false,
+        showInReports: true,
+      }),
     },
     isActive: {
       type: Boolean,

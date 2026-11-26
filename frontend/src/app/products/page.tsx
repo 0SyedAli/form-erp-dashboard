@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, Suspense, useMemo } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAppSelector, RootState } from '@/store';
@@ -10,8 +10,8 @@ import {
   useGetVariantsQuery,
 } from '@/store/services/apiSlice';
 import {
-  useGetProductsQuery as useGetBackendProductsQuery,
   useGetSkusQuery as useGetBackendSkusQuery,
+  useGetBranchesQuery as useGetBackendBranchesQuery,
 } from '@/store/services/catalogueApi';
 import Toast, { ToastMessage } from '@/components/common/Toast';
 import ProductsTab from '@/components/products/ProductsTab';
@@ -27,7 +27,36 @@ function ProductsPageContent() {
   const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
   const assignedBranchId = currentUser?.assignedBranchId;
-  const effectiveBranchId = !isSuperAdmin ? assignedBranchId : undefined;
+
+  const { data: branches = [] } = useGetBackendBranchesQuery(undefined, { skip: !isSuperAdmin });
+
+  const duraBranch = useMemo(() => {
+    return branches.find((b) =>
+      b.name?.toLowerCase().includes('dura') ||
+      b.code?.toLowerCase().includes('312') ||
+      (b as any).shopNumber?.toLowerCase().includes('312')
+    );
+  }, [branches]);
+
+  const defaultBranchId = useMemo(() => {
+    if (!isSuperAdmin && assignedBranchId) return assignedBranchId;
+    if (duraBranch) return duraBranch.id;
+    if (branches.length > 0) return branches[0].id;
+    return '';
+  }, [isSuperAdmin, assignedBranchId, duraBranch, branches]);
+
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(() => {
+    if (!isSuperAdmin && assignedBranchId) return assignedBranchId;
+    return '';
+  });
+
+  React.useEffect(() => {
+    if (!selectedBranchId && defaultBranchId) {
+      setSelectedBranchId(defaultBranchId);
+    }
+  }, [defaultBranchId, selectedBranchId]);
+
+  const effectiveBranchId = !isSuperAdmin ? assignedBranchId : (selectedBranchId || undefined);
 
   // Access control
   const canManageCatalogue = hasPermission(currentUser, 'catalogue:manage');
@@ -38,27 +67,30 @@ function ProductsPageContent() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const isBackendMode = process.env.NEXT_PUBLIC_DATA_MODE === 'backend';
 
-  // Query high-level counts with fast limit: 1 and skip demo data in backend mode
+  // High-performance shared catalogue query (Deduplicated with ProductsTab to execute only 1 network call)
   const { data: demoProducts = [] } = useGetProductsQuery(undefined, { skip: isBackendMode });
   const { data: demoVariants = [] } = useGetVariantsQuery(undefined, { skip: isBackendMode });
-  const { data: backendProductsData } = useGetBackendProductsQuery(
-    { limit: 1 },
-    { skip: !isBackendMode }
-  );
-  const { data: backendSkusData } = useGetBackendSkusQuery(
-    { status: 'ALL', limit: 1 },
-    { skip: !isBackendMode }
+  const { data: backendSkusResponse } = useGetBackendSkusQuery(
+    { all: true, ...(effectiveBranchId ? { branchId: effectiveBranchId } : {}) },
+    { skip: !isBackendMode || (isSuperAdmin && !effectiveBranchId) }
   );
 
-  const totalProducts = isBackendMode
-    ? (backendProductsData?.pagination?.total ?? 0)
-    : demoProducts.length;
+  const rawBackendSkus: any[] = useMemo(() => {
+    if (Array.isArray(backendSkusResponse?.data)) return backendSkusResponse.data;
+    if (Array.isArray((backendSkusResponse as any)?.items)) return (backendSkusResponse as any).items;
+    if (Array.isArray(backendSkusResponse)) return backendSkusResponse as any;
+    return [];
+  }, [backendSkusResponse]);
+
   const totalVariants = isBackendMode
-    ? (backendSkusData?.pagination?.total ?? 0)
+    ? (backendSkusResponse?.pagination?.total ?? (rawBackendSkus.length || 0))
     : demoVariants.length;
   const activeVariantsCount = isBackendMode
-    ? ((backendSkusData as any)?.counts?.active ?? (backendSkusData?.pagination?.total ?? 0))
+    ? ((backendSkusResponse as any)?.counts?.active ?? rawBackendSkus.filter((v: any) => v.status === 'active' || v.status === 'ACTIVE').length)
     : demoVariants.filter((v) => v.status === 'active' || v.status === 'ACTIVE').length;
+  const totalProducts = isBackendMode
+    ? new Set(rawBackendSkus.map((i: any) => i.productId).filter(Boolean)).size
+    : demoProducts.length;
 
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({
@@ -162,13 +194,23 @@ function ProductsPageContent() {
         canManagePricing={canManagePricing}
         onToast={showToast}
         currentUserEmail={currentUser?.email}
+        selectedBranchId={selectedBranchId}
+        onSelectBranch={setSelectedBranchId}
+        onOpenImport={() => setIsImportModalOpen(true)}
       />
 
       {/* Excel Import Modal */}
       <ExcelImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
-        onSuccess={(msg) => showToast(msg, 'success')}
+        onSuccess={(msg, destinationBranchId) => {
+          showToast(msg, 'success');
+          if (destinationBranchId) {
+            setSelectedBranchId(destinationBranchId);
+          }
+        }}
+        initialBranchId={selectedBranchId}
+        branches={branches}
       />
 
       {/* Toast Notification Container */}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Upload,
@@ -14,13 +14,18 @@ import {
   Info,
   Download,
   RefreshCw,
+  Building2,
 } from 'lucide-react';
-import { useImportCatalogueExcelMutation } from '@/store/services/catalogueApi';
+import { useImportCatalogueExcelMutation, useGetBranchesQuery } from '@/store/services/catalogueApi';
+import { useAppSelector, RootState } from '@/store';
+import { Branch } from '@/types';
 
 interface ExcelImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (msg: string) => void;
+  onSuccess: (msg: string, destinationBranchId?: string) => void;
+  initialBranchId?: string;
+  branches?: Branch[];
 }
 
 interface DuplicateReport {
@@ -48,7 +53,53 @@ export default function ExcelImportModal({
   isOpen,
   onClose,
   onSuccess,
+  initialBranchId,
+  branches: propBranches,
 }: ExcelImportModalProps) {
+  const currentUser = useAppSelector((state: RootState) => state.auth.currentUser);
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const { data: fetchedBranches = [] } = useGetBranchesQuery(undefined, {
+    skip: Boolean(propBranches && propBranches.length > 0),
+  });
+  const availableBranches = propBranches && propBranches.length > 0 ? propBranches : fetchedBranches;
+
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(() => {
+    if (!isSuperAdmin) {
+      return currentUser?.assignedBranchId || (currentUser as any)?.branchId || '';
+    }
+    return initialBranchId || '';
+  });
+
+  // Track previous isOpen state so we only initialize branch when modal opens
+  const prevIsOpenRef = useRef(isOpen);
+  useEffect(() => {
+    if (isOpen && !prevIsOpenRef.current) {
+      if (!isSuperAdmin) {
+        setSelectedBranchId(currentUser?.assignedBranchId || (currentUser as any)?.branchId || '');
+      } else if (initialBranchId) {
+        setSelectedBranchId(initialBranchId);
+      } else if (availableBranches.length > 0) {
+        const dura = availableBranches.find(
+          (b) => b.name?.toLowerCase().includes('dura') || b.code?.toLowerCase().includes('312')
+        );
+        setSelectedBranchId(dura ? dura.id : availableBranches[0].id);
+      }
+    }
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, initialBranchId, isSuperAdmin, availableBranches, currentUser]);
+
+  // Fallback if availableBranches loads after modal is already opened and no branch selected yet
+  useEffect(() => {
+    if (isSuperAdmin && !selectedBranchId && availableBranches.length > 0) {
+      const dura = availableBranches.find(
+        (b) => b.name?.toLowerCase().includes('dura') || b.code?.toLowerCase().includes('312')
+      );
+      setSelectedBranchId(dura ? dura.id : availableBranches[0].id);
+    }
+  }, [isSuperAdmin, selectedBranchId, availableBranches]);
+
+  const activeBranchObj = availableBranches.find((b) => b.id === selectedBranchId);
+
   const [file, setFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<any[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -119,11 +170,18 @@ export default function ExcelImportModal({
 
   const handleUploadConfirm = async () => {
     if (parsedRows.length === 0) return;
+    if (!selectedBranchId) {
+      setParseError('Please select a destination branch before uploading.');
+      return;
+    }
     setParseError(null);
     setUpdateSuccessMsg(null);
 
     try {
-      const res = await importExcel({ rows: parsedRows }).unwrap();
+      const res = await importExcel({
+        rows: parsedRows,
+        branchId: selectedBranchId,
+      }).unwrap();
       const importData = (res as any)?.data || res;
       setResult({
         totalRows: importData.totalRows || parsedRows.length,
@@ -134,7 +192,11 @@ export default function ExcelImportModal({
         created: importData.created || [],
         updated: importData.updated || [],
       });
-      onSuccess(`Import finished: ${importData.successCount || 0} created, ${importData.duplicateCount || 0} duplicates found.`);
+      const targetB = availableBranches.find((b) => b.id === selectedBranchId);
+      onSuccess(
+        `Import finished for ${targetB?.name || 'selected branch'}: ${importData.successCount || 0} created, ${importData.duplicateCount || 0} duplicates found.`,
+        selectedBranchId
+      );
     } catch (err: any) {
       setParseError(err?.data?.error?.message || err?.data?.message || err?.message || 'Import operation failed.');
     }
@@ -142,6 +204,10 @@ export default function ExcelImportModal({
 
   const handleUpdateDuplicates = async () => {
     if (parsedRows.length === 0) return;
+    if (!selectedBranchId) {
+      setParseError('Please select a destination branch before uploading.');
+      return;
+    }
     setIsUpdatingDuplicates(true);
     setParseError(null);
     setUpdateSuccessMsg(null);
@@ -149,6 +215,7 @@ export default function ExcelImportModal({
     try {
       const res = await importExcel({
         rows: parsedRows,
+        branchId: selectedBranchId,
         updateDuplicates: true,
       }).unwrap();
       const syncData = (res as any)?.data || res;
@@ -162,8 +229,12 @@ export default function ExcelImportModal({
         created: syncData.created || result?.created || [],
         updated: syncData.updated || [],
       });
-      setUpdateSuccessMsg(`Successfully synchronized and updated ${count} existing products with latest prices and stock!`);
-      onSuccess(`Catalogue sync completed: ${count} existing products updated.`);
+      const targetB = availableBranches.find((b) => b.id === selectedBranchId);
+      setUpdateSuccessMsg(`Successfully synchronized and updated ${count} existing products for ${targetB?.name || 'selected branch'}!`);
+      onSuccess(
+        `Catalogue sync completed for ${targetB?.name || 'selected branch'}: ${count} existing products updated.`,
+        selectedBranchId
+      );
     } catch (err: any) {
       setParseError(err?.data?.error?.message || err?.data?.message || err?.message || 'Failed to update existing products.');
     } finally {
@@ -283,6 +354,58 @@ export default function ExcelImportModal({
 
         {/* Content Body */}
         <div className="p-6 overflow-y-auto space-y-4 flex-1">
+          {/* Destination Branch Selection Block */}
+          {!result && (
+            <div className="p-4 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-brand-blue" />
+                  <span>Destination Branch</span>
+                  <span className="text-rose-500 font-bold">*</span>
+                </label>
+                {currentUser?.role !== 'SUPER_ADMIN' ? (
+                  <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                    Locked to Assigned Store
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-gray-500">
+                    Select which branch this sheet belongs to
+                  </span>
+                )}
+              </div>
+
+              {currentUser?.role === 'SUPER_ADMIN' ? (
+                <div className="space-y-2">
+                  <select
+                    value={selectedBranchId}
+                    onChange={(e) => setSelectedBranchId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-brand-blue cursor-pointer transition-all"
+                  >
+                    <option value="">-- Choose Branch to Upload Catalogue * --</option>
+                    {availableBranches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.code || (b as any).shopNumber})
+                      </option>
+                    ))}
+                  </select>
+                  {activeBranchObj && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200/80 font-medium">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                      <span>Target Branch: <strong className="font-bold text-emerald-950">{activeBranchObj.name}</strong> ({activeBranchObj.code || (activeBranchObj as any)?.shopNumber})</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <span>{activeBranchObj?.name || 'Your Assigned Store'}</span>
+                  <span className="font-mono text-[10px] text-slate-400">
+                    {activeBranchObj?.code || (activeBranchObj as any)?.shopNumber}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Download Sample Sheet Banner */}
           {!result && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-emerald-50/80 border border-emerald-200/90 rounded-2xl">
@@ -336,11 +459,10 @@ export default function ExcelImportModal({
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all duration-150 flex flex-col items-center justify-center ${
-                  file
+                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all duration-150 flex flex-col items-center justify-center ${file
                     ? 'border-blue-500 bg-blue-50/30'
                     : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50/70'
-                }`}
+                  }`}
               >
                 <input
                   ref={fileInputRef}
@@ -464,14 +586,12 @@ export default function ExcelImportModal({
                   </div>
                 )}
 
-                <div className={`rounded-xl p-4 border flex items-center gap-3 ${
-                  result.duplicateCount > 0
+                <div className={`rounded-xl p-4 border flex items-center gap-3 ${result.duplicateCount > 0
                     ? 'bg-amber-50 border-amber-200 text-amber-900'
                     : 'bg-slate-50 border-slate-200 text-slate-600'
-                }`}>
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                    result.duplicateCount > 0 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'
                   }`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${result.duplicateCount > 0 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'
+                    }`}>
                     <AlertTriangle className="w-6 h-6" />
                   </div>
                   <div>
@@ -607,13 +727,12 @@ export default function ExcelImportModal({
               </div>
               <button
                 type="button"
-                disabled={parsedRows.length === 0 || isUploading || isProcessingFile}
+                disabled={parsedRows.length === 0 || isUploading || isProcessingFile || !selectedBranchId}
                 onClick={handleUploadConfirm}
-                className={`px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer ${
-                  parsedRows.length === 0 || isUploading || isProcessingFile
+                className={`px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer ${parsedRows.length === 0 || isUploading || isProcessingFile || !selectedBranchId
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
+                  }`}
               >
                 {isUploading ? (
                   <>

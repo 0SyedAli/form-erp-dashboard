@@ -453,9 +453,12 @@ export class CatalogueController {
     }
   }
 
-  public static async getBranches(_req: Request, res: Response): Promise<void> {
+  public static async getBranches(req: Request, res: Response): Promise<void> {
     try {
-      const branches = await CatalogueService.getBranches();
+      const branches = await CatalogueService.getBranches({
+        status: req.query.status as string,
+        includeInactive: req.query.includeInactive === 'true' || req.query.status === 'all',
+      });
       sendSuccess(res, branches, 'Branches retrieved successfully.');
     } catch (error) {
       sendError(res, (error as any).message || 'Failed to fetch branches.', (error as any).statusCode || 500);

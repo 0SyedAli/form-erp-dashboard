@@ -3,8 +3,8 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IIdempotencyKey extends Document {
   key: string;
   endpoint: string;
-  accountId: mongoose.Types.ObjectId;
-  requestHash: string;
+  accountId?: mongoose.Types.ObjectId;
+  requestHash?: string;
   responseStatus?: number;
   responseBody?: any;
   status: 'PENDING' | 'RESOLVED';
@@ -26,11 +26,12 @@ const IdempotencyKeySchema = new Schema<IIdempotencyKey>(
     accountId: {
       type: Schema.Types.ObjectId,
       ref: 'Account',
-      required: true,
+      required: false,
     },
     requestHash: {
       type: String,
-      required: true,
+      required: false,
+      default: () => `REQ-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
     },
     responseStatus: {
       type: Number,

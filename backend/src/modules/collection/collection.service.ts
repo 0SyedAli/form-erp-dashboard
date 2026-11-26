@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 import {
   PaymentCollection,
   Customer,
@@ -297,14 +298,39 @@ export class CollectionService {
 
       // 12. Persist Idempotency Store
       if (input.idempotencyKey) {
+        let effectiveAccountId: mongoose.Types.ObjectId | undefined;
+        if (userContext.accountId && mongoose.Types.ObjectId.isValid(userContext.accountId)) {
+          effectiveAccountId = new mongoose.Types.ObjectId(userContext.accountId);
+        } else if (userContext.branchId && mongoose.Types.ObjectId.isValid(userContext.branchId)) {
+          effectiveAccountId = new mongoose.Types.ObjectId(userContext.branchId);
+        } else if (effectiveBranchId && mongoose.Types.ObjectId.isValid(effectiveBranchId.toString())) {
+          effectiveAccountId = effectiveBranchId;
+        }
+
+        const requestHash = crypto
+          .createHash('sha256')
+          .update(
+            JSON.stringify({
+              customerId: input.customerId,
+              amount: input.amount,
+              paymentMethod: input.paymentMethod,
+              branchId: effectiveBranchId?.toString(),
+              allocations: input.allocations,
+              key: input.idempotencyKey,
+            })
+          )
+          .digest('hex');
+
         await IdempotencyKey.create(
           [
             {
               key: input.idempotencyKey,
               endpoint: '/collections',
+              accountId: effectiveAccountId,
+              requestHash,
               responseStatus: 201,
-              responseBody: { collectionNumber },
-              expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              responseBody: { collectionNumber, receiptNumber },
+              status: 'RESOLVED',
             },
           ],
           { session }

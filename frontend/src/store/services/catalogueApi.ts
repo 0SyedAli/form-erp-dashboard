@@ -274,6 +274,18 @@ export const catalogueApi = createApi({
       invalidatesTags: ['Branch'],
     }),
 
+    updateBranchSettings: builder.mutation<
+      any,
+      { id: string; settings: Record<string, boolean> }
+    >({
+      query: ({ id, settings }) => ({
+        url: `/admin/branches/${id}`,
+        method: 'PATCH',
+        body: { settings },
+      }),
+      invalidatesTags: ['Branch'],
+    }),
+
     getBrands: builder.query<Brand[], void>({
       query: () => '/brands',
       keepUnusedDataFor: 86400,
@@ -803,6 +815,7 @@ export const {
   useToggleBranchStatusMutation,
   useResetBranchPasswordMutation,
   useUpdateBranchPermissionsMutation,
+  useUpdateBranchSettingsMutation,
   useGetBrandsQuery,
   useCreateBrandMutation,
   useUpdateBrandMutation,

@@ -25,17 +25,19 @@ import { useClientPagination } from '@/components/common/Pagination';
 import {
   Receipt,
   CheckCircle2,
-  DollarSign,
   AlertCircle,
   Clock,
   Printer,
   Calendar,
   ArrowRight,
+  ArrowUpRight,
   CreditCard,
   Banknote,
   Building,
   Store,
   X,
+  BookOpen,
+  Check,
 } from 'lucide-react';
 
 function CollectionsContent() {
@@ -271,6 +273,13 @@ function CollectionsContent() {
 
   const excessAdvance = Math.max(0, paymentAmount - totalAllocated);
 
+  const customerOutstanding = Number(selectedCustomer?.currentOutstanding ?? 0);
+  const amountDeductedFromOutstanding = Math.min(
+    customerOutstanding,
+    totalAllocated > 0 ? totalAllocated : (paymentAmount || 0)
+  );
+  const remainingBalanceAfterPayment = Math.max(0, customerOutstanding - amountDeductedFromOutstanding);
+
   // Submit Collection
   const handleSubmitCollection = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -379,7 +388,13 @@ function CollectionsContent() {
       setReference('');
       setNotes('');
     } catch (err: any) {
-      setErrorMessage(err?.data?.message || (err as Error).message || 'Failed to post collection');
+      requestRef.current = null;
+      setErrorMessage(
+        err?.data?.error?.message ||
+        err?.data?.message ||
+        (err as Error).message ||
+        'Failed to post collection'
+      );
     } finally {
       submittingRef.current = false;
     }
@@ -459,7 +474,7 @@ function CollectionsContent() {
                     <Store className="w-4 h-4 text-emerald-700 shrink-0" />
                     <div>
                       <span className="font-bold text-emerald-950">
-                        Branch Khata Terminal: {branches.find((b: any) => (b.id || b._id) === selectedBranchId)?.name || 'Your Branch'}
+                        Branch: {branches.find((b: any) => (b.id || b._id) === selectedBranchId)?.name || 'Your Branch'}
                       </span>
                       <p className="text-[11px] text-emerald-800">
                         Strict Branch Isolation: Showing strictly your branch&apos;s registered customers and khata dues.
@@ -477,14 +492,17 @@ function CollectionsContent() {
               </label>
 
               {!targetInvoiceId && isBackendMode && (
-                <input
-                  type="search"
-                  aria-label="Search customers"
-                  placeholder="Search by name or phone"
-                  value={customerSearch}
-                  onChange={(e) => setCustomerSearch(e.target.value)}
-                  className="mb-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
-                />
+                <div className="relative">
+                  <input
+                    type="search"
+                    aria-label="Search customers"
+                    placeholder="Search by name or phone..."
+                    value={customerSearch}
+                    onChange={(e) => setCustomerSearch(e.target.value)}
+                    className="mb-2 w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs truncate focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all placeholder:text-slate-400 font-medium"
+                    style={{ textOverflow: 'ellipsis' }}
+                  />
+                </div>
               )}
               <div className="relative">
                 <select
@@ -496,12 +514,13 @@ function CollectionsContent() {
                     setPaymentAmount(0);
                     setAllocations({});
                   }}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                  className="w-full capitalize px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 cursor-pointer truncate"
+                  style={{ textOverflow: 'ellipsis' }}
                 >
                   <option value="">-- Choose Customer ({customers.length} available) --</option>
                   {(selectedCustomer && !customers.some((c) => c.id === selectedCustomerId) ? [selectedCustomer, ...customers] : customers).map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name} {c.phone ? `(${c.phone})` : ''} {c.branchName ? `• [${c.branchName}]` : ''} • Due: Rs.{' '}
+                      {c.name} {c.phone ? `(${c.phone})` : ''} • Due: Rs.{' '}
                       {(c.currentOutstanding ?? 0).toLocaleString()}
                     </option>
                   ))}
@@ -509,37 +528,62 @@ function CollectionsContent() {
               </div>
 
               {selectedCustomer && (
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
+                <div className="p-4 bg-slate-50/90 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-bold text-xs text-slate-900 font-sans">
+                      <span className="font-bold text-sm text-slate-900 font-sans">
                         {selectedCustomer.name}
                       </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 border border-blue-200">
                         {selectedCustomer.customerType}
                       </span>
                       {selectedCustomer.branchName && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 flex items-center gap-1">
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 flex items-center gap-1 border border-slate-300">
                           <Store className="w-3 h-3 text-slate-600" />
                           <span>Branch: {selectedCustomer.branchName}</span>
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Phone: {selectedCustomer.phone} • Terms: {selectedCustomer.creditTerms || 'Net 30'}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500">
+                      <span>Phone: <strong className="text-slate-700">{selectedCustomer.phone || 'N/A'}</strong></span>
+                      {/* <span>•</span> */}
+                      {/* <span>Terms: <strong className="text-slate-700">{selectedCustomer.creditTerms || 'Net 30'}</strong></span> */}
+                    </div>
+                    <div className="pt-0.5">
+                      <Link
+                        href={`/customers/${encodeURIComponent(selectedCustomerId)}/ledger${selectedBranchId ? `?branchId=${encodeURIComponent(selectedBranchId)}` : ''}`}
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 bg-white hover:bg-slate-50 border border-slate-300 hover:border-emerald-300 px-3 py-1 rounded-lg transition-colors shadow-2xs group"
+                      >
+                        <BookOpen className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-600" />
+                        <span>View Ledger / Khata</span>
+                        <ArrowUpRight className="w-3 h-3 text-slate-400 group-hover:text-emerald-600" />
+                      </Link>
+                    </div>
                   </div>
 
-                  <div className="text-right">
-                    <span className="text-[11px] text-slate-500 font-medium block">
-                      Total Outstanding
-                    </span>
-                    <span className="text-base font-black text-purple-800 font-sans">
-                      Rs. {(selectedCustomer.currentOutstanding ?? 0).toLocaleString()}
-                    </span>
-                    <Link href={`/customers/${encodeURIComponent(selectedCustomerId)}/ledger${selectedBranchId ? `?branchId=${encodeURIComponent(selectedBranchId)}` : ''}`} className="text-xs font-semibold text-blue-700 hover:underline">
-                      View khata
-                    </Link>
+                  <div className="flex sm:flex-col items-end justify-between sm:justify-center gap-2.5 bg-white sm:bg-transparent p-3 sm:p-0 rounded-xl border sm:border-0 border-slate-200">
+                    <div className="text-left sm:text-right">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Total Outstanding
+                      </span>
+                      <span className="text-lg font-black text-rose-600 font-sans tracking-tight">
+                        Rs. {(customerOutstanding ?? 0).toLocaleString()}
+                      </span>
+                    </div>
+
+                    {/* <div className="text-right">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Remaining After Payment
+                      </span>
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold font-sans ${remainingBalanceAfterPayment === 0
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-amber-100 text-amber-900 border border-amber-300'
+                          }`}
+                      >
+                        Rs. {remainingBalanceAfterPayment.toLocaleString()}
+                      </span>
+                    </div> */}
                   </div>
                 </div>
               )}
@@ -559,9 +603,10 @@ function CollectionsContent() {
                   <button
                     type="button"
                     onClick={() => handleAmountChange(selectedCustomer.currentOutstanding)}
-                    className="text-xs font-bold text-emerald-600 hover:text-emerald-700 underline cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
                   >
-                    Pay Full Outstanding
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Pay Full Outstanding</span>
                   </button>
                 )}
               </div>
@@ -585,33 +630,41 @@ function CollectionsContent() {
                     return (
                       <div
                         key={inv.id}
-                        className={`p-4 transition-colors flex flex-wrap items-center justify-between gap-3 ${isAllocated ? 'bg-emerald-50/40' : 'hover:bg-slate-50'
+                        className={`p-4 transition-colors flex flex-wrap items-center justify-between gap-3 ${isAllocated ? 'bg-emerald-50/50' : 'hover:bg-slate-50'
                           }`}
                       >
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono font-bold text-xs text-slate-900">
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                               {inv.invoiceNumber}
                             </span>
-                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
                               {inv.saleType || 'WALK_IN'}
                             </span>
-                            <span className="text-[10px] text-slate-400">{formatDate(inv.date)}</span>
+                            <span className="text-[11px] text-slate-400 font-medium">
+                              {formatDate(inv.date)}
+                            </span>
+                            {inv.dueDate && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                                <Calendar className="w-3 h-3 text-amber-600" />
+                                <span>Due: {formatDate(inv.dueDate)}</span>
+                              </span>
+                            )}
                           </div>
 
-                          <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 font-sans">
-                            <span>Net Total: Rs. {(inv.netAmount ?? 0).toLocaleString()}</span>
-                            <span>• Paid: Rs. {(inv.amountPaid ?? 0).toLocaleString()}</span>
-                            <span className="font-bold text-purple-800">
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 font-sans">
+                            <span>
+                              Net Total: <strong className="text-slate-700">Rs. {(inv.netAmount ?? 0).toLocaleString()}</strong>
+                            </span>
+                            <span>•</span>
+                            <span>
+                              Paid: <strong className="text-slate-700">Rs. {(inv.amountPaid ?? 0).toLocaleString()}</strong>
+                            </span>
+                            <span>•</span>
+                            <span className="font-extrabold text-rose-600">
                               Due: Rs. {(inv.amountDue ?? 0).toLocaleString()}
                             </span>
                           </div>
-
-                          {inv.dueDate && (
-                            <p className="text-[11px] text-amber-700 mt-0.5 flex items-center gap-1 font-medium">
-                              <Calendar className="w-3 h-3" /> Due Date: {formatDate(inv.dueDate)}
-                            </p>
-                          )}
                         </div>
 
                         {/* Allocation Input */}
@@ -634,10 +687,10 @@ function CollectionsContent() {
                                 );
                               }}
                               placeholder="0"
-                              className="w-28 px-2.5 py-1 text-right text-xs font-bold border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500"
+                              className="w-28 px-2.5 py-1.5 text-right text-xs font-bold border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all placeholder:text-slate-400"
                             />
                             {allocatedVal > 0 && (
-                              <span className="text-[10px] text-slate-400 block mt-0.5">
+                              <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
                                 Remaining: Rs. {(remainingAfter ?? 0).toLocaleString()}
                               </span>
                             )}
@@ -720,7 +773,9 @@ function CollectionsContent() {
                   Amount Received / Collected (PKR) *
                 </label>
                 <div className="relative">
-                  <DollarSign className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <span className="text-xs font-black text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 select-none">
+                    Rs.
+                  </span>
                   <input
                     type="number"
                     id="collection-amount-input"
@@ -734,7 +789,7 @@ function CollectionsContent() {
                       handleAmountChange(raw === '' ? 0 : Math.max(0, Number(raw) || 0));
                     }}
                     placeholder="e.g. 25000"
-                    className="w-full pl-9 pr-4 py-2.5 text-base font-black border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-emerald-500 font-sans"
+                    className="w-full pl-10 pr-4 py-2.5 text-base font-black border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-emerald-500 font-sans outline-none transition-all placeholder:text-slate-400"
                   />
                 </div>
               </div>
@@ -782,7 +837,7 @@ function CollectionsContent() {
               </div>
 
               {/* Reference Number */}
-              <div>
+              {/* <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Instrument / Reference # (Cheque / Trx ID)
                 </label>
@@ -791,12 +846,12 @@ function CollectionsContent() {
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
                   placeholder="e.g. CHQ-991245 or TRX-88219"
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all placeholder:text-slate-400 font-medium"
                 />
-              </div>
+              </div> */}
 
               {/* Notes */}
-              <div>
+              {/* <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Voucher Remarks / Notes
                 </label>
@@ -805,30 +860,61 @@ function CollectionsContent() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="e.g. Payment recovered against overdue invoices..."
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all placeholder:text-slate-400 font-medium"
                 />
-              </div>
+              </div> */}
 
-              {/* Allocation & Advance Summary */}
-              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Total Collected:</span>
-                  <span className="font-bold text-slate-900 font-sans">
-                    Rs. {(paymentAmount || 0).toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Allocated to Invoices:</span>
-                  <span className="font-bold text-emerald-700 font-sans">
-                    Rs. {(totalAllocated || 0).toLocaleString()}
-                  </span>
-                </div>
-                {excessAdvance > 0 && (
-                  <div className="flex justify-between text-blue-700 font-bold pt-1 border-t border-slate-200">
-                    <span>Unallocated Advance Balance:</span>
-                    <span>Rs. {(excessAdvance || 0).toLocaleString()}</span>
+              {/* 3-Column Allocation & Recovery Summary Card */}
+              <div className="p-3.5 bg-slate-50/90 rounded-xl border border-slate-200">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="p-2.5 bg-white rounded-lg border border-slate-200/80 shadow-2xs">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Total Collected
+                    </span>
+                    <span className="text-xs font-black text-slate-900 font-sans mt-0.5 block truncate">
+                      Rs. {(paymentAmount || 0).toLocaleString()}
+                    </span>
                   </div>
-                )}
+
+                  <div className="p-2.5 bg-white rounded-lg border border-slate-200/80 shadow-2xs">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Allocated
+                    </span>
+                    <span className="text-xs font-black text-emerald-700 font-sans mt-0.5 block truncate">
+                      Rs. {(totalAllocated || 0).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div
+                    className={`p-2.5 bg-white rounded-lg border shadow-2xs ${excessAdvance > 0
+                      ? 'border-blue-200 bg-blue-50/40'
+                      : remainingBalanceAfterPayment > 0
+                        ? 'border-amber-200 bg-amber-50/40'
+                        : 'border-slate-200/80'
+                      }`}
+                  >
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block truncate">
+                      {excessAdvance > 0
+                        ? 'Advance Balance'
+                        : remainingBalanceAfterPayment > 0
+                          ? 'Remaining Due'
+                          : 'Balance Cleared'}
+                    </span>
+                    <span
+                      className={`text-xs font-black font-sans mt-0.5 block truncate ${excessAdvance > 0
+                        ? 'text-blue-700'
+                        : remainingBalanceAfterPayment > 0
+                          ? 'text-amber-800'
+                          : 'text-emerald-700'
+                        }`}
+                    >
+                      Rs.{' '}
+                      {excessAdvance > 0
+                        ? excessAdvance.toLocaleString()
+                        : remainingBalanceAfterPayment.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               {/* Submit Button */}
@@ -836,10 +922,19 @@ function CollectionsContent() {
                 type="submit"
                 id="submit-collection-btn"
                 disabled={!selectedCustomer || paymentAmount <= 0 || isPosting || isOutstandingLoading || outstandingError || (!!targetInvoiceId && !targetDue)}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-1.5 disabled:bg-slate-300 disabled:cursor-not-allowed cursor-pointer"
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 active:bg-black text-white font-bold text-xs rounded-xl shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-2 disabled:bg-slate-200 disabled:text-slate-400 disabled:border-slate-200 disabled:shadow-none disabled:cursor-not-allowed cursor-pointer"
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>{isPosting ? 'Posting Collection...' : 'Confirm & Post Recovery Payment'}</span>
+                {isPosting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Posting Collection...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>Confirm &amp; Post Recovery Payment</span>
+                  </>
+                )}
               </button>
             </form>
           </div>
@@ -876,8 +971,18 @@ function CollectionsContent() {
                   </tr>
                 ) : collections.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-10 text-center text-slate-400">
-                      No payment collections recorded yet.
+                    <td colSpan={8} className="py-12 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-2.5 border border-slate-200/60">
+                          <Receipt className="w-6 h-6 stroke-[1.5]" />
+                        </div>
+                        <h4 className="text-xs font-bold text-slate-800">
+                          No payment collections recorded yet
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Your recent recoveries for this branch will appear here.
+                        </p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -891,7 +996,18 @@ function CollectionsContent() {
                         </td>
                         <td className="py-3.5 px-4 text-slate-500">{formattedDate}</td>
                         <td className="py-3.5 px-4 font-bold text-slate-800">{c.customerName}</td>
-                        <td className="py-3.5 px-4 text-slate-600">{c.paymentMethod}</td>
+                        <td className="py-3.5 px-4">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${c.paymentMethod === 'CASH'
+                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                              : c.paymentMethod === 'PAYPAK_CARD' || c.paymentMethod === 'CARD'
+                                ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                : 'bg-purple-50 text-purple-800 border border-purple-200'
+                              }`}
+                          >
+                            {c.paymentMethod}
+                          </span>
+                        </td>
                         <td className="py-3.5 px-4 text-right font-black text-emerald-700 font-sans">
                           Rs. {(c.amount ?? 0).toLocaleString()}
                         </td>

@@ -1869,6 +1869,7 @@ function POSContent() {
             saleType={saleType}
             selectedCustomer={selectedCustomer}
             onOpenCustomerModal={() => setIsCustomerModalOpen(true)}
+            onClearCustomer={() => setSelectedCustomer(null)}
             paymentArrangement={paymentArrangement}
             onPaymentArrangementChange={setPaymentArrangement}
             dueDate={dueDate}
@@ -1971,6 +1972,7 @@ function POSContent() {
           setIsPaymentModalOpen(false);
           setIsCustomerModalOpen(true);
         }}
+        onClearCustomer={() => setSelectedCustomer(null)}
         onConfirmSale={handleConfirmCheckout}
         isProcessing={isCheckingOut}
       />

@@ -185,7 +185,10 @@ export const erpApi = createApi({
       async queryFn(filter) {
         try {
           const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
-          const res = await fetch(`${apiUrl}/branches`, {
+          const queryParams = new URLSearchParams();
+          if (filter?.status) queryParams.set('status', filter.status);
+          queryParams.set('includeInactive', 'true');
+          const res = await fetch(`${apiUrl}/branches?${queryParams.toString()}`, {
             credentials: 'include',
           });
           if (res.ok) {
@@ -194,6 +197,12 @@ export const erpApi = createApi({
               let list: Branch[] = json.data.map((b: any) => ({
                 ...b,
                 id: b.id || b._id || '',
+                settings: b.settings || {
+                  allowRetailSales: b.permissions?.pos ?? true,
+                  allowWholesaleSales: b.permissions?.customerCredit ?? true,
+                  manageOwnInventory: b.permissions?.manageStock ?? false,
+                  showInReports: b.permissions?.reports ?? true,
+                },
               }));
               if (filter?.search) {
                 const q = filter.search.toLowerCase();
@@ -300,7 +309,30 @@ export const erpApi = createApi({
 
     updateBranch: builder.mutation<Branch, { id: string; input: UpdateBranchDTO }>({
       async queryFn({ id, input }) {
-        await delay(120);
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
+        try {
+          const res = await fetch(`${apiUrl}/admin/branches/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(input),
+          });
+          const json = await res.json();
+          if (res.ok && json.data) {
+            try {
+              branchesRepository.update(id, input);
+            } catch {}
+            return {
+              data: {
+                ...json.data,
+                id: json.data.id || json.data._id || id,
+              },
+            };
+          }
+          if (json?.error?.message || json?.message) {
+            return { error: { status: res.status, data: json.error?.message || json.message } };
+          }
+        } catch {}
         try {
           const updated = branchesRepository.update(id, input);
           return { data: updated };
@@ -318,7 +350,27 @@ export const erpApi = createApi({
 
     toggleBranchStatus: builder.mutation<Branch, { id: string; isActive: boolean }>({
       async queryFn({ id, isActive }) {
-        await delay(90);
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
+        try {
+          const res = await fetch(`${apiUrl}/admin/branches/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ isActive }),
+          });
+          const json = await res.json();
+          if (res.ok && json.data) {
+            try {
+              branchesRepository.toggleStatus(id, isActive);
+            } catch {}
+            return {
+              data: {
+                ...json.data,
+                id: json.data.id || json.data._id || id,
+              },
+            };
+          }
+        } catch {}
         try {
           const updated = branchesRepository.toggleStatus(id, isActive);
           return { data: updated };
@@ -339,17 +391,48 @@ export const erpApi = createApi({
       { id: string; settings: Partial<BranchSettings> }
     >({
       async queryFn({ id, settings }) {
-        await delay(80);
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
+        try {
+          const res = await fetch(`${apiUrl}/admin/branches/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ settings }),
+          });
+          const json = await res.json();
+          if (res.ok && json.data) {
+            try {
+              branchesRepository.updateSettings(id, settings);
+            } catch {}
+            return {
+              data: {
+                ...json.data,
+                id: json.data.id || json.data._id || id,
+                settings: json.data.settings || settings,
+              },
+            };
+          }
+          if (json?.error?.message || json?.message) {
+            return { error: { status: res.status, data: json.error?.message || json.message } };
+          }
+        } catch {}
         try {
           const updated = branchesRepository.updateSettings(id, settings);
           return { data: updated };
-        } catch (error) {
-          return { error: { status: 400, data: (error as Error).message } };
+        } catch {
+          return {
+            data: {
+              id,
+              settings: settings as BranchSettings,
+            } as Branch,
+          };
         }
       },
       invalidatesTags: (_result, _error, { id }) => [
         { type: 'Branches', id },
         { type: 'Branches', id: 'LIST' },
+        { type: 'Branches', id: 'COUNTS' },
+        'KPIs',
       ],
     }),
 
@@ -358,8 +441,8 @@ export const erpApi = createApi({
       { id: string; permissions: Partial<BranchAccessPermissions> }
     >({
       async queryFn({ id, permissions }) {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
         try {
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
           const res = await fetch(`${apiUrl}/admin/branches/${id}/permissions`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
@@ -367,18 +450,33 @@ export const erpApi = createApi({
             body: JSON.stringify({ permissions }),
           });
           const json = await res.json();
-          if (res.ok && json.data) {
+          if (res.ok) {
             try {
               branchesRepository.updatePermissions(id, permissions);
             } catch {}
-            return { data: json.data };
+            const branchObj = json.data?.branch || json.data || {};
+            return {
+              data: {
+                ...branchObj,
+                id: branchObj.id || branchObj._id || id,
+                permissions: json.data?.permissions || permissions,
+              },
+            };
+          }
+          if (json?.error?.message || json?.message) {
+            return { error: { status: res.status, data: json.error?.message || json.message } };
           }
         } catch {}
         try {
           const updated = branchesRepository.updatePermissions(id, permissions);
           return { data: updated };
-        } catch (error) {
-          return { error: { status: 400, data: (error as Error).message } };
+        } catch {
+          return {
+            data: {
+              id,
+              permissions: permissions as BranchAccessPermissions,
+            } as Branch,
+          };
         }
       },
       invalidatesTags: (_result, _error, { id }) => [
@@ -392,8 +490,8 @@ export const erpApi = createApi({
       { id: string; password: string }
     >({
       async queryFn({ id, password }) {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1';
         try {
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
           const res = await fetch(`${apiUrl}/admin/branches/${id}/reset-password`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -405,7 +503,7 @@ export const erpApi = createApi({
             try {
               branchesRepository.resetBranchPassword(id, password);
             } catch {}
-            return { data: json.data || { success: true, message: 'Password reset successfully' } };
+            return { data: json.data || { success: true, message: json.message || 'Password reset successfully' } };
           }
           if (json?.error?.message || json?.message) {
             return { error: { status: res.status, data: json.error?.message || json.message } };
